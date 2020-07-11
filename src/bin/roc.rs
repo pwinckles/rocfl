@@ -1,4 +1,5 @@
 use structopt::StructOpt;
+use structopt::clap::AppSettings::{ColorAuto, ColoredHelp};
 use roc::ocfl::{OcflRepo, Inventory};
 use roc::ocfl::fs::FsOcflRepo;
 use anyhow::{Result, Context};
@@ -7,13 +8,14 @@ use std::io::Write;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "roc", author= "Peter Winckles <pwinckles@pm.me>")]
+#[structopt(name = "roc", author = "Peter Winckles <pwinckles@pm.me>")]
+#[structopt(setting(ColorAuto), setting(ColoredHelp))]
 pub struct AppArgs {
-    /// Path to the OCFL storage root
+    /// Species the path to the OCFL storage root. Default: current directory.
     #[structopt(short = "R", long, value_name = "PATH")]
     pub root: Option<String>,
 
-    /// Suppress error messages
+    /// Suppresses error messages
     #[structopt(short, long)]
     pub quiet: bool,
 
@@ -25,18 +27,23 @@ pub struct AppArgs {
 /// A CLI for OCFL repositories.
 #[derive(Debug, StructOpt)]
 pub enum Command {
-    #[structopt(name = "ls")]
+    #[structopt(name = "ls", author = "Peter Winckles <pwinckles@pm.me>")]
     List(List),
 }
 
-/// List objects or files within objects.
+/// Lists objects or files within objects.
 #[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp))]
 pub struct List {
-    /// Enable long output format
+    /// Enables long output format
     #[structopt(short, long)]
     pub long: bool,
 
-    /// Version of the object to use, or HEAD if not specified.
+    /// Displays the physical path to the resource
+    #[structopt(short, long)]
+    pub physical: bool,
+
+    /// Specifies the version of the object to use. Default: HEAD version.
     #[structopt(short, long, value_name = "NUM")]
     pub version: Option<u32>,
 
@@ -63,6 +70,7 @@ fn exec_command(repo: &FsOcflRepo, args: &AppArgs) -> Result<()> {
     Ok(())
 }
 
+// TODO implement command execution as a trait?
 fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()> {
     if let Some(_object_id) = &command.object_id {
         unimplemented!("not yet implemented");
@@ -84,6 +92,7 @@ fn print_object(object: &Inventory, long: bool) {
                          "o",
                          object.head,
                          object.versions.get(&object.head)
+                             // TODO allow time to be formatted as UTC or local?
                              .and_then(|v| Some(v.created.format("%Y-%m-%d %H:%M:%S").to_string()))
                              .unwrap_or_else(|| String::from("")),
                          "",

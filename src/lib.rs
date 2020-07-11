@@ -5,8 +5,8 @@ pub mod ocfl {
     use std::path::Path;
 
     use anyhow::Result;
-    use serde::Deserialize;
     use chrono::{Local, DateTime};
+    use serde::Deserialize;
 
     pub trait OcflRepo {
         fn list_objects(&self) -> Result<Box<dyn Iterator<Item=Result<Inventory>>>>;
