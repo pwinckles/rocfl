@@ -6,6 +6,7 @@ use anyhow::{Result, Context};
 use std::error::Error;
 use std::io::Write;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
+use core::fmt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "roc", author = "Peter Winckles <pwinckles@pm.me>")]
@@ -78,7 +79,7 @@ fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()>
         for object in repo.list_objects()
             .with_context(|| "Failed to list objects")? {
             match object {
-                Ok(inventory) => print_object(&inventory, command.long),
+                Ok(inventory) => print_object(&inventory, command),
                 Err(e) => print_err(e.into(), args.quiet)
             }
         }
@@ -86,18 +87,72 @@ fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()>
     }
 }
 
-fn print_object(object: &Inventory, long: bool) {
-    match long {
-        true => println!("{:<}\t{:>5}\t{:<19}\t{:>}\t{:<}",
-                         "o",
-                         object.head,
-                         object.versions.get(&object.head)
-                             // TODO allow time to be formatted as UTC or local?
-                             .and_then(|v| Some(v.created.format("%Y-%m-%d %H:%M:%S").to_string()))
-                             .unwrap_or_else(|| String::from("")),
-                         "",
-                         object.id),
-        false => println!("{}", object.id)
+fn print_object(object: &Inventory, command: &List) {
+    match command.long {
+        true => println!("{}", ListingLong{ object, command }),
+        false => println!("{}", ListingShort{ object, command })
+    }
+}
+
+// fn print_object(object: &Inventory, command: &List) {
+//     match long {
+//         true => println!(list_fmt(command),
+//                          "o",
+//                          object.head,
+//                          object.versions.get(&object.head)
+//                              // TODO allow time to be formatted as UTC or local?
+//                              .and_then(|v| Some(v.created.format("%Y-%m-%d %H:%M:%S").to_string()))
+//                              .unwrap_or_else(|| String::from("")),
+//                          "",
+//                          object.id),
+//         false => println!("{}", object.id)
+//     }
+// }
+
+struct ListingShort<'a> {
+    object: &'a Inventory,
+    command: &'a List,
+}
+
+struct ListingLong<'a> {
+    object: &'a Inventory,
+    command: &'a List,
+}
+
+impl fmt::Display for ListingShort<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.command.physical {
+            write!(f, "{:<42}\t{}", self.object.id, self.object.root)
+        } else {
+            write!(f, "{}", self.object.id)
+        }
+    }
+}
+
+impl fmt::Display for ListingLong<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.command.physical {
+            write!(f, "{}\t{:>5}\t{:<19}\t{:>}\t{:<42}\t{}",
+                   "o",
+                   self.object.head,
+                   self.object.versions.get(&self.object.head)
+                       // TODO allow time to be formatted as UTC or local?
+                       .and_then(|v| Some(v.created.format("%Y-%m-%d %H:%M:%S").to_string()))
+                       .unwrap_or_else(|| String::from("")),
+                   "",
+                   self.object.id,
+                   self.object.root)
+        } else {
+            write!(f, "{}\t{:>5}\t{:<19}\t{:>}\t{:<42}",
+                   "o",
+                   self.object.head,
+                   self.object.versions.get(&self.object.head)
+                       // TODO allow time to be formatted as UTC or local?
+                       .and_then(|v| Some(v.created.format("%Y-%m-%d %H:%M:%S").to_string()))
+                       .unwrap_or_else(|| String::from("")),
+                   "",
+                   self.object.id)
+        }
     }
 }
 

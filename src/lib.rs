@@ -51,17 +51,6 @@ pub mod ocfl {
                     current: RefCell::new(None),
                 })
             }
-
-            fn is_object_root<P: AsRef<Path>>(&self, path: P) -> Result<bool> {
-                for entry in std::fs::read_dir(path)? {
-                    let entry_path = entry?.path();
-                    if entry_path.is_file()
-                        && entry_path.file_name().unwrap_or_default() == "0=ocfl_object_1.0" {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
         }
 
         impl Iterator for FsObjectIdIter {
@@ -93,7 +82,7 @@ pub mod ocfl {
                                 Ok(ftype) => {
                                     if ftype.is_dir() {
                                         let path = entry.path();
-                                        match self.is_object_root(&path) {
+                                        match is_object_root(&path) {
                                             Ok(is_root) => {
                                                 if is_root {
                                                     // TODO extract id without parsing json
@@ -126,14 +115,30 @@ pub mod ocfl {
             }
         }
 
+        fn is_object_root<P: AsRef<Path>>(path: P) -> Result<bool> {
+            for entry in std::fs::read_dir(path)? {
+                let entry_path = entry?.path();
+                if entry_path.is_file()
+                    && entry_path.file_name().unwrap_or_default() == "0=ocfl_object_1.0" {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+
     }
 
-    pub fn read_inventory<P: AsRef<Path>>(path: P) -> Result<Inventory> {
+    fn read_inventory<P: AsRef<Path>>(path: P) -> Result<Inventory> {
         let mut bytes = Vec::new();
-        File::open(path)?.read_to_end(&mut bytes)?;
-        Ok(serde_json::from_slice(&bytes)?)
+        File::open(&path)?.read_to_end(&mut bytes)?;
+        let mut inventory: Inventory = serde_json::from_slice(&bytes)?;
+        inventory.root = String::from(path.as_ref().parent()
+            .unwrap_or_else(|| Path::new(""))
+            .to_str().unwrap_or_default());
+        Ok(inventory)
     }
 
+    // TODO consider rename
     #[derive(Deserialize, Debug)]
     #[serde(rename_all = "camelCase")]
     pub struct Inventory {
@@ -145,7 +150,10 @@ pub mod ocfl {
         pub content_directory: Option<String>,
         pub manifest: HashMap<String, Vec<String>>,
         pub versions: HashMap<String, Version>,
-        pub fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>
+        pub fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
+
+        #[serde(skip_serializing, skip_deserializing)]
+        pub root: String,
     }
 
     #[derive(Deserialize, Debug)]
