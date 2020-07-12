@@ -1,15 +1,21 @@
 pub mod ocfl {
     use std::collections::HashMap;
 
-    use anyhow::Result;
+    use anyhow::{Result};
     use chrono::{Local, DateTime};
     use serde::Deserialize;
     use thiserror::Error;
 
     const OBJECT_MARKER: &str = "0=ocfl_object_1.0";
 
+    const OBJECT_ID_PATTERN: &str = r#""id"\s*:\s*"([^"]+)""#;
+
     pub trait OcflRepo {
+
         fn list_objects(&self) -> Result<Box<dyn Iterator<Item=Result<OcflObject>>>>;
+
+        fn get_object(&self, object_id: &str) -> Result<Option<OcflObject>>;
+
     }
 
     pub mod fs {
@@ -17,10 +23,13 @@ pub mod ocfl {
         use std::io::Read;
         use std::fs::{File, ReadDir};
         use std::path::{Path, PathBuf};
+        use grep::searcher::Searcher;
+        use grep::regex::{RegexMatcher};
+        use anyhow::{anyhow, Result};
 
-        use anyhow::{Result};
-
-        use crate::ocfl::{OcflObject, OcflRepo, OBJECT_MARKER};
+        use crate::ocfl::{OcflObject, OcflRepo, OBJECT_MARKER, OBJECT_ID_PATTERN};
+        use grep::searcher::sinks::UTF8;
+        use grep::matcher::{Matcher, Captures};
 
         pub struct FsOcflRepo {
             pub root: PathBuf
@@ -28,6 +37,8 @@ pub mod ocfl {
 
         impl FsOcflRepo {
             pub fn new<P: AsRef<Path>>(root: P) -> FsOcflRepo {
+                // TODO verify is an OCFL repository
+                // TODO load storage layout
                 return FsOcflRepo {
                     root: root.as_ref().to_path_buf()
                 }
@@ -35,23 +46,60 @@ pub mod ocfl {
         }
 
         impl OcflRepo for FsOcflRepo {
+
             fn list_objects(&self) -> Result<Box<dyn Iterator<Item=Result<OcflObject>>>> {
-                Ok(Box::new(FsObjectIdIter::new(&self.root)?))
+                Ok(Box::new(FsObjectIdIter::new(&self.root, None)?))
             }
+
+            fn get_object(&self, object_id: &str) -> Result<Option<OcflObject>> {
+                let mut iter = FsObjectIdIter::new(&self.root, Some(object_id.to_string()))?;
+                loop {
+                    match iter.next() {
+                        Some(Ok(object)) => return Ok(Some(object)),
+                        // TODO should print error?
+                        Some(Err(_)) => (),
+                        None => return Ok(None)
+                    };
+                }
+            }
+
         }
 
         struct FsObjectIdIter {
             dir_iters: Vec<ReadDir>,
             current: RefCell<Option<ReadDir>>,
+            object_id: Option<String>,
+            id_matcher: RegexMatcher,
         }
 
         impl FsObjectIdIter {
-            fn new<P: AsRef<Path>>(root: P) -> Result<FsObjectIdIter> {
+
+            // TODO support glob matching instead of exact matching
+            fn new<P: AsRef<Path>>(root: P, object_id: Option<String>) -> Result<FsObjectIdIter> {
                 Ok(FsObjectIdIter {
                     dir_iters: vec![std::fs::read_dir(&root)?],
                     current: RefCell::new(None),
+                    object_id,
+                    id_matcher: RegexMatcher::new(OBJECT_ID_PATTERN)?,
                 })
             }
+
+            fn extract_object_id<P: AsRef<Path>>(&self, path: P) -> Result<String> {
+                let mut matches: Vec<String> = vec![];
+                Searcher::new().search_path(&self.id_matcher, &path, UTF8(|_, line| {
+                    let mut captures = self.id_matcher.new_captures()?;
+                    self.id_matcher.captures(line.as_bytes(), &mut captures)?;
+                    matches.push(line[captures.get(1).unwrap()].to_string());
+                    Ok(true)
+                }))?;
+
+                match matches.get(0) {
+                    Some(id) => Ok(id.to_string()),
+                    None => Err(anyhow!("Failed to locate object ID in inventory at {}",
+                        path.as_ref().to_str().unwrap_or_default()))
+                }
+            }
+
         }
 
         impl Iterator for FsObjectIdIter {
@@ -70,50 +118,54 @@ pub mod ocfl {
                     match entry {
                         None => {
                             self.current.replace(None);
-                            continue
                         },
-                        Some(entry) => {
-                            if entry.is_err() {
-                                return Some(Err(entry.err().unwrap().into()))
-                            }
-
-                            let entry = entry.unwrap();
-
+                        Some(Err(e)) => return Some(Err(e.into())),
+                        Some(Ok(entry)) => {
                             match entry.file_type() {
-                                Ok(ftype) => {
-                                    if ftype.is_dir() {
-                                        let path = entry.path();
-                                        match is_object_root(&path) {
-                                            Ok(is_root) => {
-                                                if is_root {
-                                                    // TODO extract id without parsing json
-                                                    // TODO compare id with glob search pattern https://crates.io/crates/globset
-                                                    return match read_inventory(path.join("inventory.json")) {
-                                                        Ok(object) => Some(Ok(object)),
-                                                        Err(e) => Some(Err(
-                                                            e.context(format!("Failed to parse inventory at {}",
-                                                                              path.to_str().unwrap_or_default()))))
+                                Err(e) => return Some(Err(e.into())),
+                                Ok(ftype) if ftype.is_dir() => {
+                                    let path = entry.path();
+
+                                    match is_object_root(&path) {
+                                        Ok(is_root) if is_root => {
+                                            let inventory_path = path.join("inventory.json");
+
+                                            match self.extract_object_id(&inventory_path) {
+                                                Ok(object_id) => {
+                                                    if self.object_id.is_none()
+                                                        || self.object_id.as_ref().unwrap().eq(&object_id) {
+                                                        // TODO compare id with glob search pattern https://crates.io/crates/globset
+                                                        return match read_inventory(&inventory_path) {
+                                                            Ok(object) => Some(Ok(object)),
+                                                            Err(e) => Some(Err(
+                                                                e.context(format!("Failed to parse inventory at {}",
+                                                                                  inventory_path.to_str().unwrap_or_default()))))
+                                                        }
                                                     }
-                                                } else {
-                                                    self.dir_iters.push(self.current.replace(None).unwrap());
-                                                    match std::fs::read_dir(&path) {
-                                                        Ok(next) => self.current.replace(Some(next)),
-                                                        Err(e) => return Some(Err(e.into()))
-                                                    }
-                                                };
-                                            },
-                                            Err(e) => return Some(Err(e.into()))
-                                        }
+                                                },
+                                                Err(e) => return Some(Err(e))
+                                            }
+                                        },
+                                        Ok(is_root) if !is_root => {
+                                            self.dir_iters.push(self.current.replace(None).unwrap());
+                                            match std::fs::read_dir(&path) {
+                                                Ok(next) => {
+                                                    self.current.replace(Some(next));
+                                                },
+                                                Err(e) => return Some(Err(e.into()))
+                                            }
+                                        },
+                                        Err(e) => return Some(Err(e.into())),
+                                        _ => panic!("This code is unreachable")
                                     }
                                 },
-                                Err(e) => return Some(Err(e.into()))
+                                _ => ()
                             }
-
-                            continue
-                        }
+                        },
                     }
                 }
             }
+
         }
 
         fn is_object_root<P: AsRef<Path>>(path: P) -> Result<bool> {

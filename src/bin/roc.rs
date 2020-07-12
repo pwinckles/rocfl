@@ -74,8 +74,12 @@ fn exec_command(repo: &FsOcflRepo, args: &AppArgs) -> Result<()> {
 
 // TODO implement command execution as a trait?
 fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()> {
-    if let Some(_object_id) = &command.object_id {
-        unimplemented!("not yet implemented");
+    if let Some(object_id) = &command.object_id {
+        match repo.get_object(object_id) {
+            Ok(Some(object)) => print_object(&object, command),
+            Ok(None) => println!("Object {} was not found", object_id),
+            Err(e) => print_err(e.into(), args.quiet)
+        }
     } else {
         for object in repo.list_objects()
             .with_context(|| "Failed to list objects")? {
@@ -84,8 +88,9 @@ fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()>
                 Err(e) => print_err(e.into(), args.quiet)
             }
         }
-        Ok(())
     }
+
+    Ok(())
 }
 
 fn print_object(object: &OcflObject, command: &List) {
@@ -94,6 +99,13 @@ fn print_object(object: &OcflObject, command: &List) {
         command
     })
 }
+
+// fn print_object_contents(object: &OcflObject, command: &List) {
+//     println!("{}", FormatListing{
+//         listing: &Listing::from(object),
+//         command
+//     })
+// }
 
 fn print_err(error: Box<dyn Error>, quiet: bool) {
     if !quiet {
@@ -143,14 +155,14 @@ impl<'a> fmt::Display for FormatListing<'a> {
         // TODO allow time to be formatted as UTC or local?
 
         if self.command.long {
-            write!(f, "{entry_type}\t{version:>5}\t{created:<19}\t{size:>}\t{id:<42}",
+            write!(f, "{entry_type}\t{version:>5}\t{created:<19}\t{size:>}\t{id:<32}",
                    entry_type = self.listing.entry_type,
                    version = self.listing.version,
                    created = self.listing.created,
                    size = self.listing.size,
                    id = self.listing.id)?
         } else {
-            write!(f, "{:<42}", self.listing.id)?
+            write!(f, "{:<32}", self.listing.id)?
         }
 
         if self.command.physical {
@@ -160,4 +172,3 @@ impl<'a> fmt::Display for FormatListing<'a> {
         Ok(())
     }
 }
-
