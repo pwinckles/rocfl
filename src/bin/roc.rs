@@ -126,7 +126,6 @@ struct Listing<'a> {
     entry_type: String,
     version: &'a String,
     created: String,
-    size: String,
     id: &'a String,
     path: &'a String,
 }
@@ -137,7 +136,6 @@ impl<'a> From<&'a OcflObject> for Listing<'a> {
             entry_type: String::from("o"),
             version: &object.head,
             created: object.head_version().created.format("%Y-%m-%d %H:%M:%S").to_string(),
-            size: String::from(""),
             id: &object.id,
             path: &object.root,
         }
@@ -155,11 +153,10 @@ impl<'a> fmt::Display for FormatListing<'a> {
         // TODO allow time to be formatted as UTC or local?
 
         if self.command.long {
-            write!(f, "{entry_type}\t{version:>5}\t{created:<19}\t{size:>}\t{id:<32}",
+            write!(f, "{entry_type}\t{version:>5}\t{created:<19}\t{id:<32}",
                    entry_type = self.listing.entry_type,
                    version = self.listing.version,
                    created = self.listing.created,
-                   size = self.listing.size,
                    id = self.listing.id)?
         } else {
             write!(f, "{:<32}", self.listing.id)?
