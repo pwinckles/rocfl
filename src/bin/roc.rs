@@ -1,6 +1,6 @@
 use structopt::StructOpt;
 use structopt::clap::AppSettings::{ColorAuto, ColoredHelp};
-use roc::ocfl::{OcflRepo, OcflObject};
+use roc::ocfl::{OcflRepo, OcflObject, VersionId};
 use roc::ocfl::fs::FsOcflRepo;
 use anyhow::{Result, Context};
 use std::error::Error;
@@ -123,8 +123,7 @@ fn print_err(error: Box<dyn Error>, quiet: bool) {
 }
 
 struct Listing<'a> {
-    entry_type: String,
-    version: &'a String,
+    version: &'a VersionId,
     created: String,
     id: &'a String,
     path: &'a String,
@@ -133,7 +132,6 @@ struct Listing<'a> {
 impl<'a> From<&'a OcflObject> for Listing<'a> {
     fn from(object: &'a OcflObject) -> Self {
         Self {
-            entry_type: String::from("o"),
             version: &object.head,
             created: object.head_version().created.format("%Y-%m-%d %H:%M:%S").to_string(),
             id: &object.id,
@@ -153,9 +151,8 @@ impl<'a> fmt::Display for FormatListing<'a> {
         // TODO allow time to be formatted as UTC or local?
 
         if self.command.long {
-            write!(f, "{entry_type}\t{version:>5}\t{created:<19}\t{id:<32}",
-                   entry_type = self.listing.entry_type,
-                   version = self.listing.version,
+            write!(f, "{version:>5}\t{created:<19}\t{id:<32}",
+                   version = self.listing.version.version_str,  // For some reason the formatting is not applied to the output of VersionId::fmt()
                    created = self.listing.created,
                    id = self.listing.id)?
         } else {

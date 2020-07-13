@@ -390,6 +390,8 @@ dependencies = [
  "chrono",
  "globset",
  "grep",
+ "lazy_static",
+ "regex",
  "serde",
  "serde_json",
  "structopt",

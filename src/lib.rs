@@ -1,14 +1,24 @@
 pub mod ocfl {
-    use std::collections::HashMap;
-
+    use std::collections::{HashMap, BTreeMap};
     use anyhow::{Result};
     use chrono::{Local, DateTime};
     use serde::Deserialize;
     use thiserror::Error;
+    use std::convert::TryFrom;
+    use lazy_static::lazy_static;
+    use regex::Regex;
+    use grep::regex::{RegexMatcher};
+    use core::fmt;
+    use serde::export::Formatter;
+    use std::cmp::Ordering;
+    use std::hash::{Hash, Hasher};
 
     const OBJECT_MARKER: &str = "0=ocfl_object_1.0";
 
-    const OBJECT_ID_PATTERN: &str = r#""id"\s*:\s*"([^"]+)""#;
+    lazy_static! {
+        static ref VERSION_REGEX: Regex = Regex::new(r#"^v\d+$"#).unwrap();
+        static ref OBJECT_ID_MATCHER: RegexMatcher = RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap();
+    }
 
     pub trait OcflRepo {
 
@@ -24,12 +34,10 @@ pub mod ocfl {
         use std::fs::{File, ReadDir};
         use std::path::{Path, PathBuf};
         use grep::searcher::Searcher;
-        use grep::regex::{RegexMatcher};
         use anyhow::{anyhow, Result};
-
-        use crate::ocfl::{OcflObject, OcflRepo, OBJECT_MARKER, OBJECT_ID_PATTERN, Inventory};
         use grep::searcher::sinks::UTF8;
         use grep::matcher::{Matcher, Captures};
+        use crate::ocfl::{OcflObject, OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory};
 
         pub struct FsOcflRepo {
             pub root: PathBuf
@@ -69,7 +77,6 @@ pub mod ocfl {
             dir_iters: Vec<ReadDir>,
             current: RefCell<Option<ReadDir>>,
             object_id: Option<String>,
-            id_matcher: RegexMatcher,
         }
 
         impl FsObjectIdIter {
@@ -80,15 +87,15 @@ pub mod ocfl {
                     dir_iters: vec![std::fs::read_dir(&root)?],
                     current: RefCell::new(None),
                     object_id,
-                    id_matcher: RegexMatcher::new(OBJECT_ID_PATTERN)?,
                 })
             }
 
+            // TODO this can move outside this type
             fn extract_object_id<P: AsRef<Path>>(&self, path: P) -> Result<String> {
                 let mut matches: Vec<String> = vec![];
-                Searcher::new().search_path(&self.id_matcher, &path, UTF8(|_, line| {
-                    let mut captures = self.id_matcher.new_captures()?;
-                    self.id_matcher.captures(line.as_bytes(), &mut captures)?;
+                Searcher::new().search_path(&*OBJECT_ID_MATCHER, &path, UTF8(|_, line| {
+                    let mut captures = OBJECT_ID_MATCHER.new_captures()?;
+                    OBJECT_ID_MATCHER.captures(line.as_bytes(), &mut captures)?;
                     matches.push(line[captures.get(1).unwrap()].to_string());
                     Ok(true)
                 }))?;
@@ -201,16 +208,94 @@ pub mod ocfl {
     }
 
     #[derive(Deserialize, Debug)]
+    #[serde(try_from = "&str")]
+    pub struct VersionId {
+        pub version_num: u32,
+        pub version_str: String,
+    }
+
+    impl TryFrom<&str> for VersionId {
+        type Error = RocError;
+
+        fn try_from(version: &str) -> Result<Self, Self::Error> {
+            if !VERSION_REGEX.is_match(version) {
+                return Err(RocError::IllegalArgument(format!("Invalid version {}", version)));
+            }
+
+           match version[1..].parse::<u32>() {
+               Ok(num) => {
+                   if num < 1 {
+                       return Err(RocError::IllegalArgument(format!("Invalid version {}", version)));
+                   }
+
+                   Ok(Self {
+                       version_num: num,
+                       version_str: version.to_string(),
+                   })
+               },
+               Err(_) => return Err(RocError::IllegalArgument(format!("Invalid version {}", version)))
+           }
+        }
+    }
+
+    impl TryFrom<u32> for VersionId {
+        type Error = RocError;
+
+        fn try_from(version: u32) -> Result<Self, Self::Error> {
+            if version < 1 {
+                return Err(RocError::IllegalArgument(format!("Invalid version number {}", version)));
+            }
+
+            Ok(Self {
+                version_num: version,
+                version_str: format!("v{}", version),
+            })
+        }
+    }
+
+    impl fmt::Display for VersionId {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            write!(f, "{}", self.version_str)
+        }
+    }
+
+    impl PartialEq for VersionId {
+        fn eq(&self, other: &Self) -> bool {
+            self.version_num == other.version_num
+        }
+    }
+
+    impl Eq for VersionId {}
+
+    impl Hash for VersionId {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            self.version_num.hash(state)
+        }
+    }
+
+    impl PartialOrd for VersionId {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl Ord for VersionId {
+        fn cmp(&self, other: &Self) -> Ordering {
+            self.version_num.cmp(&other.version_num)
+        }
+    }
+
+    #[derive(Deserialize, Debug)]
     #[serde(rename_all = "camelCase")]
     struct Inventory {
         id: String,
         #[serde(rename = "type")]
         type_declaration: String,
         digest_algorithm: String,
-        head: String,
+        head: VersionId,
         content_directory: Option<String>,
         manifest: HashMap<String, Vec<String>>,
-        versions: HashMap<String, Version>,
+        versions: BTreeMap<VersionId, Version>,
         fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
     }
 
@@ -244,14 +329,80 @@ pub mod ocfl {
 
     }
 
-    // TODO we usually only care about one version -- make a view of an object a specific state
+    pub struct OcflObjectVersion {
+        pub id: String,
+        pub version: String,
+        pub root: String,
+        pub created: DateTime<Local>,
+        pub state: HashMap<String, FileDetails>,
+        // TODO more fields
+    }
+
+    // impl OcflObjectVersion {
+    //
+    //     fn from(version: &str, root: &str, inventory: Inventory) -> Result<Self, RocError> {
+    //         let mut manifest = HashMap::new();
+    //
+    //         for (digest, paths) in inventory.manifest {
+    //             match paths.first() {
+    //                 Some(path) => {
+    //                     manifest.insert(digest, path.to_owned());
+    //                 },
+    //                 None => return Err(RocError::Validation {
+    //                     object_id: inventory.id,
+    //                     message: format!("No manifest entries found {}", digest)
+    //                 })
+    //             }
+    //         }
+    //
+    //         let mut versions = HashMap::new();
+    //
+    //         for (id, version) in inventory.versions {
+    //             versions.insert(id, OcflVersion::from(&inventory.id, version, &manifest)?);
+    //         }
+    //
+    //
+    //         match inventory.versions.get(version) {
+    //             Some(version) => {
+    //                 for (digest, paths) in &version.state {
+    //                     for path in paths {
+    //
+    //                     }
+    //                 }
+    //             },
+    //             None => return Err(RocError::NotFound {
+    //                 message: format!("Object {} version {}", inventory.id, version)
+    //             })
+    //         }
+    //
+    //
+    //         Ok(Self {
+    //             id: inventory.id,
+    //             version: version.to_string(),
+    //             root: root.to_string(),
+    //         })
+    //     }
+    //
+    // }
+
+    // TODO move
+    // fn create_last_update_index(versions: &HashMap<String, Version>) {
+    //
+    // }
+
+    pub struct FileDetails {
+        pub digest: String,
+        pub content_path: String,
+        pub last_update_version: String,
+        pub last_update: DateTime<Local>,
+    }
+
+
     pub struct OcflObject {
         pub id: String,
         pub root: String,
-        // TODO create object for version id rep
-        pub head: String,
-        versions: HashMap<String, OcflVersion>,
-
+        pub head: VersionId,
+        versions: BTreeMap<VersionId, OcflVersion>,
         // TODO add missing fields
     }
 
@@ -272,7 +423,7 @@ pub mod ocfl {
                 }
             }
 
-            let mut versions = HashMap::new();
+            let mut versions = BTreeMap::new();
 
             for (id, version) in inventory.versions {
                 versions.insert(id, OcflVersion::from(&inventory.id, version, &manifest)?);
@@ -341,6 +492,10 @@ pub mod ocfl {
             object_id: String,
             message: String,
         },
+        #[error("Not found: {0}")]
+        NotFound(String),
+        #[error("Illegal argument: {0}")]
+        IllegalArgument(String)
     }
 
 }
