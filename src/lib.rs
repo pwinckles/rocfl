@@ -27,7 +27,7 @@ pub mod ocfl {
         use grep::regex::{RegexMatcher};
         use anyhow::{anyhow, Result};
 
-        use crate::ocfl::{OcflObject, OcflRepo, OBJECT_MARKER, OBJECT_ID_PATTERN};
+        use crate::ocfl::{OcflObject, OcflRepo, OBJECT_MARKER, OBJECT_ID_PATTERN, Inventory};
         use grep::searcher::sinks::UTF8;
         use grep::matcher::{Matcher, Captures};
 
@@ -47,11 +47,11 @@ pub mod ocfl {
 
         impl OcflRepo for FsOcflRepo {
 
-            fn list_objects(&self) -> Result<Box<dyn Iterator<Item=Result<OcflObject>>>> {
+            fn list_objects<'a>(&self) -> Result<Box<dyn Iterator<Item=Result<OcflObject>>>> {
                 Ok(Box::new(FsObjectIdIter::new(&self.root, None)?))
             }
 
-            fn get_object(&self, object_id: &str) -> Result<Option<OcflObject>> {
+            fn get_object<'a>(&self, object_id: &str) -> Result<Option<OcflObject>> {
                 let mut iter = FsObjectIdIter::new(&self.root, Some(object_id.to_string()))?;
                 loop {
                     match iter.next() {
@@ -186,14 +186,15 @@ pub mod ocfl {
             Ok(false)
         }
 
-        fn read_inventory<P: AsRef<Path>>(path: P) -> Result<OcflObject> {
+        fn read_inventory<'a, P: AsRef<Path>>(path: P) -> Result<OcflObject> {
             let mut bytes = Vec::new();
             File::open(&path)?.read_to_end(&mut bytes)?;
-            let mut object: OcflObject = serde_json::from_slice(&bytes)?;
-            object.root = String::from(path.as_ref().parent()
+            let inventory: Inventory = serde_json::from_slice(&bytes)?;
+            let root = String::from(path.as_ref().parent()
                 .unwrap_or_else(|| Path::new(""))
                 .to_str().unwrap_or_default());
-            object.validate()?;
+            inventory.validate()?;
+            let object = OcflObject::from(root.as_str(), inventory)?;
             Ok(object)
         }
 
@@ -201,36 +202,33 @@ pub mod ocfl {
 
     #[derive(Deserialize, Debug)]
     #[serde(rename_all = "camelCase")]
-    pub struct OcflObject {
-        pub id: String,
+    struct Inventory {
+        id: String,
         #[serde(rename = "type")]
-        pub type_declaration: String,
-        pub digest_algorithm: String,
-        pub head: String,
-        pub content_directory: Option<String>,
-        pub manifest: HashMap<String, Vec<String>>,
-        pub versions: HashMap<String, Version>,
-        pub fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
-
-        #[serde(skip_serializing, skip_deserializing)]
-        pub root: String,
+        type_declaration: String,
+        digest_algorithm: String,
+        head: String,
+        content_directory: Option<String>,
+        manifest: HashMap<String, Vec<String>>,
+        versions: HashMap<String, Version>,
+        fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
     }
 
     #[derive(Deserialize, Debug)]
-    pub struct Version {
-        pub created: DateTime<Local>,
-        pub state: HashMap<String, Vec<String>>,
-        pub message: Option<String>,
-        pub user: Option<User>
+    struct Version {
+        created: DateTime<Local>,
+        state: HashMap<String, Vec<String>>,
+        message: Option<String>,
+        user: Option<User>
     }
 
     #[derive(Deserialize, Debug)]
-    pub struct User {
-        pub name: Option<String>,
-        pub address: Option<String>
+    struct User {
+        name: Option<String>,
+        address: Option<String>
     }
 
-    impl OcflObject {
+    impl Inventory {
 
         // TODO fill in more validations
         // TODO have a shallow and a deep validation
@@ -244,11 +242,96 @@ pub mod ocfl {
             Ok(())
         }
 
-        pub fn head_version(&self) -> &Version {
-            // Should be safe to call unwrap provided that validate() was called after creation
-            self.versions.get(&self.head).unwrap()
+    }
+
+    // TODO we usually only care about one version -- make a view of an object a specific state
+    pub struct OcflObject {
+        pub id: String,
+        pub root: String,
+        // TODO create object for version id rep
+        pub head: String,
+        versions: HashMap<String, OcflVersion>,
+
+        // TODO add missing fields
+    }
+
+    impl OcflObject {
+
+        fn from(root: &str, inventory: Inventory) -> Result<Self, RocError> {
+            let mut manifest = HashMap::new();
+
+            for (digest, paths) in inventory.manifest {
+                match paths.first() {
+                    Some(path) => {
+                        manifest.insert(digest, path.to_owned());
+                    },
+                    None => return Err(RocError::Validation {
+                        object_id: inventory.id,
+                        message: format!("No manifest entries found {}", digest)
+                    })
+                }
+            }
+
+            let mut versions = HashMap::new();
+
+            for (id, version) in inventory.versions {
+                versions.insert(id, OcflVersion::from(&inventory.id, version, &manifest)?);
+            }
+
+            Ok(Self {
+                id: inventory.id,
+                root: root.to_string(),
+                head: inventory.head,
+                versions
+            })
         }
 
+        pub fn head_version(&self) -> &OcflVersion {
+            self.versions.get(&self.head).expect("Head version not found")
+        }
+
+    }
+
+    pub struct OcflVersion {
+        pub created: DateTime<Local>,
+        state: HashMap<String, ManifestEntry>,
+        // TODO add missing fields
+    }
+
+    impl OcflVersion {
+
+        fn from(object_id: &str, version: Version, manifest: &HashMap<String, String>) -> Result<Self, RocError> {
+            let mut state = HashMap::new();
+
+            for (digest, paths) in version.state {
+                for path in paths {
+                    match manifest.get(&digest) {
+                        Some(content_path) => {
+                            state.insert(path, ManifestEntry{
+                                digest: digest.clone(),
+                                content_path: content_path.clone(),
+                            });
+                        },
+                        None => return Err(RocError::Validation {
+                            object_id: object_id.to_string(),
+                            message: format!("No manifest entries found {}", digest)
+                        })
+                    }
+                }
+            }
+
+            Ok(Self {
+                created: version.created,
+                state
+            })
+        }
+
+    }
+
+    struct ManifestEntry {
+        // TODO ideally these wouldn't be owned...
+        digest: String,
+        content_path: String,
     }
 
     #[derive(Error, Debug)]
