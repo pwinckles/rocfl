@@ -100,6 +100,15 @@ pub mod ocfl {
                 }
             }
 
+            fn parse_inventory<P: AsRef<Path>>(&self, path: P) -> Option<Result<OcflObject>> {
+                match read_inventory(&path) {
+                    Ok(object) => Some(Ok(object)),
+                    Err(e) => Some(Err(
+                        e.context(format!("Failed to parse inventory at {}",
+                                          path.as_ref().to_str().unwrap_or_default()))))
+                }
+            }
+
         }
 
         impl Iterator for FsObjectIdIter {
@@ -130,20 +139,18 @@ pub mod ocfl {
                                         Ok(is_root) if is_root => {
                                             let inventory_path = path.join("inventory.json");
 
-                                            match self.extract_object_id(&inventory_path) {
-                                                Ok(object_id) => {
-                                                    if self.object_id.is_none()
-                                                        || self.object_id.as_ref().unwrap().eq(&object_id) {
+                                            if !self.object_id.is_none() {
+                                                match self.extract_object_id(&inventory_path) {
+                                                    Ok(object_id) => {
                                                         // TODO compare id with glob search pattern https://crates.io/crates/globset
-                                                        return match read_inventory(&inventory_path) {
-                                                            Ok(object) => Some(Ok(object)),
-                                                            Err(e) => Some(Err(
-                                                                e.context(format!("Failed to parse inventory at {}",
-                                                                                  inventory_path.to_str().unwrap_or_default()))))
+                                                        if self.object_id.as_ref().unwrap().eq(&object_id) {
+                                                            return self.parse_inventory(&inventory_path);
                                                         }
-                                                    }
-                                                },
-                                                Err(e) => return Some(Err(e))
+                                                    },
+                                                    Err(e) => return Some(Err(e))
+                                                }
+                                            } else {
+                                                return self.parse_inventory(&inventory_path);
                                             }
                                         },
                                         Ok(is_root) if !is_root => {
