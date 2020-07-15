@@ -46,6 +46,8 @@ pub struct List {
     #[structopt(short, long)]
     pub physical: bool,
 
+    // TODO digest flag
+
     /// Specifies the version of the object to use. Default: HEAD version.
     #[structopt(short, long, value_name = "NUM")]
     pub version: Option<u32>,
@@ -53,6 +55,10 @@ pub struct List {
     /// ID of the object to list
     #[structopt(name = "OBJECT")]
     pub object_id: Option<String>,
+
+    // TODO path glob
+
+    // TODO sorting
 }
 
 fn main() {
@@ -103,11 +109,10 @@ fn print_object(object: &OcflObjectVersion, command: &List) {
 }
 
 fn print_object_contents(object: &OcflObjectVersion, command: &List) {
-    // TODO without -l should only print logical paths
     // TODO storage path should be displayed with -p
     for (path, details) in &object.state {
         println!("{}", FormatListing{
-            listing: &Listing::new(&object.id, path, details),
+            listing: &Listing::new(path, details),
             command
         })
     }
@@ -131,18 +136,18 @@ fn print_err(error: Box<dyn Error>, quiet: bool) {
 struct Listing<'a> {
     version: &'a VersionId,
     created: String,
-    id: &'a String,
-    path: &'a String,
+    entry: &'a String,
+    storage_path: &'a String,
 }
 
 impl<'a> Listing<'a> {
 
-    fn new(id: &'a String, path: &'a String, details: &'a FileDetails) -> Self {
+    fn new(path: &'a String, details: &'a FileDetails) -> Self {
         Self {
             version: &details.last_update.version,
             created: details.last_update.created.format("%Y-%m-%d %H:%M:%S").to_string(),
-            id,
-            path
+            entry: path,
+            storage_path: &details.content_path
         }
     }
 
@@ -153,8 +158,8 @@ impl<'a> From<&'a OcflObjectVersion> for Listing<'a> {
         Self {
             version: &object.version,
             created: object.created.format("%Y-%m-%d %H:%M:%S").to_string(),
-            id: &object.id,
-            path: &object.root,
+            entry: &object.id,
+            storage_path: &object.root,
         }
     }
 }
@@ -170,16 +175,16 @@ impl<'a> fmt::Display for FormatListing<'a> {
         // TODO allow time to be formatted as UTC or local?
 
         if self.command.long {
-            write!(f, "{version:>5}\t{created:<19}\t{id:<32}",
+            write!(f, "{version:>5}\t{created:<19}\t{entry:<42}",
                    version = self.listing.version.version_str,  // For some reason the formatting is not applied to the output of VersionId::fmt()
                    created = self.listing.created,
-                   id = self.listing.id)?
+                   entry = self.listing.entry)?
         } else {
-            write!(f, "{:<32}", self.listing.id)?
+            write!(f, "{:<42}", self.listing.entry)?
         }
 
         if self.command.physical {
-            write!(f, "\t{}", self.listing.path)?
+            write!(f, "\t{}", self.listing.storage_path)?
         }
 
         Ok(())
