@@ -11,6 +11,7 @@ use std::convert::TryFrom;
 use rocfl::{OcflObjectVersion, FileDetails, VersionId, OcflRepo, FsOcflRepo};
 use std::cmp::Ordering;
 use chrono::{DateTime, Local};
+use globset::Glob;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
@@ -70,8 +71,9 @@ struct List {
     #[structopt(name = "OBJECT")]
     object_id: Option<String>,
 
-    // TODO path glob
-
+    /// Path glob of files to list. May only be specified if an object is also specified.
+    #[structopt(name = "PATH_GLOB")]
+    path_glob: Option<String>,
 }
 
 arg_enum! {
@@ -113,26 +115,40 @@ fn exec_command(repo: &FsOcflRepo, args: &AppArgs) -> Result<()> {
     Ok(())
 }
 
+// TODO move to cmds module?
 fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()> {
     if let Some(object_id) = &command.object_id {
-        let version = parse_version(command.version)?;
-        match repo.get_object(object_id, version.clone()) {
-            Ok(Some(object)) => print_object_contents(&object, command),
-            Ok(None) => {
-                match version {
-                    Some(version) => println!("Object {} version {} was not found", object_id, version),
-                    None => println!("Object {} was not found", object_id),
-                }
-            },
-            Err(e) => print_err(e.into(), args.quiet)
-        }
+        list_object_contents(object_id, repo, command)?;
     } else {
-        for object in repo.list_objects()
-            .with_context(|| "Failed to list objects")? {
-            match object {
-                Ok(object) => print_object(&object, command),
-                Err(e) => print_err(e.into(), args.quiet)
+        list_objects(repo, command, args)?;
+    }
+
+    Ok(())
+}
+
+fn list_object_contents(object_id: &String, repo: &FsOcflRepo, command: &List) -> Result<()> {
+    let version = parse_version(command.version)?;
+
+    match repo.get_object(object_id, version.clone())
+        .with_context(|| "Failed to list object")? {
+        Some(object) => print_object_contents(&object, command)?,
+        None => {
+            match version {
+                Some(version) => println!("Object {} version {} was not found", object_id, version),
+                None => println!("Object {} was not found", object_id),
             }
+        },
+    }
+
+    Ok(())
+}
+
+fn list_objects(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()> {
+    for object in repo.list_objects()
+        .with_context(|| "Failed to list objects")? {
+        match object {
+            Ok(object) => print_object(&object, command),
+            Err(e) => print_err(e.into(), args.quiet)
         }
     }
 
@@ -146,9 +162,19 @@ fn print_object(object: &OcflObjectVersion, command: &List) {
     })
 }
 
-fn print_object_contents(object: &OcflObjectVersion, command: &List) {
+fn print_object_contents(object: &OcflObjectVersion, command: &List) -> Result<()> {
+    let mut glob = None;
+    if command.path_glob.is_some() {
+        glob = Some(Glob::new(command.path_glob.as_ref().unwrap())?.compile_matcher());
+    }
+
     let mut listings: Vec<Listing> = object.state.iter().map(|(path, details)| {
         Listing::new(path, details, &object.digest_algorithm)
+    }).filter(|listing| {
+        match &glob {
+            Some(glob) => glob.is_match(&listing.name),
+            None => true
+        }
     }).collect();
 
     listings.sort_unstable_by(|a, b| {
@@ -165,6 +191,8 @@ fn print_object_contents(object: &OcflObjectVersion, command: &List) {
             command
         })
     }
+
+    Ok(())
 }
 
 fn print_err(error: Box<dyn Error>, quiet: bool) {
@@ -179,6 +207,13 @@ fn print_err(error: Box<dyn Error>, quiet: bool) {
             },
             Err(_) => eprintln!("Error: {:#}", error)
         }
+    }
+}
+
+fn parse_version(version_num: Option<u32>) -> Result<Option<VersionId>> {
+    match version_num {
+        Some(version_num) => Ok(Some(VersionId::try_from(version_num)?)),
+        None => Ok(None)
     }
 }
 
@@ -251,12 +286,5 @@ impl<'a> fmt::Display for FormatListing<'a> {
         }
 
         Ok(())
-    }
-}
-
-fn parse_version(version_num: Option<u32>) -> Result<Option<VersionId>> {
-    match version_num {
-        Some(version_num) => Ok(Some(VersionId::try_from(version_num)?)),
-        None => Ok(None)
     }
 }
