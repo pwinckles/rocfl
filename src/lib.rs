@@ -1,5 +1,5 @@
 pub mod ocfl {
-    use std::collections::{HashMap, BTreeMap};
+    use std::collections::{HashMap};
     use anyhow::{Result};
     use chrono::{Local, DateTime};
     use serde::Deserialize;
@@ -22,9 +22,9 @@ pub mod ocfl {
 
     pub trait OcflRepo {
 
-        fn list_objects(&self) -> Result<Box<dyn Iterator<Item=Result<OcflObject>>>>;
+        fn list_objects(&self) -> Result<Box<dyn Iterator<Item=Result<OcflObjectVersion>>>>;
 
-        fn get_object(&self, object_id: &str) -> Result<Option<OcflObject>>;
+        fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<Option<OcflObjectVersion>>;
 
     }
 
@@ -34,10 +34,10 @@ pub mod ocfl {
         use std::fs::{File, ReadDir};
         use std::path::{Path, PathBuf};
         use grep::searcher::Searcher;
-        use anyhow::{anyhow, Result};
+        use anyhow::{anyhow, Result, Context};
         use grep::searcher::sinks::UTF8;
         use grep::matcher::{Matcher, Captures};
-        use crate::ocfl::{OcflObject, OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory};
+        use crate::ocfl::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, OcflObjectVersion, VersionId};
 
         pub struct FsOcflRepo {
             pub root: PathBuf
@@ -55,12 +55,12 @@ pub mod ocfl {
 
         impl OcflRepo for FsOcflRepo {
 
-            fn list_objects<'a>(&self) -> Result<Box<dyn Iterator<Item=Result<OcflObject>>>> {
-                Ok(Box::new(FsObjectIdIter::new(&self.root, None)?))
+            fn list_objects(&self) -> Result<Box<dyn Iterator<Item=Result<OcflObjectVersion>>>> {
+                Ok(Box::new(FsObjectIdIter::new(&self.root, None, None)?))
             }
 
-            fn get_object<'a>(&self, object_id: &str) -> Result<Option<OcflObject>> {
-                let mut iter = FsObjectIdIter::new(&self.root, Some(object_id.to_string()))?;
+            fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<Option<OcflObjectVersion>> {
+                let mut iter = FsObjectIdIter::new(&self.root, Some(object_id.to_string()), version)?;
                 loop {
                     match iter.next() {
                         Some(Ok(object)) => return Ok(Some(object)),
@@ -77,16 +77,18 @@ pub mod ocfl {
             dir_iters: Vec<ReadDir>,
             current: RefCell<Option<ReadDir>>,
             object_id: Option<String>,
+            version: Option<VersionId>,
         }
 
         impl FsObjectIdIter {
 
             // TODO support glob matching instead of exact matching
-            fn new<P: AsRef<Path>>(root: P, object_id: Option<String>) -> Result<FsObjectIdIter> {
+            fn new<P: AsRef<Path>>(root: P, object_id: Option<String>, version: Option<VersionId>) -> Result<FsObjectIdIter> {
                 Ok(FsObjectIdIter {
                     dir_iters: vec![std::fs::read_dir(&root)?],
                     current: RefCell::new(None),
                     object_id,
+                    version,
                 })
             }
 
@@ -107,21 +109,19 @@ pub mod ocfl {
                 }
             }
 
-            fn parse_inventory<P: AsRef<Path>>(&self, path: P) -> Option<Result<OcflObject>> {
-                match read_inventory(&path) {
+            fn create_object_version<P: AsRef<Path>>(&self, path: P) -> Option<Result<OcflObjectVersion>> {
+                match create_object_version(&self.version, &path) {
                     Ok(object) => Some(Ok(object)),
-                    Err(e) => Some(Err(
-                        e.context(format!("Failed to parse inventory at {}",
-                                          path.as_ref().to_str().unwrap_or_default()))))
+                    Err(e) => Some(Err(e))
                 }
             }
 
         }
 
         impl Iterator for FsObjectIdIter {
-            type Item = Result<OcflObject>;
+            type Item = Result<OcflObjectVersion>;
 
-            fn next(&mut self) -> Option<Result<OcflObject>> {
+            fn next(&mut self) -> Option<Result<OcflObjectVersion>> {
                 loop {
                     if self.current.borrow().is_none() && self.dir_iters.is_empty() {
                         return None
@@ -151,13 +151,13 @@ pub mod ocfl {
                                                     Ok(object_id) => {
                                                         // TODO compare id with glob search pattern https://crates.io/crates/globset
                                                         if self.object_id.as_ref().unwrap().eq(&object_id) {
-                                                            return self.parse_inventory(&inventory_path);
+                                                            return self.create_object_version(&inventory_path);
                                                         }
                                                     },
                                                     Err(e) => return Some(Err(e))
                                                 }
                                             } else {
-                                                return self.parse_inventory(&inventory_path);
+                                                return self.create_object_version(&inventory_path);
                                             }
                                         },
                                         Ok(is_root) if !is_root => {
@@ -193,16 +193,24 @@ pub mod ocfl {
             Ok(false)
         }
 
-        fn read_inventory<'a, P: AsRef<Path>>(path: P) -> Result<OcflObject> {
-            let mut bytes = Vec::new();
-            File::open(&path)?.read_to_end(&mut bytes)?;
-            let inventory: Inventory = serde_json::from_slice(&bytes)?;
+        fn create_object_version<P: AsRef<Path>>(version: &Option<VersionId>, path: P) -> Result<OcflObjectVersion> {
             let root = String::from(path.as_ref().parent()
                 .unwrap_or_else(|| Path::new(""))
                 .to_str().unwrap_or_default());
+            let inventory = parse_inventory(&path)
+                .with_context(|| format!("Failed to parse inventory at {}",
+                                         path.as_ref().to_str().unwrap_or_default()))?;
+            let head = inventory.head.clone();
+            let v = version.as_ref().unwrap_or_else(|| &head);
+            OcflObjectVersion::new(v, &root, &inventory)
+        }
+
+        fn parse_inventory<P: AsRef<Path>>(path: P) -> Result<Inventory> {
+            let mut bytes = Vec::new();
+            File::open(&path)?.read_to_end(&mut bytes)?;
+            let inventory: Inventory = serde_json::from_slice(&bytes)?;
             inventory.validate()?;
-            let object = OcflObject::from(root.as_str(), inventory)?;
-            Ok(object)
+            Ok(inventory)
         }
 
     }
@@ -212,6 +220,20 @@ pub mod ocfl {
     pub struct VersionId {
         pub version_num: u32,
         pub version_str: String,
+    }
+
+    impl VersionId {
+
+        // TODO breaks 0-padding
+        fn previous(&self) -> Result<VersionId, RocError> {
+            VersionId::try_from(self.version_num - 1)
+        }
+
+        // TODO breaks 0-padding
+        fn next(&self) -> Result<VersionId, RocError> {
+            VersionId::try_from(self.version_num + 1)
+        }
+
     }
 
     impl TryFrom<&str> for VersionId {
@@ -250,6 +272,15 @@ pub mod ocfl {
                 version_num: version,
                 version_str: format!("v{}", version),
             })
+        }
+    }
+
+    impl Clone for VersionId {
+        fn clone(&self) -> Self {
+            Self {
+                version_num: self.version_num.clone(),
+                version_str: self.version_str.clone(),
+            }
         }
     }
 
@@ -295,7 +326,7 @@ pub mod ocfl {
         head: VersionId,
         content_directory: Option<String>,
         manifest: HashMap<String, Vec<String>>,
-        versions: BTreeMap<VersionId, Version>,
+        versions: HashMap<VersionId, Version>,
         fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
     }
 
@@ -331,78 +362,142 @@ pub mod ocfl {
 
     pub struct OcflObjectVersion {
         pub id: String,
-        pub version: String,
+        pub version: VersionId,
         pub root: String,
         pub created: DateTime<Local>,
         pub state: HashMap<String, FileDetails>,
         // TODO more fields
     }
 
-    // impl OcflObjectVersion {
-    //
-    //     fn from(version: &str, root: &str, inventory: Inventory) -> Result<Self, RocError> {
-    //         let mut manifest = HashMap::new();
-    //
-    //         for (digest, paths) in inventory.manifest {
-    //             match paths.first() {
-    //                 Some(path) => {
-    //                     manifest.insert(digest, path.to_owned());
-    //                 },
-    //                 None => return Err(RocError::Validation {
-    //                     object_id: inventory.id,
-    //                     message: format!("No manifest entries found {}", digest)
-    //                 })
-    //             }
-    //         }
-    //
-    //         let mut versions = HashMap::new();
-    //
-    //         for (id, version) in inventory.versions {
-    //             versions.insert(id, OcflVersion::from(&inventory.id, version, &manifest)?);
-    //         }
-    //
-    //
-    //         match inventory.versions.get(version) {
-    //             Some(version) => {
-    //                 for (digest, paths) in &version.state {
-    //                     for path in paths {
-    //
-    //                     }
-    //                 }
-    //             },
-    //             None => return Err(RocError::NotFound {
-    //                 message: format!("Object {} version {}", inventory.id, version)
-    //             })
-    //         }
-    //
-    //
-    //         Ok(Self {
-    //             id: inventory.id,
-    //             version: version.to_string(),
-    //             root: root.to_string(),
-    //         })
-    //     }
-    //
-    // }
-
-    // TODO move
-    // fn create_last_update_index(versions: &HashMap<String, Version>) {
-    //
-    // }
-
     pub struct FileDetails {
         pub digest: String,
+        // TODO need storage path
         pub content_path: String,
-        pub last_update_version: String,
-        pub last_update: DateTime<Local>,
+        // TODO see about making this a reference
+        pub last_update: VersionDetails,
     }
 
+    pub struct VersionDetails {
+        pub version: VersionId,
+        pub created: DateTime<Local>,
+    }
+
+    impl OcflObjectVersion {
+
+        fn new(version: &VersionId, root: &str, inventory: &Inventory) -> Result<Self> {
+            let state = construct_state(&version, inventory)?;
+
+            Ok(Self {
+                id: inventory.id.clone(),
+                version: version.clone(),
+                root: root.to_string(),
+                created: ensure_version(version, inventory)?.created.clone(),
+                state
+            })
+        }
+
+    }
+
+    fn construct_state(target: &VersionId, inventory: &Inventory) -> Result<HashMap<String, FileDetails>> {
+        let mut state = HashMap::new();
+
+        let target_version = ensure_version(target, inventory)?;
+        let mut target_path_map = invert_path_map(&target_version.state);
+
+        let mut current_version_id = (*target).clone();
+        let mut current = target_version;
+
+        while !target_path_map.is_empty() {
+            let mut found: Vec<String> = vec![];
+
+            if current_version_id.version_num == 1 {
+                for (target_path, target_digest) in target_path_map.into_iter() {
+                    state.insert(target_path, FileDetails {
+                        content_path: lookup_content_path(&target_digest, inventory)?.to_string(),
+                        digest: target_digest,
+                        last_update: VersionDetails {
+                            version: current_version_id.clone(),
+                            created: current.created.clone()
+                        }
+                    });
+                }
+
+                break;
+            }
+
+            let previous_version_id = current_version_id.previous()?;
+            let previous = ensure_version(&previous_version_id, inventory)?;
+            let mut previous_path_map = invert_path_map(&previous.state);
+
+            for (target_path, target_digest) in target_path_map.iter() {
+                let entry = previous_path_map.remove_entry(target_path);
+
+                if entry.is_none() || entry.unwrap().1 != *target_digest {
+                    found.push(target_path.clone());
+                    state.insert(target_path.clone(), FileDetails {
+                        digest: target_digest.clone(),
+                        content_path: lookup_content_path(&target_digest, inventory)?.to_string(),
+                        last_update: VersionDetails {
+                            version: current_version_id.clone(),
+                            created: current.created.clone()
+                        }
+                    });
+                }
+            }
+
+            current_version_id = previous_version_id;
+            current = previous;
+
+            for path in found {
+                target_path_map.remove(&path);
+            }
+        }
+
+        Ok(state)
+    }
+
+    fn ensure_version<'a, 'b>(version: &'b VersionId, inventory: &'a Inventory) -> Result<&'a Version> {
+        match inventory.versions.get(version) {
+            Some(v) => Ok(v),
+            None => Err(RocError::NotFound(format!("Object {} version {}", inventory.id, version)).into())
+        }
+    }
+
+    fn invert_path_map(map: &HashMap<String, Vec<String>>) -> HashMap<String, String> {
+        let mut inverted = HashMap::new();
+
+        for (digest, paths) in map {
+            for path in paths {
+                inverted.insert(path.clone(), digest.clone());
+            }
+        }
+
+        inverted
+    }
+
+    fn lookup_content_path<'a>(digest: &'a str, inventory: &'a Inventory) -> Result<&'a str> {
+        match inventory.manifest.get(digest) {
+            Some(paths) => {
+                match paths.first() {
+                    Some(path) => Ok(path.as_str()),
+                    None => Err(RocError::CorruptObject {
+                        object_id: inventory.id.clone(),
+                        message: format!("Digest {} is not mapped to any content paths", digest)
+                    }.into())
+                }
+            },
+            None => Err(RocError::CorruptObject {
+                object_id: inventory.id.clone(),
+                message: format!("Digest {} not found in manifest", digest)
+            }.into())
+        }
+    }
 
     pub struct OcflObject {
         pub id: String,
         pub root: String,
         pub head: VersionId,
-        versions: BTreeMap<VersionId, OcflVersion>,
+        versions: HashMap<VersionId, OcflVersion>,
         // TODO add missing fields
     }
 
@@ -423,7 +518,7 @@ pub mod ocfl {
                 }
             }
 
-            let mut versions = BTreeMap::new();
+            let mut versions = HashMap::new();
 
             for (id, version) in inventory.versions {
                 versions.insert(id, OcflVersion::from(&inventory.id, version, &manifest)?);
@@ -489,6 +584,11 @@ pub mod ocfl {
     pub enum RocError {
         #[error("Object {object_id} failed validation: {message}")]
         Validation {
+            object_id: String,
+            message: String,
+        },
+        #[error("Object {object_id} is corrupt: {message}")]
+        CorruptObject {
             object_id: String,
             message: String,
         },

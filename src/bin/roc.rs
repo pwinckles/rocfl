@@ -1,6 +1,6 @@
 use structopt::StructOpt;
 use structopt::clap::AppSettings::{ColorAuto, ColoredHelp};
-use roc::ocfl::{OcflRepo, OcflObject, VersionId};
+use roc::ocfl::{OcflRepo, VersionId, OcflObjectVersion, FileDetails};
 use roc::ocfl::fs::FsOcflRepo;
 use anyhow::{Result, Context};
 use std::error::Error;
@@ -8,6 +8,7 @@ use std::io::Write;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use serde::export::Formatter;
 use core::fmt;
+use std::convert::TryFrom;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "roc", author = "Peter Winckles <pwinckles@pm.me>")]
@@ -75,8 +76,9 @@ fn exec_command(repo: &FsOcflRepo, args: &AppArgs) -> Result<()> {
 // TODO implement command execution as a trait?
 fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()> {
     if let Some(object_id) = &command.object_id {
-        match repo.get_object(object_id) {
-            Ok(Some(object)) => print_object(&object, command),
+        match repo.get_object(object_id, parse_version(command.version)?) {
+            // TODO need flag equiv of -d so that single objects can be listed
+            Ok(Some(object)) => print_object_contents(&object, command),
             Ok(None) => println!("Object {} was not found", object_id),
             Err(e) => print_err(e.into(), args.quiet)
         }
@@ -93,19 +95,23 @@ fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()>
     Ok(())
 }
 
-fn print_object(object: &OcflObject, command: &List) {
+fn print_object(object: &OcflObjectVersion, command: &List) {
     println!("{}", FormatListing {
         listing: &Listing::from(object),
         command
     })
 }
 
-// fn print_object_contents(object: &OcflObject, command: &List) {
-//     println!("{}", FormatListing{
-//         listing: &Listing::from(object),
-//         command
-//     })
-// }
+fn print_object_contents(object: &OcflObjectVersion, command: &List) {
+    // TODO without -l should only print logical paths
+    // TODO storage path should be displayed with -p
+    for (path, details) in &object.state {
+        println!("{}", FormatListing{
+            listing: &Listing::new(&object.id, path, details),
+            command
+        })
+    }
+}
 
 fn print_err(error: Box<dyn Error>, quiet: bool) {
     if !quiet {
@@ -129,11 +135,24 @@ struct Listing<'a> {
     path: &'a String,
 }
 
-impl<'a> From<&'a OcflObject> for Listing<'a> {
-    fn from(object: &'a OcflObject) -> Self {
+impl<'a> Listing<'a> {
+
+    fn new(id: &'a String, path: &'a String, details: &'a FileDetails) -> Self {
         Self {
-            version: &object.head,
-            created: object.head_version().created.format("%Y-%m-%d %H:%M:%S").to_string(),
+            version: &details.last_update.version,
+            created: details.last_update.created.format("%Y-%m-%d %H:%M:%S").to_string(),
+            id,
+            path
+        }
+    }
+
+}
+
+impl<'a> From<&'a OcflObjectVersion> for Listing<'a> {
+    fn from(object: &'a OcflObjectVersion) -> Self {
+        Self {
+            version: &object.version,
+            created: object.created.format("%Y-%m-%d %H:%M:%S").to_string(),
             id: &object.id,
             path: &object.root,
         }
@@ -164,5 +183,12 @@ impl<'a> fmt::Display for FormatListing<'a> {
         }
 
         Ok(())
+    }
+}
+
+fn parse_version(version_num: Option<u32>) -> Result<Option<VersionId>> {
+    match version_num {
+        Some(version_num) => Ok(Some(VersionId::try_from(version_num)?)),
+        None => Ok(None)
     }
 }
