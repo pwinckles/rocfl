@@ -12,8 +12,10 @@ pub mod ocfl {
     use serde::export::Formatter;
     use std::cmp::Ordering;
     use std::hash::{Hash, Hasher};
+    use std::path::Path;
 
     const OBJECT_MARKER: &str = "0=ocfl_object_1.0";
+    const INVENTORY_FILE: &str = "inventory.json";
 
     lazy_static! {
         static ref VERSION_REGEX: Regex = Regex::new(r#"^v\d+$"#).unwrap();
@@ -37,7 +39,7 @@ pub mod ocfl {
         use anyhow::{anyhow, Result, Context};
         use grep::searcher::sinks::UTF8;
         use grep::matcher::{Matcher, Captures};
-        use crate::ocfl::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, OcflObjectVersion, VersionId};
+        use crate::ocfl::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, OcflObjectVersion, VersionId, INVENTORY_FILE};
 
         pub struct FsOcflRepo {
             pub root: PathBuf
@@ -144,20 +146,20 @@ pub mod ocfl {
 
                                     match is_object_root(&path) {
                                         Ok(is_root) if is_root => {
-                                            let inventory_path = path.join("inventory.json");
+                                            let inventory_path = path.join(INVENTORY_FILE);
 
                                             if !self.object_id.is_none() {
                                                 match self.extract_object_id(&inventory_path) {
                                                     Ok(object_id) => {
                                                         // TODO compare id with glob search pattern https://crates.io/crates/globset
                                                         if self.object_id.as_ref().unwrap().eq(&object_id) {
-                                                            return self.create_object_version(&inventory_path);
+                                                            return self.create_object_version(&path);
                                                         }
                                                     },
                                                     Err(e) => return Some(Err(e))
                                                 }
                                             } else {
-                                                return self.create_object_version(&inventory_path);
+                                                return self.create_object_version(&path);
                                             }
                                         },
                                         Ok(is_root) if !is_root => {
@@ -193,16 +195,15 @@ pub mod ocfl {
             Ok(false)
         }
 
-        fn create_object_version<P: AsRef<Path>>(version: &Option<VersionId>, path: P) -> Result<OcflObjectVersion> {
-            let root = String::from(path.as_ref().parent()
-                .unwrap_or_else(|| Path::new(""))
-                .to_str().unwrap_or_default());
-            let inventory = parse_inventory(&path)
+        fn create_object_version<P: AsRef<Path>>(version: &Option<VersionId>, object_root: P) -> Result<OcflObjectVersion> {
+            // TODO support mutable head
+            let inventory_path = object_root.as_ref().join(INVENTORY_FILE);
+            let inventory = parse_inventory(&inventory_path)
                 .with_context(|| format!("Failed to parse inventory at {}",
-                                         path.as_ref().to_str().unwrap_or_default()))?;
+                                         inventory_path.to_str().unwrap_or_default()))?;
             let head = inventory.head.clone();
             let v = version.as_ref().unwrap_or_else(|| &head);
-            OcflObjectVersion::new(v, &root, &inventory)
+            OcflObjectVersion::new(object_root, v, &inventory)
         }
 
         fn parse_inventory<P: AsRef<Path>>(path: P) -> Result<Inventory> {
@@ -350,7 +351,7 @@ pub mod ocfl {
         // TODO have a shallow and a deep validation
         pub fn validate(&self) -> Result<(), RocError> {
             if !self.versions.contains_key(&self.head) {
-                return Err(RocError::Validation {
+                return Err(RocError::CorruptObject {
                     object_id: self.id.clone(),
                     message: format!("HEAD version {} was not found", self.head),
                 })
@@ -371,8 +372,8 @@ pub mod ocfl {
 
     pub struct FileDetails {
         pub digest: String,
-        // TODO need storage path
         pub content_path: String,
+        pub storage_path: String,
         // TODO see about making this a reference
         pub last_update: VersionDetails,
     }
@@ -384,13 +385,13 @@ pub mod ocfl {
 
     impl OcflObjectVersion {
 
-        fn new(version: &VersionId, root: &str, inventory: &Inventory) -> Result<Self> {
-            let state = construct_state(&version, inventory)?;
+        fn new<P: AsRef<Path>>(root: P, version: &VersionId, inventory: &Inventory) -> Result<Self> {
+            let state = construct_state(&root, &version, inventory)?;
 
             Ok(Self {
                 id: inventory.id.clone(),
                 version: version.clone(),
-                root: root.to_string(),
+                root: root.as_ref().to_str().unwrap_or_default().to_string(),
                 created: ensure_version(version, inventory)?.created.clone(),
                 state
             })
@@ -398,7 +399,7 @@ pub mod ocfl {
 
     }
 
-    fn construct_state(target: &VersionId, inventory: &Inventory) -> Result<HashMap<String, FileDetails>> {
+    fn construct_state<P: AsRef<Path>>(object_root: P, target: &VersionId, inventory: &Inventory) -> Result<HashMap<String, FileDetails>> {
         let mut state = HashMap::new();
 
         let target_version = ensure_version(target, inventory)?;
@@ -412,8 +413,10 @@ pub mod ocfl {
 
             if current_version_id.version_num == 1 {
                 for (target_path, target_digest) in target_path_map.into_iter() {
+                    let content_path = lookup_content_path(&target_digest, inventory)?.to_string();
                     state.insert(target_path, FileDetails {
-                        content_path: lookup_content_path(&target_digest, inventory)?.to_string(),
+                        storage_path: object_root.as_ref().join(&content_path).to_str().unwrap_or_default().to_string(),
+                        content_path,
                         digest: target_digest,
                         last_update: VersionDetails {
                             version: current_version_id.clone(),
@@ -434,9 +437,11 @@ pub mod ocfl {
 
                 if entry.is_none() || entry.unwrap().1 != *target_digest {
                     found.push(target_path.clone());
+                    let content_path = lookup_content_path(&target_digest, inventory)?.to_string();
                     state.insert(target_path.clone(), FileDetails {
                         digest: target_digest.clone(),
-                        content_path: lookup_content_path(&target_digest, inventory)?.to_string(),
+                        storage_path: object_root.as_ref().join(&content_path).to_str().unwrap_or_default().to_string(),
+                        content_path,
                         last_update: VersionDetails {
                             version: current_version_id.clone(),
                             created: current.created.clone()
@@ -493,100 +498,8 @@ pub mod ocfl {
         }
     }
 
-    pub struct OcflObject {
-        pub id: String,
-        pub root: String,
-        pub head: VersionId,
-        versions: HashMap<VersionId, OcflVersion>,
-        // TODO add missing fields
-    }
-
-    impl OcflObject {
-
-        fn from(root: &str, inventory: Inventory) -> Result<Self, RocError> {
-            let mut manifest = HashMap::new();
-
-            for (digest, paths) in inventory.manifest {
-                match paths.first() {
-                    Some(path) => {
-                        manifest.insert(digest, path.to_owned());
-                    },
-                    None => return Err(RocError::Validation {
-                        object_id: inventory.id,
-                        message: format!("No manifest entries found {}", digest)
-                    })
-                }
-            }
-
-            let mut versions = HashMap::new();
-
-            for (id, version) in inventory.versions {
-                versions.insert(id, OcflVersion::from(&inventory.id, version, &manifest)?);
-            }
-
-            Ok(Self {
-                id: inventory.id,
-                root: root.to_string(),
-                head: inventory.head,
-                versions
-            })
-        }
-
-        pub fn head_version(&self) -> &OcflVersion {
-            self.versions.get(&self.head).expect("Head version not found")
-        }
-
-    }
-
-    pub struct OcflVersion {
-        pub created: DateTime<Local>,
-        state: HashMap<String, ManifestEntry>,
-        // TODO add missing fields
-    }
-
-    impl OcflVersion {
-
-        fn from(object_id: &str, version: Version, manifest: &HashMap<String, String>) -> Result<Self, RocError> {
-            let mut state = HashMap::new();
-
-            for (digest, paths) in version.state {
-                for path in paths {
-                    match manifest.get(&digest) {
-                        Some(content_path) => {
-                            state.insert(path, ManifestEntry{
-                                digest: digest.clone(),
-                                content_path: content_path.clone(),
-                            });
-                        },
-                        None => return Err(RocError::Validation {
-                            object_id: object_id.to_string(),
-                            message: format!("No manifest entries found {}", digest)
-                        })
-                    }
-                }
-            }
-
-            Ok(Self {
-                created: version.created,
-                state
-            })
-        }
-
-    }
-
-    struct ManifestEntry {
-        // TODO ideally these wouldn't be owned...
-        digest: String,
-        content_path: String,
-    }
-
     #[derive(Error, Debug)]
     pub enum RocError {
-        #[error("Object {object_id} failed validation: {message}")]
-        Validation {
-            object_id: String,
-            message: String,
-        },
         #[error("Object {object_id} is corrupt: {message}")]
         CorruptObject {
             object_id: String,

@@ -67,7 +67,7 @@ fn main() {
         .unwrap_or_else(|| String::from(".")));
 
     match exec_command(&repo, &args) {
-        Err(e) => panic!(format!("Error: {:#}", e)),
+        Err(e) => print_err(e.into(), false),
         _ => ()
     }
 }
@@ -82,10 +82,16 @@ fn exec_command(repo: &FsOcflRepo, args: &AppArgs) -> Result<()> {
 // TODO implement command execution as a trait?
 fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()> {
     if let Some(object_id) = &command.object_id {
-        match repo.get_object(object_id, parse_version(command.version)?) {
+        let version = parse_version(command.version)?;
+        match repo.get_object(object_id, version.clone()) {
             // TODO need flag equiv of -d so that single objects can be listed
             Ok(Some(object)) => print_object_contents(&object, command),
-            Ok(None) => println!("Object {} was not found", object_id),
+            Ok(None) => {
+                match version {
+                    Some(version) => println!("Object {} version {} was not found", object_id, version),
+                    None => println!("Object {} was not found", object_id),
+                }
+            },
             Err(e) => print_err(e.into(), args.quiet)
         }
     } else {
@@ -109,7 +115,6 @@ fn print_object(object: &OcflObjectVersion, command: &List) {
 }
 
 fn print_object_contents(object: &OcflObjectVersion, command: &List) {
-    // TODO storage path should be displayed with -p
     for (path, details) in &object.state {
         println!("{}", FormatListing{
             listing: &Listing::new(path, details),
@@ -147,7 +152,7 @@ impl<'a> Listing<'a> {
             version: &details.last_update.version,
             created: details.last_update.created.format("%Y-%m-%d %H:%M:%S").to_string(),
             entry: path,
-            storage_path: &details.content_path
+            storage_path: &details.storage_path
         }
     }
 
