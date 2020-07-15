@@ -1,7 +1,5 @@
 use structopt::StructOpt;
 use structopt::clap::AppSettings::{ColorAuto, ColoredHelp};
-use roc::ocfl::{OcflRepo, VersionId, OcflObjectVersion, FileDetails};
-use roc::ocfl::fs::FsOcflRepo;
 use anyhow::{Result, Context};
 use std::error::Error;
 use std::io::Write;
@@ -9,9 +7,11 @@ use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use serde::export::Formatter;
 use core::fmt;
 use std::convert::TryFrom;
+use rocfl::{OcflObjectVersion, FileDetails, VersionId, OcflRepo};
+use rocfl::fs::FsOcflRepo;
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "roc", author = "Peter Winckles <pwinckles@pm.me>")]
+#[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
 #[structopt(setting(ColorAuto), setting(ColoredHelp))]
 pub struct AppArgs {
     /// Species the path to the OCFL storage root. Default: current directory.

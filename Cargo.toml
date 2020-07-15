@@ -1,14 +1,17 @@
 [package]
-name = "roc"
+name = "rocfl"
 version = "0.1.0"
 authors = ["Peter Winckles <pwinckles@pm.me>"]
 edition = "2018"
 description= "A Rust CLI for OCFL repositories"
 license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/pwinckles/rocfl"
+homepage = "https://github.com/pwinckles/rocfl"
 
 [[bin]]
-name = "roc"
-path = "src/bin/roc.rs"
+name = "rocfl"
+path = "src/bin/rocfl.rs"
 
 [dependencies]
 anyhow = "1.0"
