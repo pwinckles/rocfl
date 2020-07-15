@@ -16,6 +16,7 @@ path = "src/bin/rocfl.rs"
 [dependencies]
 anyhow = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
+clap = "2"
 globset = "0.4"
 grep = "0.2"
 lazy_static = "1.4"

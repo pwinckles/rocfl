@@ -1,5 +1,6 @@
 use structopt::StructOpt;
 use structopt::clap::AppSettings::{ColorAuto, ColoredHelp};
+use clap::arg_enum;
 use anyhow::{Result, Context};
 use std::error::Error;
 use std::io::Write;
@@ -8,27 +9,29 @@ use serde::export::Formatter;
 use core::fmt;
 use std::convert::TryFrom;
 use rocfl::{OcflObjectVersion, FileDetails, VersionId, OcflRepo, FsOcflRepo};
+use std::cmp::Ordering;
+use chrono::{DateTime, Local};
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
 #[structopt(setting(ColorAuto), setting(ColoredHelp))]
-pub struct AppArgs {
+struct AppArgs {
     /// Species the path to the OCFL storage root. Default: current directory.
     #[structopt(short = "R", long, value_name = "PATH")]
-    pub root: Option<String>,
+    root: Option<String>,
 
     /// Suppresses error messages
     #[structopt(short, long)]
-    pub quiet: bool,
+    quiet: bool,
 
     /// Subcommand to execute
     #[structopt(subcommand)]
-    pub command: Command,
+    command: Command,
 }
 
 /// A CLI for OCFL repositories.
 #[derive(Debug, StructOpt)]
-pub enum Command {
+enum Command {
     #[structopt(name = "ls", author = "Peter Winckles <pwinckles@pm.me>")]
     List(List),
 }
@@ -36,28 +39,56 @@ pub enum Command {
 /// Lists objects or files within objects.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp))]
-pub struct List {
-    /// Enables long output format
+struct List {
+    /// Enables long output format: version, updated, name
     #[structopt(short, long)]
-    pub long: bool,
+    long: bool,
 
     /// Displays the physical path to the resource
     #[structopt(short, long)]
-    pub physical: bool,
+    physical: bool,
 
     // TODO digest flag
 
-    /// Specifies the version of the object to use. Default: HEAD version.
+    /// Specifies the version of the object to list
     #[structopt(short, long, value_name = "NUM")]
-    pub version: Option<u32>,
+    version: Option<u32>,
+
+    /// Specifies the field to sort on. Sort is not supported when listing objects.
+    #[structopt(short, long, value_name = "FIELD", possible_values = &Field::variants(), default_value = "name", case_insensitive = true)]
+    sort: Field,
+
+    /// Reverses the direction of the sort
+    #[structopt(short, long)]
+    reverse: bool,
 
     /// ID of the object to list
     #[structopt(name = "OBJECT")]
-    pub object_id: Option<String>,
+    object_id: Option<String>,
 
     // TODO path glob
 
-    // TODO sorting
+}
+
+arg_enum! {
+    #[derive(Debug)]
+    enum Field {
+        Name,
+        Version,
+        Updated,
+        None
+    }
+}
+
+impl Field {
+    fn cmp_listings(&self, a: &Listing, b: &Listing) -> Ordering {
+        match self {
+            Self::Name => a.name.cmp(b.name),
+            Self::Version => a.version.cmp(b.version),
+            Self::Updated => a.updated.cmp(b.updated),
+            Self::None => Ordering::Equal,
+        }
+    }
 }
 
 fn main() {
@@ -114,9 +145,21 @@ fn print_object(object: &OcflObjectVersion, command: &List) {
 }
 
 fn print_object_contents(object: &OcflObjectVersion, command: &List) {
-    for (path, details) in &object.state {
+    let mut listings: Vec<Listing> = object.state.iter().map(|(path, details)| {
+        Listing::new(path, details)
+    }).collect();
+
+    listings.sort_unstable_by(|a, b| {
+        if command.reverse {
+            command.sort.cmp_listings(b, a)
+        } else {
+            command.sort.cmp_listings(a, b)
+        }
+    });
+
+    for listing in listings {
         println!("{}", FormatListing{
-            listing: &Listing::new(path, details),
+            listing: &listing,
             command
         })
     }
@@ -139,8 +182,8 @@ fn print_err(error: Box<dyn Error>, quiet: bool) {
 
 struct Listing<'a> {
     version: &'a VersionId,
-    created: String,
-    entry: &'a String,
+    updated: &'a DateTime<Local>,
+    name: &'a String,
     storage_path: &'a String,
 }
 
@@ -149,10 +192,14 @@ impl<'a> Listing<'a> {
     fn new(path: &'a String, details: &'a FileDetails) -> Self {
         Self {
             version: &details.last_update.version,
-            created: details.last_update.created.format("%Y-%m-%d %H:%M:%S").to_string(),
-            entry: path,
+            updated: &details.last_update.created,
+            name: path,
             storage_path: &details.storage_path
         }
+    }
+
+    fn updated_str(&self) -> String {
+        self.updated.format("%Y-%m-%d %H:%M:%S").to_string()
     }
 
 }
@@ -161,8 +208,8 @@ impl<'a> From<&'a OcflObjectVersion> for Listing<'a> {
     fn from(object: &'a OcflObjectVersion) -> Self {
         Self {
             version: &object.version,
-            created: object.created.format("%Y-%m-%d %H:%M:%S").to_string(),
-            entry: &object.id,
+            updated: &object.created,
+            name: &object.id,
             storage_path: &object.root,
         }
     }
@@ -179,12 +226,12 @@ impl<'a> fmt::Display for FormatListing<'a> {
         // TODO allow time to be formatted as UTC or local?
 
         if self.command.long {
-            write!(f, "{version:>5}\t{created:<19}\t{entry:<42}",
+            write!(f, "{version:>5}\t{updated:<19}\t{name:<42}",
                    version = self.listing.version.version_str,  // For some reason the formatting is not applied to the output of VersionId::fmt()
-                   created = self.listing.created,
-                   entry = self.listing.entry)?
+                   updated = self.listing.updated_str(),
+                   name = self.listing.name)?
         } else {
-            write!(f, "{:<42}", self.listing.entry)?
+            write!(f, "{:<42}", self.listing.name)?
         }
 
         if self.command.physical {
