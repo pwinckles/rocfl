@@ -44,11 +44,13 @@ struct List {
     #[structopt(short, long)]
     long: bool,
 
-    /// Displays the physical path to the resource
+    /// Displays the physical path to the item
     #[structopt(short, long)]
     physical: bool,
 
-    // TODO digest flag
+    /// Displays the digest of the item
+    #[structopt(short, long)]
+    digest: bool,
 
     /// Specifies the version of the object to list
     #[structopt(short, long, value_name = "NUM")]
@@ -61,6 +63,8 @@ struct List {
     /// Reverses the direction of the sort
     #[structopt(short, long)]
     reverse: bool,
+
+    // TODO need flag equiv of -d so that single objects can be listed
 
     /// ID of the object to list
     #[structopt(name = "OBJECT")]
@@ -97,7 +101,7 @@ fn main() {
         .unwrap_or_else(|| String::from(".")));
 
     match exec_command(&repo, &args) {
-        Err(e) => print_err(e.into(), false),
+        Err(e) => print_err(e.into(), args.quiet),
         _ => ()
     }
 }
@@ -109,12 +113,10 @@ fn exec_command(repo: &FsOcflRepo, args: &AppArgs) -> Result<()> {
     Ok(())
 }
 
-// TODO implement command execution as a trait?
 fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()> {
     if let Some(object_id) = &command.object_id {
         let version = parse_version(command.version)?;
         match repo.get_object(object_id, version.clone()) {
-            // TODO need flag equiv of -d so that single objects can be listed
             Ok(Some(object)) => print_object_contents(&object, command),
             Ok(None) => {
                 match version {
@@ -146,7 +148,7 @@ fn print_object(object: &OcflObjectVersion, command: &List) {
 
 fn print_object_contents(object: &OcflObjectVersion, command: &List) {
     let mut listings: Vec<Listing> = object.state.iter().map(|(path, details)| {
-        Listing::new(path, details)
+        Listing::new(path, details, &object.digest_algorithm)
     }).collect();
 
     listings.sort_unstable_by(|a, b| {
@@ -185,16 +187,20 @@ struct Listing<'a> {
     updated: &'a DateTime<Local>,
     name: &'a String,
     storage_path: &'a String,
+    digest_algorithm: Option<&'a String>,
+    digest: Option<&'a String>,
 }
 
 impl<'a> Listing<'a> {
 
-    fn new(path: &'a String, details: &'a FileDetails) -> Self {
+    fn new(path: &'a String, details: &'a FileDetails, digest_algorithm: &'a String) -> Self {
         Self {
             version: &details.last_update.version,
             updated: &details.last_update.created,
             name: path,
-            storage_path: &details.storage_path
+            storage_path: &details.storage_path,
+            digest_algorithm: Some(digest_algorithm),
+            digest: Some(&details.digest),
         }
     }
 
@@ -211,6 +217,8 @@ impl<'a> From<&'a OcflObjectVersion> for Listing<'a> {
             updated: &object.created,
             name: &object.id,
             storage_path: &object.root,
+            digest_algorithm: None,
+            digest: None,
         }
     }
 }
@@ -236,6 +244,10 @@ impl<'a> fmt::Display for FormatListing<'a> {
 
         if self.command.physical {
             write!(f, "\t{}", self.listing.storage_path)?
+        }
+
+        if self.command.digest && self.listing.digest.is_some() {
+            write!(f, "\t{}:{}", self.listing.digest_algorithm.unwrap(), self.listing.digest.unwrap())?
         }
 
         Ok(())

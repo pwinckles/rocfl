@@ -183,6 +183,7 @@ pub struct OcflObjectVersion {
     pub version: VersionId,
     pub root: String,
     pub created: DateTime<Local>,
+    pub digest_algorithm: String,
     pub state: HashMap<String, FileDetails>,
     // TODO more fields
 }
@@ -210,6 +211,7 @@ impl OcflObjectVersion {
             version: version.clone(),
             root: root.as_ref().to_str().unwrap_or_default().to_string(),
             created: ensure_version(version, inventory)?.created.clone(),
+            digest_algorithm: inventory.digest_algorithm.clone(),
             state
         })
     }
