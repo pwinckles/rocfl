@@ -1,4 +1,4 @@
-pub mod fs;
+mod fs;
 
 use std::collections::{HashMap};
 use anyhow::{Result};
@@ -14,6 +14,8 @@ use serde::export::Formatter;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
+
+pub use self::fs::FsOcflRepo;
 
 const OBJECT_MARKER: &str = "0=ocfl_object_1.0";
 const INVENTORY_FILE: &str = "inventory.json";

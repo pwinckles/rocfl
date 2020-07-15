@@ -7,8 +7,7 @@ use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use serde::export::Formatter;
 use core::fmt;
 use std::convert::TryFrom;
-use rocfl::{OcflObjectVersion, FileDetails, VersionId, OcflRepo};
-use rocfl::fs::FsOcflRepo;
+use rocfl::{OcflObjectVersion, FileDetails, VersionId, OcflRepo, FsOcflRepo};
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
