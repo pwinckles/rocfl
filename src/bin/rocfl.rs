@@ -270,7 +270,8 @@ impl<'a> fmt::Display for FormatListing<'a> {
 
         if self.command.long {
             write!(f, "{version:>5}\t{updated:<19}\t{name:<42}",
-                   version = self.listing.version.version_str,  // For some reason the formatting is not applied to the output of VersionId::fmt()
+                   // For some reason the formatting is not applied to the output of VersionId::fmt()
+                   version = self.listing.version.version_str,
                    updated = self.listing.updated_str(),
                    name = self.listing.name)?
         } else {

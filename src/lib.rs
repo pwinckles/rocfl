@@ -37,6 +37,7 @@ pub trait OcflRepo {
 #[derive(Deserialize, Debug)]
 #[serde(try_from = "&str")]
 pub struct VersionId {
+    // TODO model 0-padding
     pub version_num: u32,
     pub version_str: String,
 }
@@ -189,7 +190,6 @@ pub struct OcflObjectVersion {
     pub created: DateTime<Local>,
     pub digest_algorithm: String,
     pub state: HashMap<String, FileDetails>,
-    // TODO more fields
 }
 
 #[derive(Debug)]
@@ -225,6 +225,8 @@ impl OcflObjectVersion {
 }
 
 fn construct_state<P: AsRef<Path>>(object_root: P, target: &VersionId, inventory: &Inventory) -> Result<HashMap<String, FileDetails>> {
+    // TODO look for logic simplifications
+
     let mut state = HashMap::new();
 
     let target_version = ensure_version(target, inventory)?;
