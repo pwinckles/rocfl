@@ -18,7 +18,8 @@ use std::path::Path;
 pub use self::fs::FsOcflRepo;
 
 const OBJECT_MARKER: &str = "0=ocfl_object_1.0";
-const INVENTORY_FILE: &str = "inventory.json";
+const ROOT_INVENTORY_FILE: &str = "inventory.json";
+const MUTABLE_HEAD_INVENTORY_FILE: &str = "extensions/0004-mutable-head/head/inventory.json";
 
 lazy_static! {
         static ref VERSION_REGEX: Regex = Regex::new(r#"^v\d+$"#).unwrap();

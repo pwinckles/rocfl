@@ -6,7 +6,16 @@ use grep::searcher::Searcher;
 use anyhow::{anyhow, Result, Context};
 use grep::searcher::sinks::UTF8;
 use grep::matcher::{Matcher, Captures};
-use crate::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, OcflObjectVersion, VersionId, INVENTORY_FILE};
+use crate::{
+    OcflRepo,
+    OBJECT_MARKER,
+    OBJECT_ID_MATCHER,
+    Inventory,
+    OcflObjectVersion,
+    VersionId,
+    ROOT_INVENTORY_FILE,
+    MUTABLE_HEAD_INVENTORY_FILE
+};
 use globset::{GlobMatcher, Glob};
 
 pub struct FsOcflRepo {
@@ -80,7 +89,7 @@ impl FsObjectIdIter {
     }
 
     fn create_if_matches<P: AsRef<Path>>(&self, object_root: P) -> Result<Option<OcflObjectVersion>>{
-        let inventory_path = object_root.as_ref().join(INVENTORY_FILE);
+        let inventory_path = object_root.as_ref().join(ROOT_INVENTORY_FILE);
 
         if self.is_matching() {
             match self.extract_object_id(&inventory_path) {
@@ -189,14 +198,21 @@ fn is_object_root<P: AsRef<Path>>(path: P) -> Result<bool> {
 }
 
 fn create_object_version<P: AsRef<Path>>(version: &Option<VersionId>, object_root: P) -> Result<OcflObjectVersion> {
-    // TODO support mutable head
-    let inventory_path = object_root.as_ref().join(INVENTORY_FILE);
+    let inventory_path = resolve_inventory_path(&object_root);
     let inventory = parse_inventory(&inventory_path)
         .with_context(|| format!("Failed to parse inventory at {}",
                                  inventory_path.to_str().unwrap_or_default()))?;
     let head = inventory.head.clone();
     let v = version.as_ref().unwrap_or_else(|| &head);
     OcflObjectVersion::new(object_root, v, &inventory)
+}
+
+fn resolve_inventory_path<P: AsRef<Path>>(object_root: P) -> PathBuf {
+    let mutable_head_inv = object_root.as_ref().join(MUTABLE_HEAD_INVENTORY_FILE);
+    if mutable_head_inv.exists() {
+        return mutable_head_inv;
+    }
+    object_root.as_ref().join(ROOT_INVENTORY_FILE)
 }
 
 fn parse_inventory<P: AsRef<Path>>(path: P) -> Result<Inventory> {
