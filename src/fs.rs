@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::io::Read;
+use std::io::{Read};
 use std::fs::{File, ReadDir};
 use std::path::{Path, PathBuf};
 use grep::searcher::Searcher;
@@ -23,12 +23,21 @@ pub struct FsOcflRepo {
 }
 
 impl FsOcflRepo {
-    pub fn new<P: AsRef<Path>>(root: P) -> FsOcflRepo {
+    pub fn new<P: AsRef<Path>>(root: P) -> Result<FsOcflRepo> {
+        let root = root.as_ref().to_path_buf();
+
+        if !root.exists() {
+            return Err(anyhow!("Path {} does not exist", root.to_string_lossy()));
+        } else if !root.is_dir() {
+            return Err(anyhow!("Path {} is not a directory", root.to_string_lossy()))
+        }
+
         // TODO verify is an OCFL repository
         // TODO load storage layout
-        return FsOcflRepo {
-            root: root.as_ref().to_path_buf()
-        }
+
+        Ok(FsOcflRepo {
+            root
+        })
     }
 }
 

@@ -17,9 +17,9 @@ use globset::Glob;
 #[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
 #[structopt(setting(ColorAuto), setting(ColoredHelp))]
 struct AppArgs {
-    /// Species the path to the OCFL storage root. Default: current directory.
-    #[structopt(short = "R", long, value_name = "PATH")]
-    root: Option<String>,
+    /// Species the path to the OCFL storage root.
+    #[structopt(short = "R", long, value_name = "PATH", default_value = ".")]
+    root: String,
 
     /// Suppresses error messages
     #[structopt(short, long)]
@@ -101,16 +101,14 @@ impl Field {
 
 fn main() {
     let args = AppArgs::from_args();
-    let repo = FsOcflRepo::new(args.root.clone()
-        .unwrap_or_else(|| String::from(".")));
-
-    match exec_command(&repo, &args) {
+    match exec_command(&args) {
         Err(e) => print_err(e.into(), args.quiet),
         _ => ()
     }
 }
 
-fn exec_command(repo: &FsOcflRepo, args: &AppArgs) -> Result<()> {
+fn exec_command(args: &AppArgs) -> Result<()> {
+    let repo = FsOcflRepo::new(args.root.clone())?;
     match &args.command {
         Command::List(list) => list_command(&repo, &list, &args)?
     }
@@ -199,6 +197,7 @@ fn print_object_contents(object: &OcflObjectVersion, command: &List) -> Result<(
 }
 
 fn print_err(error: Box<dyn Error>, quiet: bool) {
+    // TODO figure out why anyhow alt formatting isn't working
     if !quiet {
         let mut stderr = StandardStream::stderr(ColorChoice::Auto);
         match stderr.set_color(ColorSpec::new().set_fg(Some(Color::Red))) {

@@ -181,6 +181,7 @@ impl Inventory {
 }
 
 pub struct OcflObjectVersion {
+    // TODO consider storing inventory here and using refs in all other fields
     pub id: String,
     pub version: VersionId,
     pub root: String,
@@ -211,7 +212,7 @@ impl OcflObjectVersion {
         Ok(Self {
             id: inventory.id.clone(),
             version: version.clone(),
-            root: root.as_ref().to_str().unwrap_or_default().to_string(),
+            root: root.as_ref().to_string_lossy().to_string(),
             created: ensure_version(version, inventory)?.created.clone(),
             digest_algorithm: inventory.digest_algorithm.clone(),
             state
@@ -236,7 +237,7 @@ fn construct_state<P: AsRef<Path>>(object_root: P, target: &VersionId, inventory
             for (target_path, target_digest) in target_path_map.into_iter() {
                 let content_path = lookup_content_path(&target_digest, inventory)?.to_string();
                 state.insert(target_path, FileDetails {
-                    storage_path: object_root.as_ref().join(&content_path).to_str().unwrap_or_default().to_string(),
+                    storage_path: object_root.as_ref().join(&content_path).to_string_lossy().to_string(),
                     content_path,
                     digest: target_digest,
                     last_update: VersionDetails {
@@ -261,7 +262,7 @@ fn construct_state<P: AsRef<Path>>(object_root: P, target: &VersionId, inventory
                 let content_path = lookup_content_path(&target_digest, inventory)?.to_string();
                 state.insert(target_path.clone(), FileDetails {
                     digest: target_digest.clone(),
-                    storage_path: object_root.as_ref().join(&content_path).to_str().unwrap_or_default().to_string(),
+                    storage_path: object_root.as_ref().join(&content_path).to_string_lossy().to_string(),
                     content_path,
                     last_update: VersionDetails {
                         version: current_version_id.clone(),
