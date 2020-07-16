@@ -180,6 +180,7 @@ impl Inventory {
 
 }
 
+#[derive(Debug)]
 pub struct OcflObjectVersion {
     // TODO consider storing inventory here and using refs in all other fields
     pub id: String,
@@ -191,6 +192,7 @@ pub struct OcflObjectVersion {
     // TODO more fields
 }
 
+#[derive(Debug)]
 pub struct FileDetails {
     pub digest: String,
     pub content_path: String,
@@ -199,6 +201,7 @@ pub struct FileDetails {
     pub last_update: VersionDetails,
 }
 
+#[derive(Debug)]
 pub struct VersionDetails {
     pub version: VersionId,
     pub created: DateTime<Local>,

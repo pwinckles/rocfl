@@ -1,8 +1,7 @@
 use structopt::StructOpt;
 use structopt::clap::AppSettings::{ColorAuto, ColoredHelp};
 use clap::arg_enum;
-use anyhow::{Result, Context};
-use std::error::Error;
+use anyhow::{Result, Context, Error};
 use std::io::Write;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use serde::export::Formatter;
@@ -196,8 +195,7 @@ fn print_object_contents(object: &OcflObjectVersion, command: &List) -> Result<(
     Ok(())
 }
 
-fn print_err(error: Box<dyn Error>, quiet: bool) {
-    // TODO figure out why anyhow alt formatting isn't working
+fn print_err(error: Error, quiet: bool) {
     if !quiet {
         let mut stderr = StandardStream::stderr(ColorChoice::Auto);
         match stderr.set_color(ColorSpec::new().set_fg(Some(Color::Red))) {
