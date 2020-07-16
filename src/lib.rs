@@ -1,7 +1,7 @@
 mod fs;
 
 use std::collections::{HashMap};
-use anyhow::{Result};
+use anyhow::{Result, anyhow};
 use chrono::{Local, DateTime};
 use serde::Deserialize;
 use thiserror::Error;
@@ -37,22 +37,38 @@ pub trait OcflRepo {
 #[derive(Deserialize, Debug)]
 #[serde(try_from = "&str")]
 pub struct VersionId {
-    // TODO model 0-padding
     pub version_num: u32,
-    pub version_str: String,
+    pub width: usize,
 }
 
 impl VersionId {
 
-    // TODO breaks 0-padding
-    fn previous(&self) -> Result<VersionId, RocflError> {
-        VersionId::try_from(self.version_num - 1)
+    fn previous(&self) -> Result<VersionId> {
+        if self.version_num - 1 < 1 {
+            return Err(anyhow!("Versions cannot be less than 1"));
+        }
+
+        Ok(Self {
+            version_num: self.version_num - 1,
+            width: self.width,
+        })
     }
 
-    // TODO breaks 0-padding
     #[allow(dead_code)]
-    fn next(&self) -> Result<VersionId, RocflError> {
-        VersionId::try_from(self.version_num + 1)
+    fn next(&self) -> Result<VersionId> {
+        let max = match self.width {
+            0 => usize::MAX,
+            _ => (10 * (self.width - 1)) - 1
+        };
+
+        if self.version_num + 1 > max as u32 {
+            return Err(anyhow!("Version cannot be greater than {}", max));
+        }
+
+        Ok(Self {
+            version_num: self.version_num + 1,
+            width: self.width,
+        })
     }
 
 }
@@ -71,9 +87,14 @@ impl TryFrom<&str> for VersionId {
                     return Err(RocflError::IllegalArgument(format!("Invalid version {}", version)));
                 }
 
+                let width = match version.starts_with("v0") {
+                    true => version.len() - 1,
+                    false => 0
+                };
+
                 Ok(Self {
                     version_num: num,
-                    version_str: version.to_string(),
+                    width,
                 })
             },
             Err(_) => return Err(RocflError::IllegalArgument(format!("Invalid version {}", version)))
@@ -91,7 +112,7 @@ impl TryFrom<u32> for VersionId {
 
         Ok(Self {
             version_num: version,
-            version_str: format!("v{}", version),
+            width: 0,
         })
     }
 }
@@ -99,15 +120,15 @@ impl TryFrom<u32> for VersionId {
 impl Clone for VersionId {
     fn clone(&self) -> Self {
         Self {
-            version_num: self.version_num.clone(),
-            version_str: self.version_str.clone(),
+            version_num: self.version_num,
+            width: self.width,
         }
     }
 }
 
 impl fmt::Display for VersionId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.version_str)
+        write!(f, "v{:0width$}", self.version_num, width = self.width)
     }
 }
 
