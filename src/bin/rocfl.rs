@@ -65,15 +65,17 @@ struct List {
     #[structopt(short, long)]
     reverse: bool,
 
-    // TODO need flag equiv of -d so that single objects can be listed
+    /// List only objects; not their contents
+    #[structopt(short, long)]
+    objects: bool,
 
-    /// ID of the object to list
+    /// ID of the object to list. May be a glob when used with '-o'.
     #[structopt(name = "OBJECT")]
     object_id: Option<String>,
 
     /// Path glob of files to list. May only be specified if an object is also specified.
-    #[structopt(name = "PATH_GLOB")]
-    path_glob: Option<String>,
+    #[structopt(name = "PATH")]
+    path: Option<String>,
 }
 
 arg_enum! {
@@ -117,16 +119,17 @@ fn exec_command(repo: &FsOcflRepo, args: &AppArgs) -> Result<()> {
 
 // TODO move to cmds module?
 fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()> {
-    if let Some(object_id) = &command.object_id {
-        list_object_contents(object_id, repo, command)?;
-    } else {
+    if command.objects || command.object_id.is_none() {
         list_objects(repo, command, args)?;
+    } else {
+        list_object_contents(repo, command)?;
     }
 
     Ok(())
 }
 
-fn list_object_contents(object_id: &String, repo: &FsOcflRepo, command: &List) -> Result<()> {
+fn list_object_contents(repo: &FsOcflRepo, command: &List) -> Result<()> {
+    let object_id = command.object_id.as_ref().unwrap();
     let version = parse_version(command.version)?;
 
     match repo.get_object(object_id, version.clone())
@@ -144,7 +147,7 @@ fn list_object_contents(object_id: &String, repo: &FsOcflRepo, command: &List) -
 }
 
 fn list_objects(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()> {
-    for object in repo.list_objects()
+    for object in repo.list_objects(command.object_id.as_deref())
         .with_context(|| "Failed to list objects")? {
         match object {
             Ok(object) => print_object(&object, command),
@@ -164,8 +167,8 @@ fn print_object(object: &OcflObjectVersion, command: &List) {
 
 fn print_object_contents(object: &OcflObjectVersion, command: &List) -> Result<()> {
     let mut glob = None;
-    if command.path_glob.is_some() {
-        glob = Some(Glob::new(command.path_glob.as_ref().unwrap())?.compile_matcher());
+    if command.path.is_some() {
+        glob = Some(Glob::new(command.path.as_ref().unwrap())?.compile_matcher());
     }
 
     let mut listings: Vec<Listing> = object.state.iter().map(|(path, details)| {

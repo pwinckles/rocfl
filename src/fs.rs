@@ -7,6 +7,7 @@ use anyhow::{anyhow, Result, Context};
 use grep::searcher::sinks::UTF8;
 use grep::matcher::{Matcher, Captures};
 use crate::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, OcflObjectVersion, VersionId, INVENTORY_FILE};
+use globset::{GlobMatcher, Glob};
 
 pub struct FsOcflRepo {
     pub root: PathBuf
@@ -24,12 +25,12 @@ impl FsOcflRepo {
 
 impl OcflRepo for FsOcflRepo {
 
-    fn list_objects(&self) -> Result<Box<dyn Iterator<Item=Result<OcflObjectVersion>>>> {
-        Ok(Box::new(FsObjectIdIter::new(&self.root, None, None)?))
+    fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<OcflObjectVersion>>>> {
+        Ok(Box::new(FsObjectIdIter::new(&self.root, None, None, filter_glob)?))
     }
 
     fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<Option<OcflObjectVersion>> {
-        let mut iter = FsObjectIdIter::new(&self.root, Some(object_id.to_string()), version)?;
+        let mut iter = FsObjectIdIter::new(&self.root, Some(object_id.to_string()), version, None)?;
         loop {
             match iter.next() {
                 Some(Ok(object)) => return Ok(Some(object)),
@@ -47,21 +48,56 @@ struct FsObjectIdIter {
     current: RefCell<Option<ReadDir>>,
     object_id: Option<String>,
     version: Option<VersionId>,
+    object_id_glob: Option<GlobMatcher>,
 }
 
 impl FsObjectIdIter {
 
-    // TODO support glob matching instead of exact matching
-    fn new<P: AsRef<Path>>(root: P, object_id: Option<String>, version: Option<VersionId>) -> Result<FsObjectIdIter> {
+    fn new<P: AsRef<Path>>(root: P, object_id: Option<String>, version: Option<VersionId>, object_id_glob: Option<&str>) -> Result<FsObjectIdIter> {
         Ok(FsObjectIdIter {
             dir_iters: vec![std::fs::read_dir(&root)?],
             current: RefCell::new(None),
             object_id,
             version,
+            object_id_glob: match object_id_glob {
+                Some(glob) => Some(Glob::new(glob)?.compile_matcher()),
+                None => None
+            },
         })
     }
 
-    // TODO this can move outside this type
+    fn is_matching(&self) -> bool {
+        self.object_id.is_some() || self.object_id_glob.is_some()
+    }
+
+    fn is_match(&self, object_id: &str) -> bool {
+        if self.object_id.is_some() {
+            return self.object_id.as_ref().unwrap().eq(object_id);
+        } else if self.object_id_glob.is_some() {
+            return self.object_id_glob.as_ref().unwrap().is_match(object_id);
+        }
+        false
+    }
+
+    fn create_if_matches<P: AsRef<Path>>(&self, object_root: P) -> Result<Option<OcflObjectVersion>>{
+        let inventory_path = object_root.as_ref().join(INVENTORY_FILE);
+
+        if self.is_matching() {
+            match self.extract_object_id(&inventory_path) {
+                Ok(object_id) => {
+                    if self.is_match(&object_id) {
+                        return self.create_object_version(&object_root);
+                    }
+                },
+                Err(e) => return Err(e)
+            }
+        } else {
+            return self.create_object_version(&object_root);
+        }
+
+        Ok(None)
+    }
+
     fn extract_object_id<P: AsRef<Path>>(&self, path: P) -> Result<String> {
         let mut matches: Vec<String> = vec![];
         Searcher::new().search_path(&*OBJECT_ID_MATCHER, &path, UTF8(|_, line| {
@@ -78,10 +114,10 @@ impl FsObjectIdIter {
         }
     }
 
-    fn create_object_version<P: AsRef<Path>>(&self, path: P) -> Option<Result<OcflObjectVersion>> {
+    fn create_object_version<P: AsRef<Path>>(&self, path: P) -> Result<Option<OcflObjectVersion>> {
         match create_object_version(&self.version, &path) {
-            Ok(object) => Some(Ok(object)),
-            Err(e) => Some(Err(e))
+            Ok(object) => Ok(Some(object)),
+            Err(e) => Err(e)
         }
     }
 
@@ -113,20 +149,10 @@ impl Iterator for FsObjectIdIter {
 
                             match is_object_root(&path) {
                                 Ok(is_root) if is_root => {
-                                    let inventory_path = path.join(INVENTORY_FILE);
-
-                                    if !self.object_id.is_none() {
-                                        match self.extract_object_id(&inventory_path) {
-                                            Ok(object_id) => {
-                                                // TODO compare id with glob search pattern https://crates.io/crates/globset
-                                                if self.object_id.as_ref().unwrap().eq(&object_id) {
-                                                    return self.create_object_version(&path);
-                                                }
-                                            },
-                                            Err(e) => return Some(Err(e))
-                                        }
-                                    } else {
-                                        return self.create_object_version(&path);
+                                    match self.create_if_matches(&path) {
+                                        Ok(Some(object)) => return Some(Ok(object)),
+                                        Ok(None) => (),
+                                        Err(e) => return Some(Err(e))
                                     }
                                 },
                                 Ok(is_root) if !is_root => {

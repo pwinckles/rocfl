@@ -27,7 +27,7 @@ lazy_static! {
 
 pub trait OcflRepo {
 
-    fn list_objects(&self) -> Result<Box<dyn Iterator<Item=Result<OcflObjectVersion>>>>;
+    fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<OcflObjectVersion>>>>;
 
     fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<Option<OcflObjectVersion>>;
 
@@ -48,6 +48,7 @@ impl VersionId {
     }
 
     // TODO breaks 0-padding
+    #[allow(dead_code)]
     fn next(&self) -> Result<VersionId, RocflError> {
         VersionId::try_from(self.version_num + 1)
     }
