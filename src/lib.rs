@@ -15,6 +15,7 @@ use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 
 pub use self::fs::FsOcflRepo;
+use std::rc::Rc;
 
 const OBJECT_MARKER: &str = "0=ocfl_object_1.0";
 const ROOT_INVENTORY_FILE: &str = "inventory.json";
@@ -214,6 +215,13 @@ impl Inventory {
         }
     }
 
+    fn remove_version(&mut self, version: &VersionId) -> Result<Version> {
+        match self.versions.remove(version) {
+            Some(v) => Ok(v),
+            None => Err(RocflError::NotFound(format!("Object {} version {}", self.id, version)).into())
+        }
+    }
+
     fn lookup_content_path<'a>(&'a self, digest: &'a str) -> Result<&'a str> {
         match self.manifest.get(digest) {
             Some(paths) => {
@@ -238,10 +246,9 @@ impl Inventory {
 pub struct OcflObjectVersion {
     // TODO consider storing inventory here and using refs in all other fields
     pub id: String,
-    pub version: VersionId,
     pub object_root: String,
-    pub created: DateTime<Local>,
     pub digest_algorithm: String,
+    pub version_details: VersionDetails,
     pub state: HashMap<String, FileDetails>,
 }
 
@@ -250,7 +257,7 @@ pub struct FileDetails {
     pub digest: String,
     pub content_path: String,
     pub storage_path: String,
-    pub last_update: VersionDetails,
+    pub last_update: Rc<VersionDetails>,
 }
 
 #[derive(Debug)]
@@ -262,103 +269,120 @@ pub struct VersionDetails {
 }
 
 impl OcflObjectVersion {
-    fn new(inventory: &Inventory, version: Option<&VersionId>) -> Result<Self> {
-        let version = match version {
+    fn from_inventory(inventory: Inventory, version_id: Option<&VersionId>) -> Result<Self> {
+        let mut inventory = inventory;
+        let version_id = match version_id {
             Some(version) => version.clone(),
             None => inventory.head.clone(),
         };
 
-        let state = construct_state(&version, inventory)?;
+        let version = inventory.get_version(&version_id)?;
+        let version_details = VersionDetails::new(&version_id, version);
+
+        let state = OcflObjectVersion::construct_state(&version_id, &mut inventory)?;
 
         Ok(Self {
-            id: inventory.id.clone(),
-            object_root: inventory.object_root.clone(),
-            created: inventory.get_version(&version)?.created.clone(),
-            version,
-            digest_algorithm: inventory.digest_algorithm.clone(),
+            id: inventory.id,
+            object_root: inventory.object_root,
+            digest_algorithm: inventory.digest_algorithm,
+            version_details,
             state
         })
     }
+
+    fn construct_state(target: &VersionId, inventory: &mut Inventory) -> Result<HashMap<String, FileDetails>> {
+        let mut state = HashMap::new();
+
+        let mut current_version_id = (*target).clone();
+        let mut current_version = inventory.remove_version(target)?;
+        // TODO cloning
+        let mut target_path_map = invert_path_map(&current_version.state);
+
+        while !target_path_map.is_empty() {
+            let mut not_found = HashMap::new();
+            let version_details = Rc::new(VersionDetails::from_version(current_version_id, current_version));
+
+            // No versions left to compare to; any remaining files were last updated here
+            if version_details.version.version_num == 1 {
+                for (target_path, target_digest) in target_path_map.into_iter() {
+                    let content_path = inventory.lookup_content_path(&target_digest)?.to_string();
+                    state.insert(target_path, FileDetails::new(content_path,
+                                                               target_digest,
+                                                               &inventory.object_root,
+                                                               &version_details));
+                }
+
+                break;
+            }
+
+            let previous_version_id = version_details.version.previous()?;
+            let previous_version = inventory.remove_version(&previous_version_id)?;
+            // TODO cloning
+            let mut previous_path_map = invert_path_map(&previous_version.state);
+
+            for (target_path, target_digest) in target_path_map.into_iter() {
+                let entry = previous_path_map.remove_entry(&target_path);
+
+                if entry.is_none() || entry.unwrap().1 != target_digest {
+                    let content_path = inventory.lookup_content_path(&target_digest)?.to_string();
+                    state.insert(target_path, FileDetails::new(content_path,
+                                                               target_digest,
+                                                               &inventory.object_root,
+                                                               &version_details));
+                } else {
+                    not_found.insert(target_path, target_digest);
+                }
+            }
+
+            current_version_id = previous_version_id;
+            current_version = previous_version;
+
+            target_path_map = not_found;
+        }
+
+        Ok(state)
+    }
 }
 
-fn construct_state(target: &VersionId, inventory: &Inventory) -> Result<HashMap<String, FileDetails>> {
-    // TODO look for logic simplifications
-
-    let mut state = HashMap::new();
-
-    let target_version = inventory.get_version(target)?;
-    let mut target_path_map = invert_path_map(&target_version.state);
-
-    let mut current_version_id = (*target).clone();
-    let mut current = target_version;
-
-    while !target_path_map.is_empty() {
-        let mut found: Vec<String> = vec![];
-
-        if current_version_id.version_num == 1 {
-            for (target_path, target_digest) in target_path_map.into_iter() {
-                let content_path = inventory.lookup_content_path(&target_digest)?.to_string();
-                state.insert(target_path, FileDetails {
-                    storage_path: format!("{}/{}", inventory.object_root, content_path),
-                    content_path,
-                    digest: target_digest,
-                    last_update: VersionDetails {
-                        version: current_version_id.clone(),
-                        created: current.created.clone(),
-                        user_name: match &current.user {
-                            Some(user) => user.name.clone(),
-                            None => None
-                        },
-                        user_address: match &current.user {
-                            Some(user) => user.address.clone(),
-                            None => None
-                        },
-                    }
-                });
-            }
-
-            break;
+impl FileDetails {
+    fn new(content_path: String, digest: String, object_root: &str, version_details: &Rc<VersionDetails>) -> Self {
+        Self {
+            storage_path: format!("{}/{}", object_root, content_path),
+            content_path,
+            digest,
+            last_update: Rc::clone(version_details),
         }
+    }
+}
 
-        let previous_version_id = current_version_id.previous()?;
-        let previous = inventory.get_version(&previous_version_id)?;
-        let mut previous_path_map = invert_path_map(&previous.state);
+impl VersionDetails {
+    fn new(version_id: &VersionId, version: &Version) -> Self {
+        let (user, address) = match &version.user {
+            Some(user) => (user.name.clone(), user.address.clone()),
+            None => (None, None)
+        };
 
-        for (target_path, target_digest) in target_path_map.iter() {
-            let entry = previous_path_map.remove_entry(target_path);
-
-            if entry.is_none() || entry.unwrap().1 != *target_digest {
-                found.push(target_path.clone());
-                let content_path = inventory.lookup_content_path(&target_digest)?.to_string();
-                state.insert(target_path.clone(), FileDetails {
-                    digest: target_digest.clone(),
-                    storage_path: format!("{}/{}", inventory.object_root, content_path),
-                    content_path,
-                    last_update: VersionDetails {
-                        version: current_version_id.clone(),
-                        created: current.created.clone(),
-                        user_name: match &current.user {
-                            Some(user) => user.name.clone(),
-                            None => None
-                        },
-                        user_address: match &current.user {
-                            Some(user) => user.address.clone(),
-                            None => None
-                        },
-                    }
-                });
-            }
-        }
-
-        current_version_id = previous_version_id;
-        current = previous;
-
-        for path in found {
-            target_path_map.remove(&path);
+        Self {
+            version: version_id.clone(),
+            created: version.created.clone(),
+            user_name: user,
+            user_address: address,
         }
     }
 
-    Ok(state)
+    fn from_version(version_id: VersionId, version: Version) -> Self {
+        let (user, address) = match version.user {
+            Some(user) => (user.name, user.address),
+            None => (None, None)
+        };
+
+        Self {
+            version: version_id,
+            created: version.created,
+            user_name: user,
+            user_address: address,
+        }
+    }
 }
 
 fn invert_path_map(map: &HashMap<String, Vec<String>>) -> HashMap<String, String> {

@@ -308,8 +308,8 @@ impl<'a> Listing<'a> {
 impl<'a> From<&'a OcflObjectVersion> for Listing<'a> {
     fn from(object: &'a OcflObjectVersion) -> Self {
         Self {
-            version: &object.version,
-            updated: &object.created,
+            version: &object.version_details.version,
+            updated: &object.version_details.created,
             name: &object.id,
             storage_path: &object.object_root,
             digest_algorithm: None,

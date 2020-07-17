@@ -58,8 +58,8 @@ impl OcflRepo for FsOcflRepo {
 
         loop {
             match iter.next() {
-                Some(Ok(inventory)) => {
-                    Ok(Some(vec![]))
+                Some(Ok(_inventory)) => {
+                    return Ok(Some(vec![]))
                 },
                 // TODO should print error?
                 Some(Err(_)) => (),
@@ -96,7 +96,7 @@ impl Iterator for FsObjectVersionIter {
             None => None,
             Some(Err(e)) => Some(Err(e)),
             Some(Ok(inventory)) => {
-                Some(OcflObjectVersion::new(&inventory, self.version.as_ref()))
+                Some(OcflObjectVersion::from_inventory(inventory, self.version.as_ref()))
             }
         }
     }
