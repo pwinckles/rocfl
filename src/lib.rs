@@ -22,12 +22,13 @@ const ROOT_INVENTORY_FILE: &str = "inventory.json";
 const MUTABLE_HEAD_INVENTORY_FILE: &str = "extensions/0004-mutable-head/head/inventory.json";
 
 lazy_static! {
-        static ref VERSION_REGEX: Regex = Regex::new(r#"^v\d+$"#).unwrap();
-        static ref OBJECT_ID_MATCHER: RegexMatcher = RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap();
-    }
+    static ref VERSION_REGEX: Regex = Regex::new(r#"^v\d+$"#).unwrap();
+    static ref OBJECT_ID_MATCHER: RegexMatcher = RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap();
+}
 
 pub trait OcflRepo {
 
+    // TODO consider changing this to only return object level details to avoid needless version processing
     fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersion>>>>;
 
     fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<Option<ObjectVersion>>;
@@ -265,6 +266,7 @@ pub struct VersionDetails {
     pub created: DateTime<Local>,
     pub user_name: Option<String>,
     pub user_address: Option<String>,
+    pub message: Option<String>,
 }
 
 impl ObjectVersion {
@@ -365,6 +367,7 @@ impl VersionDetails {
             created: version.created.clone(),
             user_name: user,
             user_address: address,
+            message: version.message.clone()
         }
     }
 
@@ -379,6 +382,7 @@ impl VersionDetails {
             created: version.created,
             user_name: user,
             user_address: address,
+            message: version.message,
         }
     }
 }

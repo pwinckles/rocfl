@@ -58,8 +58,14 @@ impl OcflRepo for FsOcflRepo {
 
         loop {
             match iter.next() {
-                Some(Ok(_inventory)) => {
-                    return Ok(Some(vec![]))
+                Some(Ok(inventory)) => {
+                    let mut versions = Vec::with_capacity(inventory.versions.len());
+
+                    for (id, version) in inventory.versions {
+                        versions.push(VersionDetails::from_version(id, version))
+                    }
+
+                    return Ok(Some(versions))
                 },
                 // TODO should print error?
                 Some(Err(_)) => (),
