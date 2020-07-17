@@ -253,7 +253,7 @@ pub struct ObjectVersion {
 
 #[derive(Debug)]
 pub struct FileDetails {
-    pub digest: String,
+    pub digest: Rc<String>,
     pub content_path: String,
     pub storage_path: String,
     pub last_update: Rc<VersionDetails>,
@@ -268,8 +268,7 @@ pub struct VersionDetails {
 }
 
 impl ObjectVersion {
-    fn from_inventory(inventory: Inventory, version_id: Option<&VersionId>) -> Result<Self> {
-        let mut inventory = inventory;
+    fn from_inventory(mut inventory: Inventory, version_id: Option<&VersionId>) -> Result<Self> {
         let version_id = match version_id {
             Some(version) => version.clone(),
             None => inventory.head.clone(),
@@ -294,8 +293,8 @@ impl ObjectVersion {
 
         let mut current_version_id = (*target).clone();
         let mut current_version = inventory.remove_version(target)?;
-        // TODO cloning
-        let mut target_path_map = invert_path_map(&current_version.state);
+        let mut target_path_map = invert_path_map(current_version.state);
+        current_version.state = HashMap::new();
 
         while !target_path_map.is_empty() {
             let mut not_found = HashMap::new();
@@ -308,16 +307,16 @@ impl ObjectVersion {
                     state.insert(target_path, FileDetails::new(content_path,
                                                                target_digest,
                                                                &inventory.object_root,
-                                                               &version_details));
+                                                               Rc::clone(&version_details)));
                 }
 
                 break;
             }
 
             let previous_version_id = version_details.version.previous()?;
-            let previous_version = inventory.remove_version(&previous_version_id)?;
-            // TODO cloning
-            let mut previous_path_map = invert_path_map(&previous_version.state);
+            let mut previous_version = inventory.remove_version(&previous_version_id)?;
+            let mut previous_path_map = invert_path_map(previous_version.state);
+            previous_version.state = HashMap::new();
 
             for (target_path, target_digest) in target_path_map.into_iter() {
                 let entry = previous_path_map.remove_entry(&target_path);
@@ -327,7 +326,7 @@ impl ObjectVersion {
                     state.insert(target_path, FileDetails::new(content_path,
                                                                target_digest,
                                                                &inventory.object_root,
-                                                               &version_details));
+                                                               Rc::clone(&version_details)));
                 } else {
                     not_found.insert(target_path, target_digest);
                 }
@@ -344,12 +343,12 @@ impl ObjectVersion {
 }
 
 impl FileDetails {
-    fn new(content_path: String, digest: String, object_root: &str, version_details: &Rc<VersionDetails>) -> Self {
+    fn new(content_path: String, digest: Rc<String>, object_root: &str, version_details: Rc<VersionDetails>) -> Self {
         Self {
             storage_path: format!("{}/{}", object_root, content_path),
             content_path,
             digest,
-            last_update: Rc::clone(version_details),
+            last_update: version_details,
         }
     }
 }
@@ -384,12 +383,13 @@ impl VersionDetails {
     }
 }
 
-fn invert_path_map(map: &HashMap<String, Vec<String>>) -> HashMap<String, String> {
+fn invert_path_map(map: HashMap<String, Vec<String>>) -> HashMap<String, Rc<String>> {
     let mut inverted = HashMap::new();
 
-    for (digest, paths) in map {
-        for path in paths {
-            inverted.insert(path.clone(), digest.clone());
+    for (digest, paths) in map.into_iter() {
+        let digest = Rc::new(digest);
+        for path in paths.into_iter() {
+            inverted.insert(path, Rc::clone(&digest));
         }
     }
 
