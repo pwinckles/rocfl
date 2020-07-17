@@ -21,7 +21,7 @@ use std::ops::Deref;
 #[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
 #[structopt(setting(ColorAuto), setting(ColoredHelp))]
 struct AppArgs {
-    /// Species the path to the OCFL storage root.
+    /// Specifies the path to the OCFL storage root.
     #[structopt(short = "R", long, value_name = "PATH", default_value = ".")]
     root: String,
 
@@ -37,12 +37,14 @@ struct AppArgs {
 /// A CLI for OCFL repositories.
 #[derive(Debug, StructOpt)]
 enum Command {
-    #[structopt(name = "ls", author = "Peter Winckles <pwinckles@pm.me>")]
+    #[structopt(name = "ls")]
     List(List),
-    #[structopt(name = "log", author = "Peter Winckles <pwinckles@pm.me>")]
+    #[structopt(name = "log")]
     Log(Log),
-    #[structopt(name = "show", author = "Peter Winckles <pwinckles@pm.me>")]
+    #[structopt(name = "show")]
     Show(Show),
+    #[structopt(name = "diff")]
+    Diff(Diff),
 }
 
 /// Lists objects or files within objects.
@@ -132,6 +134,23 @@ struct Show {
     version: Option<VersionId>,
 }
 
+/// Shows the files that changed between two versions
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+struct Diff {
+    /// ID of the object
+    #[structopt(name = "OBJECT")]
+    object_id: String,
+
+    /// Left-hand side version
+    #[structopt(name = "LEFT_VERSION")]
+    left: VersionId,
+
+    /// Right-hand side version
+    #[structopt(name = "RIGHT_VERSION")]
+    right: VersionId,
+}
+
 #[derive(Debug)]
 struct Num(u32);
 
@@ -202,6 +221,7 @@ fn exec_command(args: &AppArgs) -> Result<()> {
         Command::List(list) => list_command(&repo, &list, args)?,
         Command::Log(log) => log_command(&repo, &log)?,
         Command::Show(show) => show_command(&repo, &show)?,
+        Command::Diff(diff) => diff_command(&repo, &diff)?,
     }
     Ok(())
 }
@@ -248,28 +268,19 @@ fn log_command(repo: &FsOcflRepo, command: &Log) -> Result<()> {
 }
 
 fn show_command(repo: &FsOcflRepo, command: &Show) -> Result<()> {
+    // TODO this call is computing the latest update of all files, which is unnecessary
     let target = repo.get_object(&command.object_id, command.version.clone())?;
+
+    if !command.minimal {
+        println!("{}", FormatVersion::new(&target.version_details, false));
+    }
 
     let mut diffs = Vec::new();
 
     if target.version_details.version.version_num > 1 {
         let previous_id = target.version_details.version.previous().unwrap();
-        let mut previous = repo.get_object(&command.object_id, Some(previous_id))?;
-
-        for (path, details) in target.state {
-            match previous.state.remove(&path) {
-                None => diffs.push(DiffLine::added(path)),
-                Some(entry) => {
-                    if entry.digest.deref().ne(details.digest.deref()) {
-                        diffs.push(DiffLine::modified(path))
-                    }
-                }
-            }
-        }
-
-        for (path, _details) in previous.state {
-            diffs.push(DiffLine::deleted(path))
-        }
+        let previous = repo.get_object(&command.object_id, Some(previous_id))?;
+        diffs = diff(previous, target);
     } else {
         for (path, _details) in target.state {
             diffs.push(DiffLine::added(path))
@@ -278,15 +289,52 @@ fn show_command(repo: &FsOcflRepo, command: &Show) -> Result<()> {
 
     diffs.sort_unstable();
 
-    if !command.minimal {
-        println!("{}", FormatVersion::new(&target.version_details, false));
+    for diff in diffs {
+        println!("{}", diff);
     }
+
+    Ok(())
+}
+
+fn diff_command(repo: &FsOcflRepo, command: &Diff) -> Result<()> {
+    if command.left == command.right {
+        return Ok(());
+    }
+
+    // TODO this call is computing the latest update of all files, which is unnecessary
+    let left = repo.get_object(&command.object_id, Some(command.left.clone()))?;
+    let right = repo.get_object(&command.object_id, Some(command.right.clone()))?;
+
+    let diffs = diff(left, right);
 
     for diff in diffs {
         println!("{}", diff);
     }
 
     Ok(())
+}
+
+fn diff(mut left: ObjectVersion, right: ObjectVersion) -> Vec<DiffLine> {
+    let mut diffs = Vec::new();
+
+    for (path, details) in right.state {
+        match left.state.remove(&path) {
+            None => diffs.push(DiffLine::added(path)),
+            Some(entry) => {
+                if entry.digest.deref().ne(details.digest.deref()) {
+                    diffs.push(DiffLine::modified(path))
+                }
+            }
+        }
+    }
+
+    for (path, _details) in left.state {
+        diffs.push(DiffLine::deleted(path))
+    }
+
+    diffs.sort_unstable();
+
+    diffs
 }
 
 fn list_object_contents(repo: &FsOcflRepo, command: &List) -> Result<()> {
@@ -299,19 +347,16 @@ fn list_object_contents(repo: &FsOcflRepo, command: &List) -> Result<()> {
 }
 
 fn list_objects(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()> {
+    // TODO this call is computing the latest update of all files, which is unnecessary
     for object in repo.list_objects(command.object_id.as_deref())
         .with_context(|| "Failed to list objects")? {
         match object {
-            Ok(object) => print_object(&object, command),
+            Ok(object) => println!("{}", FormatListing::new(&Listing::from(&object), command)),
             Err(e) => print_err(e, args.quiet)
         }
     }
 
     Ok(())
-}
-
-fn print_object(object: &ObjectVersion, command: &List) {
-    println!("{}", FormatListing::new(&Listing::from(object), command))
 }
 
 fn print_object_contents(object: &ObjectVersion, command: &List) -> Result<()> {
