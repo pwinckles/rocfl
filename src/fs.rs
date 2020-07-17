@@ -6,43 +6,43 @@ use grep::searcher::Searcher;
 use anyhow::{anyhow, Result, Context};
 use grep::searcher::sinks::UTF8;
 use grep::matcher::{Matcher, Captures};
-use crate::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, OcflObjectVersion, VersionId, ROOT_INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, VersionDetails};
+use crate::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, ObjectVersion, VersionId, ROOT_INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, VersionDetails};
 use globset::{GlobMatcher, Glob};
 
 pub struct FsOcflRepo {
-    pub root: PathBuf
+    pub storage_root: PathBuf
 }
 
 impl FsOcflRepo {
-    pub fn new<P: AsRef<Path>>(root: P) -> Result<FsOcflRepo> {
-        let root = root.as_ref().to_path_buf();
+    pub fn new<P: AsRef<Path>>(storage_root: P) -> Result<FsOcflRepo> {
+        let storage_root = storage_root.as_ref().to_path_buf();
 
-        if !root.exists() {
-            return Err(anyhow!("Path {} does not exist", root.to_string_lossy()));
-        } else if !root.is_dir() {
-            return Err(anyhow!("Path {} is not a directory", root.to_string_lossy()))
+        if !storage_root.exists() {
+            return Err(anyhow!("Storage root {} does not exist", storage_root.to_string_lossy()));
+        } else if !storage_root.is_dir() {
+            return Err(anyhow!("Storage root {} is not a directory", storage_root.to_string_lossy()))
         }
 
         // TODO verify is an OCFL repository
         // TODO load storage layout
 
         Ok(FsOcflRepo {
-            root
+            storage_root
         })
     }
 }
 
 impl OcflRepo for FsOcflRepo {
 
-    fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<OcflObjectVersion>>>> {
-        Ok(Box::new(FsObjectVersionIter::new(None, FsInventoryIter::new(&self.root, None, filter_glob)?)))
+    fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersion>>>> {
+        Ok(Box::new(ObjectVersionIter::new(None, InventoryIter::new(&self.storage_root, None, filter_glob)?)))
     }
 
-    fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<Option<OcflObjectVersion>> {
-        let mut iter = FsObjectVersionIter::new(version,
-                                                FsInventoryIter::new(&self.root,
-                                                                     Some(object_id.to_string()),
-                                                                     None)?);
+    fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<Option<ObjectVersion>> {
+        let mut iter = ObjectVersionIter::new(version,
+                                              InventoryIter::new(&self.storage_root,
+                                                                 Some(object_id.to_string()),
+                                                                 None)?);
         loop {
             match iter.next() {
                 Some(Ok(object)) => return Ok(Some(object)),
@@ -54,7 +54,7 @@ impl OcflRepo for FsOcflRepo {
     }
 
     fn list_object_versions(&self, object_id: &str) -> Result<Option<Vec<VersionDetails>>> {
-        let mut iter = FsInventoryIter::new(&self.root, Some(object_id.to_string()), None)?;
+        let mut iter = InventoryIter::new(&self.storage_root, Some(object_id.to_string()), None)?;
 
         loop {
             match iter.next() {
@@ -74,13 +74,13 @@ impl OcflRepo for FsOcflRepo {
 
 }
 
-struct FsObjectVersionIter {
+struct ObjectVersionIter {
     version: Option<VersionId>,
-    iter: FsInventoryIter,
+    iter: InventoryIter,
 }
 
-impl FsObjectVersionIter {
-    fn new(version: Option<VersionId>, iter: FsInventoryIter) -> Self {
+impl ObjectVersionIter {
+    fn new(version: Option<VersionId>, iter: InventoryIter) -> Self {
         Self {
             version,
             iter,
@@ -88,31 +88,31 @@ impl FsObjectVersionIter {
     }
 }
 
-impl Iterator for FsObjectVersionIter {
-    type Item = Result<OcflObjectVersion>;
+impl Iterator for ObjectVersionIter {
+    type Item = Result<ObjectVersion>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next() {
             None => None,
             Some(Err(e)) => Some(Err(e)),
             Some(Ok(inventory)) => {
-                Some(OcflObjectVersion::from_inventory(inventory, self.version.as_ref()))
+                Some(ObjectVersion::from_inventory(inventory, self.version.as_ref()))
             }
         }
     }
 }
 
-struct FsInventoryIter {
+struct InventoryIter {
     dir_iters: Vec<ReadDir>,
     current: RefCell<Option<ReadDir>>,
     object_id: Option<String>,
     object_id_glob: Option<GlobMatcher>,
 }
 
-impl FsInventoryIter {
+impl InventoryIter {
 
     fn new<P: AsRef<Path>>(root: P, object_id: Option<String>, object_id_glob: Option<&str>) -> Result<Self> {
-        Ok(FsInventoryIter {
+        Ok(InventoryIter {
             dir_iters: vec![std::fs::read_dir(&root)?],
             current: RefCell::new(None),
             object_id,
@@ -180,7 +180,7 @@ impl FsInventoryIter {
 
 }
 
-impl Iterator for FsInventoryIter {
+impl Iterator for InventoryIter {
     type Item = Result<Inventory>;
 
     fn next(&mut self) -> Option<Self::Item> {

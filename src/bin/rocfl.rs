@@ -7,7 +7,7 @@ use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use serde::export::Formatter;
 use core::fmt;
 use std::convert::TryFrom;
-use rocfl::{OcflObjectVersion, FileDetails, VersionId, OcflRepo, FsOcflRepo};
+use rocfl::{ObjectVersion, FileDetails, VersionId, OcflRepo, FsOcflRepo};
 use std::cmp::Ordering;
 use chrono::{DateTime, Local};
 use globset::Glob;
@@ -215,14 +215,14 @@ fn list_objects(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()>
     Ok(())
 }
 
-fn print_object(object: &OcflObjectVersion, command: &List) {
+fn print_object(object: &ObjectVersion, command: &List) {
     println!("{}", FormatListing {
         listing: &Listing::from(object),
         command
     })
 }
 
-fn print_object_contents(object: &OcflObjectVersion, command: &List) -> Result<()> {
+fn print_object_contents(object: &ObjectVersion, command: &List) -> Result<()> {
     let mut glob = None;
     if command.path.is_some() {
         glob = Some(Glob::new(command.path.as_ref().unwrap())?.compile_matcher());
@@ -305,8 +305,8 @@ impl<'a> Listing<'a> {
 
 }
 
-impl<'a> From<&'a OcflObjectVersion> for Listing<'a> {
-    fn from(object: &'a OcflObjectVersion) -> Self {
+impl<'a> From<&'a ObjectVersion> for Listing<'a> {
+    fn from(object: &'a ObjectVersion) -> Self {
         Self {
             version: &object.version_details.version,
             updated: &object.version_details.created,

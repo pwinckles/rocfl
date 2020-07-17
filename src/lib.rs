@@ -28,9 +28,9 @@ lazy_static! {
 
 pub trait OcflRepo {
 
-    fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<OcflObjectVersion>>>>;
+    fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersion>>>>;
 
-    fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<Option<OcflObjectVersion>>;
+    fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<Option<ObjectVersion>>;
 
     fn list_object_versions(&self, object_id: &str) -> Result<Option<Vec<VersionDetails>>>;
 
@@ -243,8 +243,7 @@ impl Inventory {
 }
 
 #[derive(Debug)]
-pub struct OcflObjectVersion {
-    // TODO consider storing inventory here and using refs in all other fields
+pub struct ObjectVersion {
     pub id: String,
     pub object_root: String,
     pub digest_algorithm: String,
@@ -268,7 +267,7 @@ pub struct VersionDetails {
     pub user_address: Option<String>,
 }
 
-impl OcflObjectVersion {
+impl ObjectVersion {
     fn from_inventory(inventory: Inventory, version_id: Option<&VersionId>) -> Result<Self> {
         let mut inventory = inventory;
         let version_id = match version_id {
@@ -279,7 +278,7 @@ impl OcflObjectVersion {
         let version = inventory.get_version(&version_id)?;
         let version_details = VersionDetails::new(&version_id, version);
 
-        let state = OcflObjectVersion::construct_state(&version_id, &mut inventory)?;
+        let state = ObjectVersion::construct_state(&version_id, &mut inventory)?;
 
         Ok(Self {
             id: inventory.id,
