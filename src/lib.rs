@@ -13,7 +13,6 @@ use core::fmt;
 use serde::export::Formatter;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
-use std::path::Path;
 
 pub use self::fs::FsOcflRepo;
 
@@ -31,6 +30,10 @@ pub trait OcflRepo {
     fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<OcflObjectVersion>>>>;
 
     fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<Option<OcflObjectVersion>>;
+
+    fn list_object_versions(&self, object_id: &str) -> Result<Vec<VersionDetails>>;
+
+    fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Vec<VersionDetails>>;
 
 }
 
@@ -170,6 +173,9 @@ struct Inventory {
     manifest: HashMap<String, Vec<String>>,
     versions: HashMap<VersionId, Version>,
     fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
+
+    #[serde(skip)]
+    object_root: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -207,7 +213,7 @@ pub struct OcflObjectVersion {
     // TODO consider storing inventory here and using refs in all other fields
     pub id: String,
     pub version: VersionId,
-    pub root: String,
+    pub object_root: String,
     pub created: DateTime<Local>,
     pub digest_algorithm: String,
     pub state: HashMap<String, FileDetails>,
@@ -226,18 +232,25 @@ pub struct FileDetails {
 pub struct VersionDetails {
     pub version: VersionId,
     pub created: DateTime<Local>,
+    pub user: Option<String>,
+    pub address: Option<String>,
 }
 
 impl OcflObjectVersion {
 
-    fn new<P: AsRef<Path>>(root: P, version: &VersionId, inventory: &Inventory) -> Result<Self> {
-        let state = construct_state(&root, &version, inventory)?;
+    fn new(inventory: &Inventory, version: Option<&VersionId>) -> Result<Self> {
+        let version = match version {
+            Some(version) => version.clone(),
+            None => inventory.head.clone(),
+        };
+
+        let state = construct_state(&version, inventory)?;
 
         Ok(Self {
             id: inventory.id.clone(),
-            version: version.clone(),
-            root: root.as_ref().to_string_lossy().to_string(),
-            created: ensure_version(version, inventory)?.created.clone(),
+            object_root: inventory.object_root.clone(),
+            created: ensure_version(&version, inventory)?.created.clone(),
+            version,
             digest_algorithm: inventory.digest_algorithm.clone(),
             state
         })
@@ -245,7 +258,7 @@ impl OcflObjectVersion {
 
 }
 
-fn construct_state<P: AsRef<Path>>(object_root: P, target: &VersionId, inventory: &Inventory) -> Result<HashMap<String, FileDetails>> {
+fn construct_state(target: &VersionId, inventory: &Inventory) -> Result<HashMap<String, FileDetails>> {
     // TODO look for logic simplifications
 
     let mut state = HashMap::new();
@@ -263,12 +276,20 @@ fn construct_state<P: AsRef<Path>>(object_root: P, target: &VersionId, inventory
             for (target_path, target_digest) in target_path_map.into_iter() {
                 let content_path = lookup_content_path(&target_digest, inventory)?.to_string();
                 state.insert(target_path, FileDetails {
-                    storage_path: object_root.as_ref().join(&content_path).to_string_lossy().to_string(),
+                    storage_path: format!("{}/{}", inventory.object_root, content_path),
                     content_path,
                     digest: target_digest,
                     last_update: VersionDetails {
                         version: current_version_id.clone(),
-                        created: current.created.clone()
+                        created: current.created.clone(),
+                        user: match &current.user {
+                            Some(user) => user.name.clone(),
+                            None => None
+                        },
+                        address: match &current.user {
+                            Some(user) => user.address.clone(),
+                            None => None
+                        },
                     }
                 });
             }
@@ -288,11 +309,19 @@ fn construct_state<P: AsRef<Path>>(object_root: P, target: &VersionId, inventory
                 let content_path = lookup_content_path(&target_digest, inventory)?.to_string();
                 state.insert(target_path.clone(), FileDetails {
                     digest: target_digest.clone(),
-                    storage_path: object_root.as_ref().join(&content_path).to_string_lossy().to_string(),
+                    storage_path: format!("{}/{}", inventory.object_root, content_path),
                     content_path,
                     last_update: VersionDetails {
                         version: current_version_id.clone(),
-                        created: current.created.clone()
+                        created: current.created.clone(),
+                        user: match &current.user {
+                            Some(user) => user.name.clone(),
+                            None => None
+                        },
+                        address: match &current.user {
+                            Some(user) => user.address.clone(),
+                            None => None
+                        },
                     }
                 });
             }

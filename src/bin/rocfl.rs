@@ -1,5 +1,5 @@
 use structopt::StructOpt;
-use structopt::clap::AppSettings::{ColorAuto, ColoredHelp};
+use structopt::clap::AppSettings::{ColorAuto, ColoredHelp, DisableVersion};
 use clap::arg_enum;
 use anyhow::{Result, Context, Error};
 use std::io::Write;
@@ -11,6 +11,9 @@ use rocfl::{OcflObjectVersion, FileDetails, VersionId, OcflRepo, FsOcflRepo};
 use std::cmp::Ordering;
 use chrono::{DateTime, Local};
 use globset::Glob;
+use std::fmt::Display;
+use std::str::FromStr;
+use std::num::ParseIntError;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
@@ -34,11 +37,13 @@ struct AppArgs {
 enum Command {
     #[structopt(name = "ls", author = "Peter Winckles <pwinckles@pm.me>")]
     List(List),
+    #[structopt(name = "log", author = "Peter Winckles <pwinckles@pm.me>")]
+    Log(Log),
 }
 
 /// Lists objects or files within objects.
 #[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp))]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 struct List {
     /// Enables long output format: version, updated, name
     #[structopt(short, long)]
@@ -52,10 +57,13 @@ struct List {
     #[structopt(short, long)]
     digest: bool,
 
+    // TODO flag for listing unique logical paths across all versions?
+
     /// Specifies the version of the object to list
     #[structopt(short, long, value_name = "NUM")]
     version: Option<u32>,
 
+    // TODO implement sort for object listing?
     /// Specifies the field to sort on. Sort is not supported when listing objects.
     #[structopt(short, long, value_name = "FIELD", possible_values = &Field::variants(), default_value = "name", case_insensitive = true)]
     sort: Field,
@@ -72,9 +80,61 @@ struct List {
     #[structopt(name = "OBJECT")]
     object_id: Option<String>,
 
+    // TODO flag to disable * from matching / in globs?
     /// Path glob of files to list. May only be specified if an object is also specified.
     #[structopt(name = "PATH")]
     path: Option<String>,
+}
+
+/// Displays the version history of an object or file.
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+struct Log {
+    /// Enables compact format
+    #[structopt(short, long)]
+    compact: bool,
+
+    /// Reverses the direction the versions are displayed
+    #[structopt(short, long)]
+    reverse: bool,
+
+    /// Limits the number of versions that are displayed
+    #[structopt(short, long, value_name = "NUM", default_value)]
+    num: Num,
+
+    /// ID of the object
+    #[structopt(name = "OBJECT")]
+    object_id: String,
+
+    /// Optional path to a file
+    #[structopt(name = "PATH")]
+    path: Option<String>,
+}
+
+#[derive(Debug)]
+struct Num(u32);
+
+impl Default for Num {
+    fn default() -> Self {
+        Self {
+            0: u32::MAX
+        }
+    }
+}
+
+impl FromStr for Num {
+    type Err = ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Num(u32::from_str(s)?))
+    }
+}
+
+impl Display for Num {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)?;
+        Ok(())
+    }
 }
 
 arg_enum! {
@@ -109,12 +169,12 @@ fn main() {
 fn exec_command(args: &AppArgs) -> Result<()> {
     let repo = FsOcflRepo::new(args.root.clone())?;
     match &args.command {
-        Command::List(list) => list_command(&repo, &list, &args)?
+        Command::List(list) => list_command(&repo, &list, &args)?,
+        _ => ()
     }
     Ok(())
 }
 
-// TODO move to cmds module?
 fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()> {
     if command.objects || command.object_id.is_none() {
         list_objects(repo, command, args)?;
@@ -251,7 +311,7 @@ impl<'a> From<&'a OcflObjectVersion> for Listing<'a> {
             version: &object.version,
             updated: &object.created,
             name: &object.id,
-            storage_path: &object.root,
+            storage_path: &object.object_root,
             digest_algorithm: None,
             digest: None,
         }

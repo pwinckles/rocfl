@@ -6,16 +6,7 @@ use grep::searcher::Searcher;
 use anyhow::{anyhow, Result, Context};
 use grep::searcher::sinks::UTF8;
 use grep::matcher::{Matcher, Captures};
-use crate::{
-    OcflRepo,
-    OBJECT_MARKER,
-    OBJECT_ID_MATCHER,
-    Inventory,
-    OcflObjectVersion,
-    VersionId,
-    ROOT_INVENTORY_FILE,
-    MUTABLE_HEAD_INVENTORY_FILE
-};
+use crate::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, OcflObjectVersion, VersionId, ROOT_INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, VersionDetails};
 use globset::{GlobMatcher, Glob};
 
 pub struct FsOcflRepo {
@@ -44,11 +35,13 @@ impl FsOcflRepo {
 impl OcflRepo for FsOcflRepo {
 
     fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<OcflObjectVersion>>>> {
-        Ok(Box::new(FsObjectIdIter::new(&self.root, None, None, filter_glob)?))
+        Ok(Box::new(
+            FsObjectVersionIter::new(None,
+                                     FsInventoryIter::new(&self.root, None, filter_glob)?)))
     }
 
     fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<Option<OcflObjectVersion>> {
-        let mut iter = FsObjectIdIter::new(&self.root, Some(object_id.to_string()), version, None)?;
+        let mut iter = FsObjectVersionIter::new(version, FsInventoryIter::new(&self.root, Some(object_id.to_string()), None)?);
         loop {
             match iter.next() {
                 Some(Ok(object)) => return Ok(Some(object)),
@@ -59,24 +52,58 @@ impl OcflRepo for FsOcflRepo {
         }
     }
 
+    fn list_object_versions(&self, object_id: &str) -> Result<Vec<VersionDetails>> {
+        Ok(vec![])
+    }
+
+    fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Vec<VersionDetails>> {
+        Ok(vec![])
+    }
+
 }
 
-struct FsObjectIdIter {
+struct FsObjectVersionIter {
+    version: Option<VersionId>,
+    iter: FsInventoryIter,
+}
+
+impl FsObjectVersionIter {
+    fn new(version: Option<VersionId>, iter: FsInventoryIter) -> Self {
+        Self {
+            version,
+            iter,
+        }
+    }
+}
+
+impl Iterator for FsObjectVersionIter {
+    type Item = Result<OcflObjectVersion>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.iter.next() {
+            None => None,
+            Some(Err(e)) => Some(Err(e)),
+            Some(Ok(inventory)) => {
+                Some(OcflObjectVersion::new(&inventory, self.version.as_ref()))
+            }
+        }
+    }
+}
+
+struct FsInventoryIter {
     dir_iters: Vec<ReadDir>,
     current: RefCell<Option<ReadDir>>,
     object_id: Option<String>,
-    version: Option<VersionId>,
     object_id_glob: Option<GlobMatcher>,
 }
 
-impl FsObjectIdIter {
+impl FsInventoryIter {
 
-    fn new<P: AsRef<Path>>(root: P, object_id: Option<String>, version: Option<VersionId>, object_id_glob: Option<&str>) -> Result<FsObjectIdIter> {
-        Ok(FsObjectIdIter {
+    fn new<P: AsRef<Path>>(root: P, object_id: Option<String>, object_id_glob: Option<&str>) -> Result<Self> {
+        Ok(FsInventoryIter {
             dir_iters: vec![std::fs::read_dir(&root)?],
             current: RefCell::new(None),
             object_id,
-            version,
             object_id_glob: match object_id_glob {
                 Some(glob) => Some(Glob::new(glob)?.compile_matcher()),
                 None => None
@@ -97,7 +124,7 @@ impl FsObjectIdIter {
         false
     }
 
-    fn create_if_matches<P: AsRef<Path>>(&self, object_root: P) -> Result<Option<OcflObjectVersion>>{
+    fn create_if_matches<P: AsRef<Path>>(&self, object_root: P) -> Result<Option<Inventory>>{
         let inventory_path = object_root.as_ref().join(ROOT_INVENTORY_FILE);
 
         if self.is_matching() {
@@ -116,6 +143,13 @@ impl FsObjectIdIter {
         Ok(None)
     }
 
+    fn create_object_version<P: AsRef<Path>>(&self, path: P) -> Result<Option<Inventory>> {
+        match parse_inventory(&path) {
+            Ok(inventory) => Ok(Some(inventory)),
+            Err(e) => Err(e)
+        }
+    }
+
     fn extract_object_id<P: AsRef<Path>>(&self, path: P) -> Result<String> {
         let mut matches: Vec<String> = vec![];
         Searcher::new().search_path(&*OBJECT_ID_MATCHER, &path, UTF8(|_, line| {
@@ -132,19 +166,12 @@ impl FsObjectIdIter {
         }
     }
 
-    fn create_object_version<P: AsRef<Path>>(&self, path: P) -> Result<Option<OcflObjectVersion>> {
-        match create_object_version(&self.version, &path) {
-            Ok(object) => Ok(Some(object)),
-            Err(e) => Err(e)
-        }
-    }
-
 }
 
-impl Iterator for FsObjectIdIter {
-    type Item = Result<OcflObjectVersion>;
+impl Iterator for FsInventoryIter {
+    type Item = Result<Inventory>;
 
-    fn next(&mut self) -> Option<Result<OcflObjectVersion>> {
+    fn next(&mut self) -> Option<Self::Item> {
         loop {
             if self.current.borrow().is_none() && self.dir_iters.is_empty() {
                 return None
@@ -206,14 +233,21 @@ fn is_object_root<P: AsRef<Path>>(path: P) -> Result<bool> {
     Ok(false)
 }
 
-fn create_object_version<P: AsRef<Path>>(version: &Option<VersionId>, object_root: P) -> Result<OcflObjectVersion> {
+fn parse_inventory<P: AsRef<Path>>(object_root: P) -> Result<Inventory> {
     let inventory_path = resolve_inventory_path(&object_root);
-    let inventory = parse_inventory(&inventory_path)
+    let mut inventory = parse_inventory_file(&inventory_path)
         .with_context(|| format!("Failed to parse inventory at {}",
-                                 inventory_path.to_str().unwrap_or_default()))?;
-    let head = inventory.head.clone();
-    let v = version.as_ref().unwrap_or_else(|| &head);
-    OcflObjectVersion::new(object_root, v, &inventory)
+                             inventory_path.to_str().unwrap_or_default()))?;
+    inventory.object_root = object_root.as_ref().to_string_lossy().to_string();
+    Ok(inventory)
+}
+
+fn parse_inventory_file<P: AsRef<Path>>(inventory_file: P) -> Result<Inventory> {
+    let mut bytes = Vec::new();
+    File::open(&inventory_file)?.read_to_end(&mut bytes)?;
+    let inventory: Inventory = serde_json::from_slice(&bytes)?;
+    inventory.validate()?;
+    Ok(inventory)
 }
 
 fn resolve_inventory_path<P: AsRef<Path>>(object_root: P) -> PathBuf {
@@ -222,12 +256,4 @@ fn resolve_inventory_path<P: AsRef<Path>>(object_root: P) -> PathBuf {
         return mutable_head_inv;
     }
     object_root.as_ref().join(ROOT_INVENTORY_FILE)
-}
-
-fn parse_inventory<P: AsRef<Path>>(path: P) -> Result<Inventory> {
-    let mut bytes = Vec::new();
-    File::open(&path)?.read_to_end(&mut bytes)?;
-    let inventory: Inventory = serde_json::from_slice(&bytes)?;
-    inventory.validate()?;
-    Ok(inventory)
 }
