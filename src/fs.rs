@@ -6,17 +6,7 @@ use grep::searcher::Searcher;
 use anyhow::{anyhow, Result, Context};
 use grep::searcher::sinks::UTF8;
 use grep::matcher::{Matcher, Captures};
-use crate::{
-    OcflRepo,
-    OBJECT_MARKER,
-    OBJECT_ID_MATCHER,
-    Inventory,
-    ObjectVersion,
-    VersionId,
-    ROOT_INVENTORY_FILE,
-    MUTABLE_HEAD_INVENTORY_FILE,
-    VersionDetails
-};
+use crate::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, ObjectVersion, VersionId, ROOT_INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, VersionDetails, not_found};
 use globset::{GlobMatcher, Glob};
 
 pub struct FsOcflRepo {
@@ -48,22 +38,22 @@ impl OcflRepo for FsOcflRepo {
         Ok(Box::new(ObjectVersionIter::new(None, InventoryIter::new(&self.storage_root, None, filter_glob)?)))
     }
 
-    fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<Option<ObjectVersion>> {
-        let mut iter = ObjectVersionIter::new(version,
+    fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<ObjectVersion> {
+        let mut iter = ObjectVersionIter::new(version.clone(),
                                               InventoryIter::new(&self.storage_root,
                                                                  Some(object_id.to_string()),
                                                                  None)?);
         loop {
             match iter.next() {
-                Some(Ok(object)) => return Ok(Some(object)),
+                Some(Ok(object)) => return Ok(object),
                 // TODO should print error?
                 Some(Err(_)) => (),
-                None => return Ok(None)
-            };
+                None => return Err(not_found(&object_id, version.as_ref()).into())
+            }
         }
     }
 
-    fn list_object_versions(&self, object_id: &str) -> Result<Option<Vec<VersionDetails>>> {
+    fn list_object_versions(&self, object_id: &str) -> Result<Vec<VersionDetails>> {
         let mut iter = InventoryIter::new(&self.storage_root, Some(object_id.to_string()), None)?;
 
         loop {
@@ -75,16 +65,16 @@ impl OcflRepo for FsOcflRepo {
                         versions.push(VersionDetails::from_version(id, version))
                     }
 
-                    return Ok(Some(versions))
+                    return Ok(versions)
                 },
                 // TODO should print error?
                 Some(Err(_)) => (),
-                None => return Ok(None)
+                None => return Err(not_found(&object_id, None).into())
             }
         }
     }
 
-    fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Option<Vec<VersionDetails>>> {
+    fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Vec<VersionDetails>> {
         let mut iter = InventoryIter::new(&self.storage_root, Some(object_id.to_string()), None)?;
 
         loop {
@@ -112,11 +102,11 @@ impl OcflRepo for FsOcflRepo {
                         }
                     }
 
-                    return Ok(Some(versions))
+                    return Ok(versions)
                 },
                 // TODO should print error?
                 Some(Err(_)) => (),
-                None => return Ok(None)
+                None => return Err(not_found(&object_id, None).into())
             }
         }
     }

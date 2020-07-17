@@ -2,12 +2,11 @@ use structopt::StructOpt;
 use structopt::clap::AppSettings::{ColorAuto, ColoredHelp, DisableVersion};
 use clap::arg_enum;
 use lazy_static::lazy_static;
-use anyhow::{anyhow, Result, Context, Error};
+use anyhow::{Result, Context, Error};
 use std::io::Write;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use serde::export::Formatter;
 use core::fmt;
-use std::convert::TryFrom;
 use rocfl::{ObjectVersion, FileDetails, VersionId, OcflRepo, FsOcflRepo, VersionDetails};
 use std::cmp::Ordering;
 use chrono::{DateTime, Local};
@@ -16,6 +15,7 @@ use std::fmt::Display;
 use std::str::FromStr;
 use std::num::ParseIntError;
 use std::process::exit;
+use std::ops::Deref;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
@@ -41,6 +41,8 @@ enum Command {
     List(List),
     #[structopt(name = "log", author = "Peter Winckles <pwinckles@pm.me>")]
     Log(Log),
+    #[structopt(name = "show", author = "Peter Winckles <pwinckles@pm.me>")]
+    Show(Show),
 }
 
 /// Lists objects or files within objects.
@@ -62,8 +64,8 @@ struct List {
     // TODO flag for listing unique logical paths across all versions?
 
     /// Specifies the version of the object to list
-    #[structopt(short, long, value_name = "NUM")]
-    version: Option<u32>,
+    #[structopt(short, long, value_name = "VERSION")]
+    version: Option<VersionId>,
 
     // TODO implement sort for object listing?
     /// Specifies the field to sort on. Sort is not supported when listing objects.
@@ -111,6 +113,23 @@ struct Log {
     /// Optional path to a file
     #[structopt(name = "PATH")]
     path: Option<String>,
+}
+
+/// Shows a summary of changes in a version.
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+struct Show {
+    /// Suppresses the version details output
+    #[structopt(short, long)]
+    minimal: bool,
+
+    /// ID of the object
+    #[structopt(name = "OBJECT")]
+    object_id: String,
+
+    /// Optional version to show
+    #[structopt(name = "VERSION")]
+    version: Option<VersionId>,
 }
 
 #[derive(Debug)]
@@ -182,6 +201,7 @@ fn exec_command(args: &AppArgs) -> Result<()> {
     match &args.command {
         Command::List(list) => list_command(&repo, &list, args)?,
         Command::Log(log) => log_command(&repo, &log)?,
+        Command::Show(show) => show_command(&repo, &show)?,
     }
     Ok(())
 }
@@ -202,31 +222,68 @@ fn log_command(repo: &FsOcflRepo, command: &Log) -> Result<()> {
         None => repo.list_object_versions(&command.object_id)?,
     };
 
-    match versions {
-        Some(versions) => {
-            let mut count = 0;
-            // TODO find a way to do this with less duplication
-            if command.reverse {
-                for version in versions.iter().rev() {
-                    if count == command.num.0 {
-                        break;
-                    } else {
-                        println!("{}", FormatVersion::new(version, command));
-                        count += 1;
-                    }
-                }
+    let mut count = 0;
+    // TODO find a way to do this with less duplication
+    if command.reverse {
+        for version in versions.iter().rev() {
+            if count == command.num.0 {
+                break;
             } else {
-                for version in versions.iter() {
-                    if count == command.num.0 {
-                        break;
-                    } else {
-                        println!("{}", FormatVersion::new(version, command));
-                        count += 1;
+                println!("{}", FormatVersion::new(version, command.compact));
+                count += 1;
+            }
+        }
+    } else {
+        for version in versions.iter() {
+            if count == command.num.0 {
+                break;
+            } else {
+                println!("{}", FormatVersion::new(version, command.compact));
+                count += 1;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn show_command(repo: &FsOcflRepo, command: &Show) -> Result<()> {
+    let target = repo.get_object(&command.object_id, command.version.clone())?;
+
+    let mut diffs = Vec::new();
+
+    if target.version_details.version.version_num > 1 {
+        let previous_id = target.version_details.version.previous().unwrap();
+        let mut previous = repo.get_object(&command.object_id, Some(previous_id))?;
+
+        for (path, details) in target.state {
+            match previous.state.remove(&path) {
+                None => diffs.push(DiffLine::added(path)),
+                Some(entry) => {
+                    if entry.digest.deref().ne(details.digest.deref()) {
+                        diffs.push(DiffLine::modified(path))
                     }
                 }
             }
-        },
-        None => return Err(anyhow!("Object {} was not found", command.object_id)),
+        }
+
+        for (path, _details) in previous.state {
+            diffs.push(DiffLine::deleted(path))
+        }
+    } else {
+        for (path, _details) in target.state {
+            diffs.push(DiffLine::added(path))
+        }
+    }
+
+    diffs.sort_unstable();
+
+    if !command.minimal {
+        println!("{}", FormatVersion::new(&target.version_details, false));
+    }
+
+    for diff in diffs {
+        println!("{}", diff);
     }
 
     Ok(())
@@ -234,18 +291,9 @@ fn log_command(repo: &FsOcflRepo, command: &Log) -> Result<()> {
 
 fn list_object_contents(repo: &FsOcflRepo, command: &List) -> Result<()> {
     let object_id = command.object_id.as_ref().unwrap();
-    let version = parse_version(command.version)?;
-
-    match repo.get_object(object_id, version.clone())
-        .with_context(|| "Failed to list object")? {
-        Some(object) => print_object_contents(&object, command)?,
-        None => {
-            return match version {
-                Some(version) => Err(anyhow!("Object {} version {} was not found", object_id, version)),
-                None => Err(anyhow!("Object {} was not found", object_id)),
-            }
-        },
-    }
+    let object = repo.get_object(object_id, command.version.clone())
+        .with_context(|| "Failed to list object")?;
+    print_object_contents(&object, command)?;
 
     Ok(())
 }
@@ -311,13 +359,7 @@ fn print_err(error: Error, quiet: bool) {
     }
 }
 
-fn parse_version(version_num: Option<u32>) -> Result<Option<VersionId>> {
-    match version_num {
-        Some(version_num) => Ok(Some(VersionId::try_from(version_num)?)),
-        None => Ok(None)
-    }
-}
-
+#[derive(Debug)]
 struct Listing<'a> {
     version: &'a VersionId,
     updated: &'a DateTime<Local>,
@@ -359,6 +401,7 @@ impl<'a> From<&'a ObjectVersion> for Listing<'a> {
     }
 }
 
+#[derive(Debug)]
 struct FormatListing<'a> {
     listing: &'a Listing<'a>,
     command: &'a List,
@@ -400,23 +443,24 @@ impl<'a> fmt::Display for FormatListing<'a> {
     }
 }
 
+#[derive(Debug)]
 struct FormatVersion<'a> {
     version: &'a VersionDetails,
-    command: &'a Log,
+    compact: bool,
 }
 
 impl<'a> FormatVersion<'a> {
-    fn new(version: &'a VersionDetails, command: &'a Log) -> Self {
+    fn new(version: &'a VersionDetails, compact: bool) -> Self {
         Self {
             version,
-            command,
+            compact,
         }
     }
 }
 
 impl<'a> fmt::Display for FormatVersion<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if self.command.compact {
+        if self.compact {
             write!(f, "{version:>5}\t{name}\t<{address}>\t{date:19}\t{message}",
                    version = self.version.version.to_string(),
                    name = self.version.user_name.as_ref().unwrap_or(&(*DEFAULT_USER)),
@@ -435,5 +479,71 @@ impl<'a> fmt::Display for FormatVersion<'a> {
         }
 
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct DiffLine {
+    diff_type: DiffType,
+    path: String,
+}
+
+#[derive(Debug)]
+enum DiffType {
+    Added,
+    Modified,
+    Deleted,
+}
+
+impl DiffLine {
+    fn added(path: String) -> Self {
+        Self {
+            diff_type: DiffType::Added,
+            path
+        }
+    }
+    fn modified(path: String) -> Self {
+        Self {
+            diff_type: DiffType::Modified,
+            path
+        }
+    }
+    fn deleted(path: String) -> Self {
+        Self {
+            diff_type: DiffType::Deleted,
+            path
+        }
+    }
+}
+
+impl fmt::Display for DiffLine {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self.diff_type {
+            DiffType::Added => write!(f, "A\t{}", self.path)?,
+            DiffType::Modified => write!(f, "M\t{}", self.path)?,
+            DiffType::Deleted => write!(f, "D\t{}", self.path)?,
+        }
+
+        Ok(())
+    }
+}
+
+impl PartialEq for DiffLine {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path
+    }
+}
+
+impl Eq for DiffLine {}
+
+impl PartialOrd for DiffLine {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for DiffLine {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.path.cmp(&other.path)
     }
 }

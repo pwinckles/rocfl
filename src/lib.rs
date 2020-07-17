@@ -1,7 +1,7 @@
 mod fs;
 
 use std::collections::{HashMap, BTreeMap};
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, Error};
 use chrono::{Local, DateTime};
 use serde::Deserialize;
 use thiserror::Error;
@@ -16,6 +16,7 @@ use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 pub use self::fs::FsOcflRepo;
+use std::str::FromStr;
 
 const OBJECT_MARKER: &str = "0=ocfl_object_1.0";
 const ROOT_INVENTORY_FILE: &str = "inventory.json";
@@ -31,11 +32,11 @@ pub trait OcflRepo {
     // TODO consider changing this to only return object level details to avoid needless version processing
     fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersion>>>>;
 
-    fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<Option<ObjectVersion>>;
+    fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<ObjectVersion>;
 
-    fn list_object_versions(&self, object_id: &str) -> Result<Option<Vec<VersionDetails>>>;
+    fn list_object_versions(&self, object_id: &str) -> Result<Vec<VersionDetails>>;
 
-    fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Option<Vec<VersionDetails>>>;
+    fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Vec<VersionDetails>>;
 
 }
 
@@ -48,7 +49,7 @@ pub struct VersionId {
 
 impl VersionId {
 
-    fn previous(&self) -> Result<VersionId> {
+    pub fn previous(&self) -> Result<VersionId> {
         if self.version_num - 1 < 1 {
             return Err(anyhow!("Versions cannot be less than 1"));
         }
@@ -60,7 +61,7 @@ impl VersionId {
     }
 
     #[allow(dead_code)]
-    fn next(&self) -> Result<VersionId> {
+    pub fn next(&self) -> Result<VersionId> {
         let max = match self.width {
             0 => usize::MAX,
             _ => (10 * (self.width - 1)) - 1
@@ -119,6 +120,17 @@ impl TryFrom<u32> for VersionId {
             version_num: version,
             width: 0,
         })
+    }
+}
+
+impl FromStr for VersionId {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match VersionId::try_from(s) {
+            Ok(v) => Ok(v),
+            Err(_) => Ok(VersionId::try_from(u32::from_str(s)?)?),
+        }
     }
 }
 
@@ -211,14 +223,14 @@ impl Inventory {
     fn get_version(&self, version: &VersionId) -> Result<&Version> {
         match self.versions.get(version) {
             Some(v) => Ok(v),
-            None => Err(RocflError::NotFound(format!("Object {} version {}", self.id, version)).into())
+            None => Err(not_found(&self.id, Some(version)).into())
         }
     }
 
     fn remove_version(&mut self, version: &VersionId) -> Result<Version> {
         match self.versions.remove(version) {
             Some(v) => Ok(v),
-            None => Err(RocflError::NotFound(format!("Object {} version {}", self.id, version)).into())
+            None => Err(not_found(&self.id, Some(version)).into())
         }
     }
 
@@ -408,6 +420,13 @@ fn invert_path_map(map: HashMap<String, Vec<String>>) -> HashMap<String, Rc<Stri
     }
 
     inverted
+}
+
+fn not_found(object_id: &str, version: Option<&VersionId>) -> RocflError {
+    match version {
+        Some(version) => RocflError::NotFound(format!("Object {} version {}", object_id, version)),
+        None => RocflError::NotFound(format!("Object {}", object_id))
+    }
 }
 
 #[derive(Error, Debug)]
