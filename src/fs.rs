@@ -35,13 +35,14 @@ impl FsOcflRepo {
 impl OcflRepo for FsOcflRepo {
 
     fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<OcflObjectVersion>>>> {
-        Ok(Box::new(
-            FsObjectVersionIter::new(None,
-                                     FsInventoryIter::new(&self.root, None, filter_glob)?)))
+        Ok(Box::new(FsObjectVersionIter::new(None, FsInventoryIter::new(&self.root, None, filter_glob)?)))
     }
 
     fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<Option<OcflObjectVersion>> {
-        let mut iter = FsObjectVersionIter::new(version, FsInventoryIter::new(&self.root, Some(object_id.to_string()), None)?);
+        let mut iter = FsObjectVersionIter::new(version,
+                                                FsInventoryIter::new(&self.root,
+                                                                     Some(object_id.to_string()),
+                                                                     None)?);
         loop {
             match iter.next() {
                 Some(Ok(object)) => return Ok(Some(object)),
@@ -52,12 +53,23 @@ impl OcflRepo for FsOcflRepo {
         }
     }
 
-    fn list_object_versions(&self, object_id: &str) -> Result<Vec<VersionDetails>> {
-        Ok(vec![])
+    fn list_object_versions(&self, object_id: &str) -> Result<Option<Vec<VersionDetails>>> {
+        let mut iter = FsInventoryIter::new(&self.root, Some(object_id.to_string()), None)?;
+
+        loop {
+            match iter.next() {
+                Some(Ok(inventory)) => {
+                    Ok(Some(vec![]))
+                },
+                // TODO should print error?
+                Some(Err(_)) => (),
+                None => return Ok(None)
+            }
+        }
     }
 
-    fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Vec<VersionDetails>> {
-        Ok(vec![])
+    fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Option<Vec<VersionDetails>>> {
+        Ok(Some(vec![]))
     }
 
 }

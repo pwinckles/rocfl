@@ -1,6 +1,6 @@
 mod fs;
 
-use std::collections::{HashMap};
+use std::collections::{HashMap, BTreeMap};
 use anyhow::{Result, anyhow};
 use chrono::{Local, DateTime};
 use serde::Deserialize;
@@ -31,9 +31,9 @@ pub trait OcflRepo {
 
     fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<Option<OcflObjectVersion>>;
 
-    fn list_object_versions(&self, object_id: &str) -> Result<Vec<VersionDetails>>;
+    fn list_object_versions(&self, object_id: &str) -> Result<Option<Vec<VersionDetails>>>;
 
-    fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Vec<VersionDetails>>;
+    fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Option<Vec<VersionDetails>>>;
 
 }
 
@@ -171,9 +171,10 @@ struct Inventory {
     head: VersionId,
     content_directory: Option<String>,
     manifest: HashMap<String, Vec<String>>,
-    versions: HashMap<VersionId, Version>,
+    versions: BTreeMap<VersionId, Version>,
     fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
 
+    // This field is not in the inventory json file and must be added after deserialization
     #[serde(skip)]
     object_root: String,
 }
@@ -206,6 +207,31 @@ impl Inventory {
         Ok(())
     }
 
+    fn get_version(&self, version: &VersionId) -> Result<&Version> {
+        match self.versions.get(version) {
+            Some(v) => Ok(v),
+            None => Err(RocflError::NotFound(format!("Object {} version {}", self.id, version)).into())
+        }
+    }
+
+    fn lookup_content_path<'a>(&'a self, digest: &'a str) -> Result<&'a str> {
+        match self.manifest.get(digest) {
+            Some(paths) => {
+                match paths.first() {
+                    Some(path) => Ok(path.as_str()),
+                    None => Err(RocflError::CorruptObject {
+                        object_id: self.id.clone(),
+                        message: format!("Digest {} is not mapped to any content paths", digest)
+                    }.into())
+                }
+            },
+            None => Err(RocflError::CorruptObject {
+                object_id: self.id.clone(),
+                message: format!("Digest {} not found in manifest", digest)
+            }.into())
+        }
+    }
+
 }
 
 #[derive(Debug)]
@@ -224,7 +250,6 @@ pub struct FileDetails {
     pub digest: String,
     pub content_path: String,
     pub storage_path: String,
-    // TODO see about making this a reference
     pub last_update: VersionDetails,
 }
 
@@ -232,12 +257,11 @@ pub struct FileDetails {
 pub struct VersionDetails {
     pub version: VersionId,
     pub created: DateTime<Local>,
-    pub user: Option<String>,
-    pub address: Option<String>,
+    pub user_name: Option<String>,
+    pub user_address: Option<String>,
 }
 
 impl OcflObjectVersion {
-
     fn new(inventory: &Inventory, version: Option<&VersionId>) -> Result<Self> {
         let version = match version {
             Some(version) => version.clone(),
@@ -249,13 +273,12 @@ impl OcflObjectVersion {
         Ok(Self {
             id: inventory.id.clone(),
             object_root: inventory.object_root.clone(),
-            created: ensure_version(&version, inventory)?.created.clone(),
+            created: inventory.get_version(&version)?.created.clone(),
             version,
             digest_algorithm: inventory.digest_algorithm.clone(),
             state
         })
     }
-
 }
 
 fn construct_state(target: &VersionId, inventory: &Inventory) -> Result<HashMap<String, FileDetails>> {
@@ -263,7 +286,7 @@ fn construct_state(target: &VersionId, inventory: &Inventory) -> Result<HashMap<
 
     let mut state = HashMap::new();
 
-    let target_version = ensure_version(target, inventory)?;
+    let target_version = inventory.get_version(target)?;
     let mut target_path_map = invert_path_map(&target_version.state);
 
     let mut current_version_id = (*target).clone();
@@ -274,7 +297,7 @@ fn construct_state(target: &VersionId, inventory: &Inventory) -> Result<HashMap<
 
         if current_version_id.version_num == 1 {
             for (target_path, target_digest) in target_path_map.into_iter() {
-                let content_path = lookup_content_path(&target_digest, inventory)?.to_string();
+                let content_path = inventory.lookup_content_path(&target_digest)?.to_string();
                 state.insert(target_path, FileDetails {
                     storage_path: format!("{}/{}", inventory.object_root, content_path),
                     content_path,
@@ -282,11 +305,11 @@ fn construct_state(target: &VersionId, inventory: &Inventory) -> Result<HashMap<
                     last_update: VersionDetails {
                         version: current_version_id.clone(),
                         created: current.created.clone(),
-                        user: match &current.user {
+                        user_name: match &current.user {
                             Some(user) => user.name.clone(),
                             None => None
                         },
-                        address: match &current.user {
+                        user_address: match &current.user {
                             Some(user) => user.address.clone(),
                             None => None
                         },
@@ -298,7 +321,7 @@ fn construct_state(target: &VersionId, inventory: &Inventory) -> Result<HashMap<
         }
 
         let previous_version_id = current_version_id.previous()?;
-        let previous = ensure_version(&previous_version_id, inventory)?;
+        let previous = inventory.get_version(&previous_version_id)?;
         let mut previous_path_map = invert_path_map(&previous.state);
 
         for (target_path, target_digest) in target_path_map.iter() {
@@ -306,7 +329,7 @@ fn construct_state(target: &VersionId, inventory: &Inventory) -> Result<HashMap<
 
             if entry.is_none() || entry.unwrap().1 != *target_digest {
                 found.push(target_path.clone());
-                let content_path = lookup_content_path(&target_digest, inventory)?.to_string();
+                let content_path = inventory.lookup_content_path(&target_digest)?.to_string();
                 state.insert(target_path.clone(), FileDetails {
                     digest: target_digest.clone(),
                     storage_path: format!("{}/{}", inventory.object_root, content_path),
@@ -314,11 +337,11 @@ fn construct_state(target: &VersionId, inventory: &Inventory) -> Result<HashMap<
                     last_update: VersionDetails {
                         version: current_version_id.clone(),
                         created: current.created.clone(),
-                        user: match &current.user {
+                        user_name: match &current.user {
                             Some(user) => user.name.clone(),
                             None => None
                         },
-                        address: match &current.user {
+                        user_address: match &current.user {
                             Some(user) => user.address.clone(),
                             None => None
                         },
@@ -338,13 +361,6 @@ fn construct_state(target: &VersionId, inventory: &Inventory) -> Result<HashMap<
     Ok(state)
 }
 
-fn ensure_version<'a, 'b>(version: &'b VersionId, inventory: &'a Inventory) -> Result<&'a Version> {
-    match inventory.versions.get(version) {
-        Some(v) => Ok(v),
-        None => Err(RocflError::NotFound(format!("Object {} version {}", inventory.id, version)).into())
-    }
-}
-
 fn invert_path_map(map: &HashMap<String, Vec<String>>) -> HashMap<String, String> {
     let mut inverted = HashMap::new();
 
@@ -355,24 +371,6 @@ fn invert_path_map(map: &HashMap<String, Vec<String>>) -> HashMap<String, String
     }
 
     inverted
-}
-
-fn lookup_content_path<'a>(digest: &'a str, inventory: &'a Inventory) -> Result<&'a str> {
-    match inventory.manifest.get(digest) {
-        Some(paths) => {
-            match paths.first() {
-                Some(path) => Ok(path.as_str()),
-                None => Err(RocflError::CorruptObject {
-                    object_id: inventory.id.clone(),
-                    message: format!("Digest {} is not mapped to any content paths", digest)
-                }.into())
-            }
-        },
-        None => Err(RocflError::CorruptObject {
-            object_id: inventory.id.clone(),
-            message: format!("Digest {} not found in manifest", digest)
-        }.into())
-    }
 }
 
 #[derive(Error, Debug)]
