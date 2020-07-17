@@ -29,8 +29,7 @@ lazy_static! {
 
 pub trait OcflRepo {
 
-    // TODO consider changing this to only return object level details to avoid needless version processing
-    fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersion>>>>;
+    fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersionDetails>>>>;
 
     fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<ObjectVersion>;
 
@@ -201,6 +200,14 @@ pub struct VersionDetails {
     pub message: Option<String>,
 }
 
+#[derive(Debug)]
+pub struct ObjectVersionDetails {
+    pub id: String,
+    pub object_root: String,
+    pub digest_algorithm: String,
+    pub version_details: VersionDetails,
+}
+
 impl ObjectVersion {
     fn from_inventory(mut inventory: Inventory, version_id: Option<&VersionId>) -> Result<Self> {
         let version_id = match version_id {
@@ -330,6 +337,25 @@ fn invert_path_map(map: HashMap<String, Vec<String>>) -> HashMap<String, Rc<Stri
     }
 
     inverted
+}
+
+impl ObjectVersionDetails {
+    fn from_inventory(mut inventory: Inventory, version_id: Option<&VersionId>) -> Result<Self> {
+        let version_id = match version_id {
+            Some(version) => version.clone(),
+            None => inventory.head.clone(),
+        };
+
+        let version = inventory.remove_version(&version_id)?;
+        let version_details = VersionDetails::from_version(version_id, version);
+
+        Ok(Self {
+            id: inventory.id,
+            object_root: inventory.object_root,
+            digest_algorithm: inventory.digest_algorithm,
+            version_details,
+        })
+    }
 }
 
 #[derive(Deserialize, Debug)]

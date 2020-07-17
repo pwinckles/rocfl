@@ -6,7 +6,7 @@ use grep::searcher::Searcher;
 use anyhow::{anyhow, Result, Context};
 use grep::searcher::sinks::UTF8;
 use grep::matcher::{Matcher, Captures};
-use crate::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, ObjectVersion, VersionId, ROOT_INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, VersionDetails, not_found};
+use crate::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, ObjectVersion, VersionId, ROOT_INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, VersionDetails, not_found, ObjectVersionDetails};
 use globset::{GlobMatcher, Glob};
 
 pub struct FsOcflRepo {
@@ -33,8 +33,8 @@ impl FsOcflRepo {
 }
 
 impl OcflRepo for FsOcflRepo {
-    fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersion>>>> {
-        Ok(Box::new(ObjectVersionIter::new(None, InventoryIter::new(&self.storage_root, None, filter_glob)?)))
+    fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersionDetails>>>> {
+        Ok(Box::new(ObjectVersionDetailsIter::new(None, InventoryIter::new(&self.storage_root, None, filter_glob)?)))
     }
 
     fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<ObjectVersion> {
@@ -45,8 +45,7 @@ impl OcflRepo for FsOcflRepo {
         loop {
             match iter.next() {
                 Some(Ok(object)) => return Ok(object),
-                // TODO should print error?
-                Some(Err(_)) => (),
+                Some(Err(_)) => (),  // Errors are ignored because we don't know what object they're for
                 None => return Err(not_found(&object_id, version.as_ref()).into())
             }
         }
@@ -66,8 +65,7 @@ impl OcflRepo for FsOcflRepo {
 
                     return Ok(versions)
                 },
-                // TODO should print error?
-                Some(Err(_)) => (),
+                Some(Err(_)) => (),  // Errors are ignored because we don't know what object they're for
                 None => return Err(not_found(&object_id, None).into())
             }
         }
@@ -103,8 +101,7 @@ impl OcflRepo for FsOcflRepo {
 
                     return Ok(versions)
                 },
-                // TODO should print error?
-                Some(Err(_)) => (),
+                Some(Err(_)) => (),  // Errors are ignored because we don't know what object they're for
                 None => return Err(not_found(&object_id, None).into())
             }
         }
@@ -134,6 +131,34 @@ impl Iterator for ObjectVersionIter {
             Some(Err(e)) => Some(Err(e)),
             Some(Ok(inventory)) => {
                 Some(ObjectVersion::from_inventory(inventory, self.version.as_ref()))
+            }
+        }
+    }
+}
+
+struct ObjectVersionDetailsIter {
+    version: Option<VersionId>,
+    iter: InventoryIter,
+}
+
+impl ObjectVersionDetailsIter {
+    fn new(version: Option<VersionId>, iter: InventoryIter) -> Self {
+        Self {
+            version,
+            iter,
+        }
+    }
+}
+
+impl Iterator for ObjectVersionDetailsIter {
+    type Item = Result<ObjectVersionDetails>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.iter.next() {
+            None => None,
+            Some(Err(e)) => Some(Err(e)),
+            Some(Ok(inventory)) => {
+                Some(ObjectVersionDetails::from_inventory(inventory, self.version.as_ref()))
             }
         }
     }
@@ -283,6 +308,7 @@ fn is_object_root<P: AsRef<Path>>(path: P) -> Result<bool> {
 
 fn parse_inventory<P: AsRef<Path>>(object_root: P) -> Result<Inventory> {
     let inventory_path = resolve_inventory_path(&object_root);
+    // TODO should validate hash
     let mut inventory = parse_inventory_file(&inventory_path)
         .with_context(|| format!("Failed to parse inventory at {}",
                              inventory_path.to_str().unwrap_or_default()))?;

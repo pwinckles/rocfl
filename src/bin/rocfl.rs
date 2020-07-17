@@ -7,7 +7,7 @@ use std::io::Write;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use serde::export::Formatter;
 use core::fmt;
-use rocfl::{ObjectVersion, FileDetails, VersionId, OcflRepo, FsOcflRepo, VersionDetails};
+use rocfl::{ObjectVersion, FileDetails, VersionId, OcflRepo, FsOcflRepo, VersionDetails, ObjectVersionDetails};
 use std::cmp::Ordering;
 use chrono::{DateTime, Local};
 use globset::Glob;
@@ -346,7 +346,7 @@ fn list_object_contents(repo: &FsOcflRepo, command: &List) -> Result<()> {
 }
 
 fn list_objects(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()> {
-    // TODO this call is computing the latest update of all files, which is unnecessary
+    // TODO not that the results are lighter weight consider sorting
     for object in repo.list_objects(command.object_id.as_deref())
         .with_context(|| "Failed to list objects")? {
         match object {
@@ -432,8 +432,9 @@ impl<'a> Listing<'a> {
 
 }
 
-impl<'a> From<&'a ObjectVersion> for Listing<'a> {
-    fn from(object: &'a ObjectVersion) -> Self {
+// TODO consider changing these to moves
+impl<'a> From<&'a ObjectVersionDetails> for Listing<'a> {
+    fn from(object: &'a ObjectVersionDetails) -> Self {
         Self {
             version: &object.version_details.version,
             updated: &object.version_details.created,
