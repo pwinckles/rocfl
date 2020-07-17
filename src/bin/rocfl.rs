@@ -182,7 +182,6 @@ fn exec_command(args: &AppArgs) -> Result<()> {
     match &args.command {
         Command::List(list) => list_command(&repo, &list, args)?,
         Command::Log(log) => log_command(&repo, &log)?,
-        _ => ()
     }
     Ok(())
 }
@@ -198,7 +197,12 @@ fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()>
 }
 
 fn log_command(repo: &FsOcflRepo, command: &Log) -> Result<()> {
-    match repo.list_object_versions(&command.object_id)? {
+    let versions = match &command.path {
+        Some(path) => repo.list_file_versions(&command.object_id, path)?,
+        None => repo.list_object_versions(&command.object_id)?,
+    };
+
+    match versions {
         Some(versions) => {
             let mut count = 0;
             // TODO find a way to do this with less duplication

@@ -6,7 +6,17 @@ use grep::searcher::Searcher;
 use anyhow::{anyhow, Result, Context};
 use grep::searcher::sinks::UTF8;
 use grep::matcher::{Matcher, Captures};
-use crate::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, ObjectVersion, VersionId, ROOT_INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, VersionDetails};
+use crate::{
+    OcflRepo,
+    OBJECT_MARKER,
+    OBJECT_ID_MATCHER,
+    Inventory,
+    ObjectVersion,
+    VersionId,
+    ROOT_INVENTORY_FILE,
+    MUTABLE_HEAD_INVENTORY_FILE,
+    VersionDetails
+};
 use globset::{GlobMatcher, Glob};
 
 pub struct FsOcflRepo {
@@ -75,7 +85,40 @@ impl OcflRepo for FsOcflRepo {
     }
 
     fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Option<Vec<VersionDetails>>> {
-        Ok(Some(vec![]))
+        let mut iter = InventoryIter::new(&self.storage_root, Some(object_id.to_string()), None)?;
+
+        loop {
+            match iter.next() {
+                Some(Ok(inventory)) => {
+                    let mut versions = Vec::new();
+
+                    let path = path.to_string();
+                    let mut current_digest: Option<String> = None;
+
+                    for (id, version) in inventory.versions {
+                        match version.lookup_digest(&path) {
+                            Some(digest) => {
+                                if current_digest.is_none() || current_digest.as_ref().unwrap().ne(digest) {
+                                    current_digest = Some(digest.clone());
+                                    versions.push(VersionDetails::from_version(id, version));
+                                }
+                            },
+                            None => {
+                                if current_digest.is_some() {
+                                    current_digest = None;
+                                    versions.push(VersionDetails::from_version(id, version));
+                                }
+                            }
+                        }
+                    }
+
+                    return Ok(Some(versions))
+                },
+                // TODO should print error?
+                Some(Err(_)) => (),
+                None => return Ok(None)
+            }
+        }
     }
 
 }

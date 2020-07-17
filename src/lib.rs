@@ -13,9 +13,9 @@ use core::fmt;
 use serde::export::Formatter;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 
 pub use self::fs::FsOcflRepo;
-use std::rc::Rc;
 
 const OBJECT_MARKER: &str = "0=ocfl_object_1.0";
 const ROOT_INVENTORY_FILE: &str = "inventory.json";
@@ -196,7 +196,6 @@ struct User {
 }
 
 impl Inventory {
-
     // TODO fill in more validations
     // TODO have a shallow and a deep validation
     pub fn validate(&self) -> Result<(), RocflError> {
@@ -240,7 +239,18 @@ impl Inventory {
             }.into())
         }
     }
+}
 
+impl Version {
+    fn lookup_digest(&self, logical_path: &String) -> Option<&String> {
+        for (digest, paths) in &self.state {
+            if paths.contains(logical_path) {
+                return Some(digest);
+            }
+        }
+
+        None
+    }
 }
 
 #[derive(Debug)]
