@@ -63,8 +63,6 @@ struct List {
     #[structopt(short, long)]
     digest: bool,
 
-    // TODO flag for listing unique logical paths across all versions?
-
     /// Specifies the version of the object to list
     #[structopt(short, long, value_name = "VERSION")]
     version: Option<VersionId>,
@@ -238,6 +236,7 @@ fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()>
 
 fn log_command(repo: &FsOcflRepo, command: &Log) -> Result<()> {
     let versions = match &command.path {
+        // TODO it would be nice to capture the type of change for each version...
         Some(path) => repo.list_file_versions(&command.object_id, path)?,
         None => repo.list_object_versions(&command.object_id)?,
     };

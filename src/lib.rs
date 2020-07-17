@@ -175,96 +175,6 @@ impl Ord for VersionId {
     }
 }
 
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct Inventory {
-    id: String,
-    #[serde(rename = "type")]
-    type_declaration: String,
-    digest_algorithm: String,
-    head: VersionId,
-    content_directory: Option<String>,
-    manifest: HashMap<String, Vec<String>>,
-    versions: BTreeMap<VersionId, Version>,
-    fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
-
-    // This field is not in the inventory json file and must be added after deserialization
-    #[serde(skip)]
-    object_root: String,
-}
-
-#[derive(Deserialize, Debug)]
-struct Version {
-    created: DateTime<Local>,
-    state: HashMap<String, Vec<String>>,
-    message: Option<String>,
-    user: Option<User>
-}
-
-#[derive(Deserialize, Debug)]
-struct User {
-    name: Option<String>,
-    address: Option<String>
-}
-
-impl Inventory {
-    // TODO fill in more validations
-    // TODO have a shallow and a deep validation
-    pub fn validate(&self) -> Result<(), RocflError> {
-        if !self.versions.contains_key(&self.head) {
-            return Err(RocflError::CorruptObject {
-                object_id: self.id.clone(),
-                message: format!("HEAD version {} was not found", self.head),
-            })
-        }
-        Ok(())
-    }
-
-    fn get_version(&self, version: &VersionId) -> Result<&Version> {
-        match self.versions.get(version) {
-            Some(v) => Ok(v),
-            None => Err(not_found(&self.id, Some(version)).into())
-        }
-    }
-
-    fn remove_version(&mut self, version: &VersionId) -> Result<Version> {
-        match self.versions.remove(version) {
-            Some(v) => Ok(v),
-            None => Err(not_found(&self.id, Some(version)).into())
-        }
-    }
-
-    fn lookup_content_path<'a>(&'a self, digest: &'a str) -> Result<&'a str> {
-        match self.manifest.get(digest) {
-            Some(paths) => {
-                match paths.first() {
-                    Some(path) => Ok(path.as_str()),
-                    None => Err(RocflError::CorruptObject {
-                        object_id: self.id.clone(),
-                        message: format!("Digest {} is not mapped to any content paths", digest)
-                    }.into())
-                }
-            },
-            None => Err(RocflError::CorruptObject {
-                object_id: self.id.clone(),
-                message: format!("Digest {} not found in manifest", digest)
-            }.into())
-        }
-    }
-}
-
-impl Version {
-    fn lookup_digest(&self, logical_path: &String) -> Option<&String> {
-        for (digest, paths) in &self.state {
-            if paths.contains(logical_path) {
-                return Some(digest);
-            }
-        }
-
-        None
-    }
-}
-
 #[derive(Debug)]
 pub struct ObjectVersion {
     pub id: String,
@@ -420,6 +330,96 @@ fn invert_path_map(map: HashMap<String, Vec<String>>) -> HashMap<String, Rc<Stri
     }
 
     inverted
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct Inventory {
+    id: String,
+    #[serde(rename = "type")]
+    type_declaration: String,
+    digest_algorithm: String,
+    head: VersionId,
+    content_directory: Option<String>,
+    manifest: HashMap<String, Vec<String>>,
+    versions: BTreeMap<VersionId, Version>,
+    fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
+
+    // This field is not in the inventory json file and must be added after deserialization
+    #[serde(skip)]
+    object_root: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct Version {
+    created: DateTime<Local>,
+    state: HashMap<String, Vec<String>>,
+    message: Option<String>,
+    user: Option<User>
+}
+
+#[derive(Deserialize, Debug)]
+struct User {
+    name: Option<String>,
+    address: Option<String>
+}
+
+impl Inventory {
+    // TODO fill in more validations
+    // TODO have a shallow and a deep validation
+    pub fn validate(&self) -> Result<(), RocflError> {
+        if !self.versions.contains_key(&self.head) {
+            return Err(RocflError::CorruptObject {
+                object_id: self.id.clone(),
+                message: format!("HEAD version {} was not found", self.head),
+            })
+        }
+        Ok(())
+    }
+
+    fn get_version(&self, version: &VersionId) -> Result<&Version> {
+        match self.versions.get(version) {
+            Some(v) => Ok(v),
+            None => Err(not_found(&self.id, Some(version)).into())
+        }
+    }
+
+    fn remove_version(&mut self, version: &VersionId) -> Result<Version> {
+        match self.versions.remove(version) {
+            Some(v) => Ok(v),
+            None => Err(not_found(&self.id, Some(version)).into())
+        }
+    }
+
+    fn lookup_content_path<'a>(&'a self, digest: &'a str) -> Result<&'a str> {
+        match self.manifest.get(digest) {
+            Some(paths) => {
+                match paths.first() {
+                    Some(path) => Ok(path.as_str()),
+                    None => Err(RocflError::CorruptObject {
+                        object_id: self.id.clone(),
+                        message: format!("Digest {} is not mapped to any content paths", digest)
+                    }.into())
+                }
+            },
+            None => Err(RocflError::CorruptObject {
+                object_id: self.id.clone(),
+                message: format!("Digest {} not found in manifest", digest)
+            }.into())
+        }
+    }
+}
+
+impl Version {
+    fn lookup_digest(&self, logical_path: &String) -> Option<&String> {
+        for (digest, paths) in &self.state {
+            if paths.contains(logical_path) {
+                return Some(digest);
+            }
+        }
+
+        None
+    }
 }
 
 fn not_found(object_id: &str, version: Option<&VersionId>) -> RocflError {

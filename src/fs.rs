@@ -33,7 +33,6 @@ impl FsOcflRepo {
 }
 
 impl OcflRepo for FsOcflRepo {
-
     fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersion>>>> {
         Ok(Box::new(ObjectVersionIter::new(None, InventoryIter::new(&self.storage_root, None, filter_glob)?)))
     }
@@ -110,7 +109,6 @@ impl OcflRepo for FsOcflRepo {
             }
         }
     }
-
 }
 
 struct ObjectVersionIter {
@@ -149,7 +147,6 @@ struct InventoryIter {
 }
 
 impl InventoryIter {
-
     fn new<P: AsRef<Path>>(root: P, object_id: Option<String>, object_id_glob: Option<&str>) -> Result<Self> {
         Ok(InventoryIter {
             dir_iters: vec![std::fs::read_dir(&root)?],
