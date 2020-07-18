@@ -7,7 +7,7 @@ use anyhow::{anyhow, Result, Context};
 use grep::searcher::sinks::UTF8;
 use grep::matcher::{Matcher, Captures};
 use crate::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, ObjectVersion, VersionId, ROOT_INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, VersionDetails, not_found, ObjectVersionDetails, Diff, invert_path_map};
-use globset::{Glob};
+use globset::{GlobBuilder};
 use std::ops::Deref;
 
 pub struct FsOcflRepo {
@@ -200,7 +200,7 @@ impl InventoryIter {
     }
 
     fn new_glob_matching<P: AsRef<Path>>(root: P, glob: &str) -> Result<Self> {
-        let matcher = Glob::new(glob)?.compile_matcher();
+        let matcher = GlobBuilder::new(glob).backslash_escape(true).build()?.compile_matcher();
         InventoryIter::new(root, Some(Box::new(move |id| matcher.is_match(id))))
     }
 
@@ -250,7 +250,6 @@ impl InventoryIter {
                         path.as_ref().to_string_lossy().to_string()))
         }
     }
-
 }
 
 impl Iterator for InventoryIter {
@@ -304,7 +303,6 @@ impl Iterator for InventoryIter {
             }
         }
     }
-
 }
 
 fn is_object_root<P: AsRef<Path>>(path: P) -> Result<bool> {

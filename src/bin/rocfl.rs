@@ -9,7 +9,7 @@ use serde::export::Formatter;
 use core::fmt;
 use rocfl::{ObjectVersion, FileDetails, VersionId, OcflRepo, FsOcflRepo, VersionDetails, ObjectVersionDetails, Diff as VersionDiff, DiffType};
 use std::cmp::Ordering;
-use globset::Glob;
+use globset::{GlobBuilder};
 use std::fmt::Display;
 use std::str::FromStr;
 use std::num::ParseIntError;
@@ -74,15 +74,18 @@ struct List {
     #[structopt(short, long)]
     reverse: bool,
 
-    /// List only objects; not their contents
+    /// Lists only objects; not their contents
     #[structopt(short, long)]
     objects: bool,
+
+    /// Wildcards in path glob expressions will not match separators
+    #[structopt(short, long)]
+    glob_literal_separator: bool,
 
     /// ID of the object to list. May be a glob when used with '-o'.
     #[structopt(name = "OBJECT")]
     object_id: Option<String>,
 
-    // TODO flag to disable * from matching / in globs?
     /// Path glob of files to list. May only be specified if an object is also specified.
     #[structopt(name = "PATH")]
     path: Option<String>,
@@ -231,18 +234,13 @@ fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()>
 
 fn log_command(repo: &FsOcflRepo, command: &Log) -> Result<()> {
     let versions = match &command.path {
-        // TODO it would be nice to capture the type of change for each version...
         Some(path) => repo.list_file_versions(&command.object_id, path)?,
         None => repo.list_object_versions(&command.object_id)?,
     };
 
     let iter: Box<dyn Iterator<Item=&VersionDetails>> = match command.reverse {
-        true => {
-            Box::new(versions.iter().rev())
-        },
-        false => {
-            Box::new(versions.iter())
-        }
+        true => Box::new(versions.iter().rev()),
+        false => Box::new(versions.iter())
     };
 
     let mut count = 0;
@@ -330,7 +328,9 @@ fn list_objects(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()>
 fn print_object_contents(object: ObjectVersion, command: &List) -> Result<()> {
     let mut glob = None;
     if command.path.is_some() {
-        glob = Some(Glob::new(command.path.as_ref().unwrap())?.compile_matcher());
+        glob = Some(GlobBuilder::new(command.path.as_ref().unwrap())
+            .literal_separator(command.glob_literal_separator)
+            .backslash_escape(true).build()?.compile_matcher());
     }
 
     let digest_algorithm = Rc::new(object.digest_algorithm.clone());
