@@ -240,25 +240,22 @@ fn log_command(repo: &FsOcflRepo, command: &Log) -> Result<()> {
         None => repo.list_object_versions(&command.object_id)?,
     };
 
-    let mut next: Box<dyn FnMut() -> Option<VersionDetails>> = match command.reverse {
+    let iter: Box<dyn Iterator<Item=&VersionDetails>> = match command.reverse {
         true => {
-            let mut iter = versions.into_iter().rev();
-            Box::new(move || iter.next())
+            Box::new(versions.iter().rev())
         },
         false => {
-            let mut iter = versions.into_iter();
-            Box::new(move || iter.next())
+            Box::new(versions.iter())
         }
     };
 
     let mut count = 0;
 
-    loop {
-        let version = next();
-        if version.is_none() || count == command.num.0 {
+    for version in iter {
+        if count == command.num.0 {
             break;
         }
-        println!("{}", FormatVersion::new(version.as_ref().unwrap(), command.compact));
+        println!("{}", FormatVersion::new(version, command.compact));
         count += 1;
     }
 
