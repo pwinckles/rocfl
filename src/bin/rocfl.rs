@@ -214,22 +214,19 @@ fn main() {
 fn exec_command(args: &AppArgs) -> Result<()> {
     let repo = FsOcflRepo::new(args.root.clone())?;
     match &args.command {
-        Command::List(list) => list_command(&repo, &list, args)?,
-        Command::Log(log) => log_command(&repo, &log)?,
-        Command::Show(show) => show_command(&repo, &show)?,
-        Command::Diff(diff) => diff_command(&repo, &diff)?,
+        Command::List(list) => list_command(&repo, &list, args),
+        Command::Log(log) => log_command(&repo, &log),
+        Command::Show(show) => show_command(&repo, &show),
+        Command::Diff(diff) => diff_command(&repo, &diff),
     }
-    Ok(())
 }
 
 fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()> {
     if command.objects || command.object_id.is_none() {
-        list_objects(repo, command, args)?;
+        list_objects(repo, command, args)
     } else {
-        list_object_contents(repo, command)?;
+        list_object_contents(repo, command)
     }
-
-    Ok(())
 }
 
 fn log_command(repo: &FsOcflRepo, command: &Log) -> Result<()> {
@@ -294,9 +291,7 @@ fn list_object_contents(repo: &FsOcflRepo, command: &List) -> Result<()> {
     let object_id = command.object_id.as_ref().unwrap();
     let object = repo.get_object(object_id, command.version.as_ref())
         .with_context(|| "Failed to list object")?;
-    print_object_contents(object, command)?;
-
-    Ok(())
+    print_object_contents(object, command)
 }
 
 fn list_objects(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()> {
@@ -507,12 +502,10 @@ struct DiffLine(VersionDiff);
 impl fmt::Display for DiffLine {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self.0.diff_type {
-            DiffType::Added => write!(f, "A\t{}", self.0.path)?,
-            DiffType::Modified => write!(f, "M\t{}", self.0.path)?,
-            DiffType::Deleted => write!(f, "D\t{}", self.0.path)?,
+            DiffType::Added => write!(f, "A\t{}", self.0.path),
+            DiffType::Modified => write!(f, "M\t{}", self.0.path),
+            DiffType::Deleted => write!(f, "D\t{}", self.0.path),
         }
-
-        Ok(())
     }
 }
 
