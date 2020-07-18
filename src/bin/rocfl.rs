@@ -2,7 +2,7 @@
 `rocfl` is a command line utility for working with [OCFL](https://ocfl.io/) repositories.
 It currently only supports read operations.
 
-# Operations
+# Usage
 
 It is intended to be run from within an OCFL repository's storage root. I can be run outside
 of a storage root by specifying the repository root using the `--root` option.
