@@ -1,6 +1,6 @@
 [package]
 name = "rocfl"
-version = "0.1.4"
+version = "0.1.5"
 authors = ["Peter Winckles <pwinckles@pm.me>"]
 edition = "2018"
 description= "A Rust CLI for OCFL repositories"
@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/pwinckles/rocfl"
 homepage = "https://github.com/pwinckles/rocfl"
+documentation = "https://docs.rs/rocfl/"
 
 [[bin]]
 name = "rocfl"
