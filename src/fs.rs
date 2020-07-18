@@ -8,6 +8,7 @@ use grep::searcher::sinks::UTF8;
 use grep::matcher::{Matcher, Captures};
 use crate::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, ObjectVersion, VersionId, ROOT_INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, VersionDetails, not_found, ObjectVersionDetails};
 use globset::{GlobMatcher, Glob};
+use std::ops::Deref;
 
 pub struct FsOcflRepo {
     pub storage_root: PathBuf
@@ -34,14 +35,17 @@ impl FsOcflRepo {
 
 impl OcflRepo for FsOcflRepo {
     fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersionDetails>>>> {
-        Ok(Box::new(ObjectVersionDetailsIter::new(None, InventoryIter::new(&self.storage_root, None, filter_glob)?)))
+        Ok(Box::new(InventoryAdapterIter::new(InventoryIter::new(&self.storage_root, None, filter_glob)?, Box::new(|inventory| {
+            ObjectVersionDetails::from_inventory(inventory, None)
+        }))))
     }
 
     fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<ObjectVersion> {
-        let mut iter = ObjectVersionIter::new(version.clone(),
-                                              InventoryIter::new(&self.storage_root,
-                                                                 Some(object_id.to_string()),
-                                                                 None)?);
+        let v = version.clone();
+        let mut iter = InventoryAdapterIter::new(InventoryIter::new(&self.storage_root, Some(object_id.to_string()), None)?, Box::new(move |inventory| {
+            ObjectVersion::from_inventory(inventory, v.as_ref())
+        }));
+
         loop {
             match iter.next() {
                 Some(Ok(object)) => return Ok(object),
@@ -108,57 +112,29 @@ impl OcflRepo for FsOcflRepo {
     }
 }
 
-struct ObjectVersionIter {
-    version: Option<VersionId>,
+struct InventoryAdapterIter<T> {
     iter: InventoryIter,
+    adapter: Box<dyn Fn(Inventory) -> Result<T>>
 }
 
-impl ObjectVersionIter {
-    fn new(version: Option<VersionId>, iter: InventoryIter) -> Self {
+impl<T> InventoryAdapterIter<T> {
+    fn new(iter: InventoryIter, adapter: Box<dyn Fn(Inventory) -> Result<T>>) -> Self {
         Self {
-            version,
             iter,
+            adapter
         }
     }
 }
 
-impl Iterator for ObjectVersionIter {
-    type Item = Result<ObjectVersion>;
+impl<T> Iterator for InventoryAdapterIter<T> {
+    type Item = Result<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next() {
             None => None,
             Some(Err(e)) => Some(Err(e)),
             Some(Ok(inventory)) => {
-                Some(ObjectVersion::from_inventory(inventory, self.version.as_ref()))
-            }
-        }
-    }
-}
-
-struct ObjectVersionDetailsIter {
-    version: Option<VersionId>,
-    iter: InventoryIter,
-}
-
-impl ObjectVersionDetailsIter {
-    fn new(version: Option<VersionId>, iter: InventoryIter) -> Self {
-        Self {
-            version,
-            iter,
-        }
-    }
-}
-
-impl Iterator for ObjectVersionDetailsIter {
-    type Item = Result<ObjectVersionDetails>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.iter.next() {
-            None => None,
-            Some(Err(e)) => Some(Err(e)),
-            Some(Ok(inventory)) => {
-                Some(ObjectVersionDetails::from_inventory(inventory, self.version.as_ref()))
+                Some(self.adapter.deref()(inventory))
             }
         }
     }
