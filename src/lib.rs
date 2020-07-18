@@ -31,11 +31,15 @@ pub trait OcflRepo {
 
     fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersionDetails>>>>;
 
-    fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<ObjectVersion>;
+    fn get_object(&self, object_id: &str, version: Option<&VersionId>) -> Result<ObjectVersion>;
+
+    fn get_object_details(&self, object_id: &str, version: Option<&VersionId>) -> Result<ObjectVersionDetails>;
 
     fn list_object_versions(&self, object_id: &str) -> Result<Vec<VersionDetails>>;
 
     fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Vec<VersionDetails>>;
+
+    fn diff(&self, object_id: &str, left_version: &VersionId, right_version: Option<&VersionId>) -> Result<Vec<Diff>>;
 
 }
 
@@ -47,7 +51,6 @@ pub struct VersionId {
 }
 
 impl VersionId {
-
     pub fn previous(&self) -> Result<VersionId> {
         if self.version_num - 1 < 1 {
             return Err(anyhow!("Versions cannot be less than 1"));
@@ -59,7 +62,6 @@ impl VersionId {
         })
     }
 
-    #[allow(dead_code)]
     pub fn next(&self) -> Result<VersionId> {
         let max = match self.width {
             0 => usize::MAX,
@@ -75,7 +77,6 @@ impl VersionId {
             width: self.width,
         })
     }
-
 }
 
 impl TryFrom<&str> for VersionId {
@@ -355,6 +356,40 @@ impl ObjectVersionDetails {
             digest_algorithm: inventory.digest_algorithm,
             version_details,
         })
+    }
+}
+
+#[derive(Debug)]
+pub struct Diff {
+    pub diff_type: DiffType,
+    pub path: String,
+}
+
+#[derive(Debug)]
+pub enum DiffType {
+    Added,
+    Modified,
+    Deleted,
+}
+
+impl Diff {
+    fn added(path: String) -> Self {
+        Self {
+            diff_type: DiffType::Added,
+            path
+        }
+    }
+    fn modified(path: String) -> Self {
+        Self {
+            diff_type: DiffType::Modified,
+            path
+        }
+    }
+    fn deleted(path: String) -> Self {
+        Self {
+            diff_type: DiffType::Deleted,
+            path
+        }
     }
 }
 

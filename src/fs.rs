@@ -6,7 +6,7 @@ use grep::searcher::Searcher;
 use anyhow::{anyhow, Result, Context};
 use grep::searcher::sinks::UTF8;
 use grep::matcher::{Matcher, Captures};
-use crate::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, ObjectVersion, VersionId, ROOT_INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, VersionDetails, not_found, ObjectVersionDetails};
+use crate::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, ObjectVersion, VersionId, ROOT_INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, VersionDetails, not_found, ObjectVersionDetails, Diff, invert_path_map};
 use globset::{Glob};
 use std::ops::Deref;
 
@@ -31,6 +31,20 @@ impl FsOcflRepo {
             storage_root
         })
     }
+
+    fn get_inventory(&self, object_id: &str) -> Result<Inventory> {
+        let mut iter = InventoryIter::new_id_matching(&self.storage_root, object_id.clone())?;
+
+        loop {
+            match iter.next() {
+                Some(Ok(inventory)) => {
+                    return Ok(inventory)
+                },
+                Some(Err(_)) => (),  // Errors are ignored because we don't know what object they're for
+                None => return Err(not_found(&object_id, None).into())
+            }
+        }
+    }
 }
 
 impl OcflRepo for FsOcflRepo {
@@ -45,76 +59,103 @@ impl OcflRepo for FsOcflRepo {
         }))))
     }
 
-    fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<ObjectVersion> {
-        let v = version.clone();
-        let inv_iter = InventoryIter::new_id_matching(&self.storage_root, object_id.clone())?;
-        let mut iter = InventoryAdapterIter::new(inv_iter, Box::new(move |inventory| {
-            ObjectVersion::from_inventory(inventory, v.as_ref())
-        }));
+    fn get_object(&self, object_id: &str, version: Option<&VersionId>) -> Result<ObjectVersion> {
+        let inventory = self.get_inventory(object_id)?;
+        Ok(ObjectVersion::from_inventory(inventory, version)?)
+    }
 
-        loop {
-            match iter.next() {
-                Some(Ok(object)) => return Ok(object),
-                Some(Err(_)) => (),  // Errors are ignored because we don't know what object they're for
-                None => return Err(not_found(&object_id, version.as_ref()).into())
-            }
-        }
+    fn get_object_details(&self, object_id: &str, version: Option<&VersionId>) -> Result<ObjectVersionDetails> {
+        let inventory = self.get_inventory(object_id)?;
+        Ok(ObjectVersionDetails::from_inventory(inventory, version)?)
     }
 
     fn list_object_versions(&self, object_id: &str) -> Result<Vec<VersionDetails>> {
-        let mut iter = InventoryIter::new_id_matching(&self.storage_root, object_id.clone())?;
+        let inventory = self.get_inventory(object_id)?;
+        let mut versions = Vec::with_capacity(inventory.versions.len());
 
-        loop {
-            match iter.next() {
-                Some(Ok(inventory)) => {
-                    let mut versions = Vec::with_capacity(inventory.versions.len());
-
-                    for (id, version) in inventory.versions {
-                        versions.push(VersionDetails::from_version(id, version))
-                    }
-
-                    return Ok(versions)
-                },
-                Some(Err(_)) => (),  // Errors are ignored because we don't know what object they're for
-                None => return Err(not_found(&object_id, None).into())
-            }
+        for (id, version) in inventory.versions {
+            versions.push(VersionDetails::from_version(id, version))
         }
+
+        Ok(versions)
     }
 
     fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Vec<VersionDetails>> {
-        let mut iter = InventoryIter::new_id_matching(&self.storage_root, object_id.clone())?;
+        let inventory = self.get_inventory(object_id)?;
 
-        loop {
-            match iter.next() {
-                Some(Ok(inventory)) => {
-                    let mut versions = Vec::new();
+        let mut versions = Vec::new();
 
-                    let path = path.to_string();
-                    let mut current_digest: Option<String> = None;
+        let path = path.to_string();
+        let mut current_digest: Option<String> = None;
 
-                    for (id, version) in inventory.versions {
-                        match version.lookup_digest(&path) {
-                            Some(digest) => {
-                                if current_digest.is_none() || current_digest.as_ref().unwrap().ne(digest) {
-                                    current_digest = Some(digest.clone());
-                                    versions.push(VersionDetails::from_version(id, version));
-                                }
-                            },
-                            None => {
-                                if current_digest.is_some() {
-                                    current_digest = None;
-                                    versions.push(VersionDetails::from_version(id, version));
-                                }
-                            }
-                        }
+        for (id, version) in inventory.versions {
+            match version.lookup_digest(&path) {
+                Some(digest) => {
+                    if current_digest.is_none() || current_digest.as_ref().unwrap().ne(digest) {
+                        current_digest = Some(digest.clone());
+                        versions.push(VersionDetails::from_version(id, version));
                     }
-
-                    return Ok(versions)
                 },
-                Some(Err(_)) => (),  // Errors are ignored because we don't know what object they're for
-                None => return Err(not_found(&object_id, None).into())
+                None => {
+                    if current_digest.is_some() {
+                        current_digest = None;
+                        versions.push(VersionDetails::from_version(id, version));
+                    }
+                }
             }
         }
+
+        Ok(versions)
+    }
+
+    fn diff(&self, object_id: &str, left_version: &VersionId, right_version: Option<&VersionId>) -> Result<Vec<Diff>> {
+        if right_version.is_some() && left_version.eq(right_version.unwrap()) {
+            return Ok(vec![])
+        }
+
+        let mut inventory = self.get_inventory(object_id)?;
+
+        let left = inventory.remove_version(&left_version)?;
+
+        let right = match right_version {
+            Some(version) => Some(inventory.remove_version(version)?),
+            None => {
+                if left_version.version_num > 1 {
+                    Some(inventory.remove_version(&left_version.previous().unwrap())?)
+                } else {
+                    None
+                }
+            }
+        };
+
+        let mut left_state = invert_path_map(left.state);
+
+        let mut diffs = Vec::new();
+
+        if right.is_none() {
+            for (path, _digest) in left_state {
+                diffs.push(Diff::added(path));
+            }
+        } else {
+            let right_state = invert_path_map(right.unwrap().state);
+
+            for (path, right_digest) in right_state {
+                match left_state.remove(&path) {
+                    None => diffs.push(Diff::added(path)),
+                    Some(left_digest) => {
+                        if right_digest.deref().ne(left_digest.deref()) {
+                            diffs.push(Diff::modified(path))
+                        }
+                    }
+                }
+            }
+
+            for (path, _digest) in left_state {
+                diffs.push(Diff::deleted(path))
+            }
+        }
+
+        Ok(diffs)
     }
 }
 

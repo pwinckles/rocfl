@@ -7,14 +7,13 @@ use std::io::Write;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use serde::export::Formatter;
 use core::fmt;
-use rocfl::{ObjectVersion, FileDetails, VersionId, OcflRepo, FsOcflRepo, VersionDetails, ObjectVersionDetails};
+use rocfl::{ObjectVersion, FileDetails, VersionId, OcflRepo, FsOcflRepo, VersionDetails, ObjectVersionDetails, Diff as VersionDiff, DiffType};
 use std::cmp::Ordering;
 use globset::Glob;
 use std::fmt::Display;
 use std::str::FromStr;
 use std::num::ParseIntError;
 use std::process::exit;
-use std::ops::Deref;
 use std::rc::Rc;
 
 #[derive(Debug, StructOpt)]
@@ -263,32 +262,13 @@ fn log_command(repo: &FsOcflRepo, command: &Log) -> Result<()> {
 }
 
 fn show_command(repo: &FsOcflRepo, command: &Show) -> Result<()> {
-    // TODO this call is computing the latest update of all files, which is unnecessary
-    let target = repo.get_object(&command.object_id, command.version.clone())?;
+    let object = repo.get_object_details(&command.object_id, command.version.as_ref())?;
 
     if !command.minimal {
-        println!("{}", FormatVersion::new(&target.version_details, false));
+        println!("{}", FormatVersion::new(&object.version_details, false));
     }
 
-    let mut diffs = Vec::new();
-
-    if target.version_details.version.version_num > 1 {
-        let previous_id = target.version_details.version.previous().unwrap();
-        let previous = repo.get_object(&command.object_id, Some(previous_id))?;
-        diffs = diff(previous, target);
-    } else {
-        for (path, _details) in target.state {
-            diffs.push(DiffLine::added(path))
-        }
-    }
-
-    diffs.sort_unstable();
-
-    for diff in diffs {
-        println!("{}", diff);
-    }
-
-    Ok(())
+    diff_and_print(repo, &command.object_id, &object.version_details.version, None)
 }
 
 fn diff_command(repo: &FsOcflRepo, command: &Diff) -> Result<()> {
@@ -296,11 +276,12 @@ fn diff_command(repo: &FsOcflRepo, command: &Diff) -> Result<()> {
         return Ok(());
     }
 
-    // TODO this call is computing the latest update of all files, which is unnecessary
-    let left = repo.get_object(&command.object_id, Some(command.left.clone()))?;
-    let right = repo.get_object(&command.object_id, Some(command.right.clone()))?;
+    diff_and_print(repo, &command.object_id, &command.left, Some(&command.right))
+}
 
-    let diffs = diff(left, right);
+fn diff_and_print(repo: &FsOcflRepo, object_id: &str, left: &VersionId, right: Option<&VersionId>) -> Result<()> {
+    let mut diffs: Vec<DiffLine> = repo.diff(object_id, left, right)?.into_iter().map(|diff| DiffLine(diff)).collect();
+    diffs.sort_unstable();
 
     for diff in diffs {
         println!("{}", diff);
@@ -309,32 +290,9 @@ fn diff_command(repo: &FsOcflRepo, command: &Diff) -> Result<()> {
     Ok(())
 }
 
-fn diff(mut left: ObjectVersion, right: ObjectVersion) -> Vec<DiffLine> {
-    let mut diffs = Vec::new();
-
-    for (path, details) in right.state {
-        match left.state.remove(&path) {
-            None => diffs.push(DiffLine::added(path)),
-            Some(entry) => {
-                if entry.digest.deref().ne(details.digest.deref()) {
-                    diffs.push(DiffLine::modified(path))
-                }
-            }
-        }
-    }
-
-    for (path, _details) in left.state {
-        diffs.push(DiffLine::deleted(path))
-    }
-
-    diffs.sort_unstable();
-
-    diffs
-}
-
 fn list_object_contents(repo: &FsOcflRepo, command: &List) -> Result<()> {
     let object_id = command.object_id.as_ref().unwrap();
-    let object = repo.get_object(object_id, command.version.clone())
+    let object = repo.get_object(object_id, command.version.as_ref())
         .with_context(|| "Failed to list object")?;
     print_object_contents(object, command)?;
 
@@ -544,45 +502,14 @@ impl<'a> fmt::Display for FormatVersion<'a> {
 }
 
 #[derive(Debug)]
-struct DiffLine {
-    diff_type: DiffType,
-    path: String,
-}
-
-#[derive(Debug)]
-enum DiffType {
-    Added,
-    Modified,
-    Deleted,
-}
-
-impl DiffLine {
-    fn added(path: String) -> Self {
-        Self {
-            diff_type: DiffType::Added,
-            path
-        }
-    }
-    fn modified(path: String) -> Self {
-        Self {
-            diff_type: DiffType::Modified,
-            path
-        }
-    }
-    fn deleted(path: String) -> Self {
-        Self {
-            diff_type: DiffType::Deleted,
-            path
-        }
-    }
-}
+struct DiffLine(VersionDiff);
 
 impl fmt::Display for DiffLine {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self.diff_type {
-            DiffType::Added => write!(f, "A\t{}", self.path)?,
-            DiffType::Modified => write!(f, "M\t{}", self.path)?,
-            DiffType::Deleted => write!(f, "D\t{}", self.path)?,
+        match self.0.diff_type {
+            DiffType::Added => write!(f, "A\t{}", self.0.path)?,
+            DiffType::Modified => write!(f, "M\t{}", self.0.path)?,
+            DiffType::Deleted => write!(f, "D\t{}", self.0.path)?,
         }
 
         Ok(())
@@ -591,7 +518,7 @@ impl fmt::Display for DiffLine {
 
 impl PartialEq for DiffLine {
     fn eq(&self, other: &Self) -> bool {
-        self.path == other.path
+        self.0.path == other.0.path
     }
 }
 
@@ -605,6 +532,6 @@ impl PartialOrd for DiffLine {
 
 impl Ord for DiffLine {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.path.cmp(&other.path)
+        self.0.path.cmp(&other.0.path)
     }
 }
