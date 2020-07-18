@@ -240,27 +240,26 @@ fn log_command(repo: &FsOcflRepo, command: &Log) -> Result<()> {
         None => repo.list_object_versions(&command.object_id)?,
     };
 
+    let mut next: Box<dyn FnMut() -> Option<VersionDetails>> = match command.reverse {
+        true => {
+            let mut iter = versions.into_iter().rev();
+            Box::new(move || iter.next())
+        },
+        false => {
+            let mut iter = versions.into_iter();
+            Box::new(move || iter.next())
+        }
+    };
+
     let mut count = 0;
-    
-    // TODO find a way to do this with less duplication
-    if command.reverse {
-        for version in versions.iter().rev() {
-            if count == command.num.0 {
-                break;
-            } else {
-                println!("{}", FormatVersion::new(version, command.compact));
-                count += 1;
-            }
+
+    loop {
+        let version = next();
+        if version.is_none() || count == command.num.0 {
+            break;
         }
-    } else {
-        for version in versions.iter() {
-            if count == command.num.0 {
-                break;
-            } else {
-                println!("{}", FormatVersion::new(version, command.compact));
-                count += 1;
-            }
-        }
+        println!("{}", FormatVersion::new(version.as_ref().unwrap(), command.compact));
+        count += 1;
     }
 
     Ok(())
