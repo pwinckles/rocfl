@@ -417,7 +417,7 @@ impl Inventory {
         }
     }
 
-    fn lookup_content_path<'a>(&'a self, digest: &'a str) -> Result<&'a str> {
+    fn lookup_content_path(&self, digest: &str) -> Result<&str> {
         match self.manifest.get(digest) {
             Some(paths) => {
                 match paths.first() {

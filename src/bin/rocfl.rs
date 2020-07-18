@@ -414,7 +414,6 @@ struct Listing<'a> {
 }
 
 impl<'a> Listing<'a> {
-
     fn new(path: &'a String, details: &'a FileDetails, digest_algorithm: &'a String) -> Self {
         Self {
             version: &details.last_update.version,
@@ -429,10 +428,8 @@ impl<'a> Listing<'a> {
     fn updated_str(&self) -> String {
         self.updated.format(DATE_FORMAT).to_string()
     }
-
 }
 
-// TODO consider changing these to moves
 impl<'a> From<&'a ObjectVersionDetails> for Listing<'a> {
     fn from(object: &'a ObjectVersionDetails) -> Self {
         Self {
