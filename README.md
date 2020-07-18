@@ -5,11 +5,11 @@ It currently only supports read operations.
 
 ## Installation
 
-Theoretically `rocfl` works on Windows, but I haven't tried it. 
-
 1. Install [Rust](https://www.rust-lang.org/tools/install), and make sure `cargo` is on your `PATH`
 1. Execute: `cargo install rocfl`
 1. Verify the install: `rocfl help`
+
+Theoretically `rocfl` works on Windows, but I haven't tried it.
 
 ## Operations
 
