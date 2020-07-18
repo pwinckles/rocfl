@@ -7,7 +7,7 @@ use anyhow::{anyhow, Result, Context};
 use grep::searcher::sinks::UTF8;
 use grep::matcher::{Matcher, Captures};
 use crate::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, ObjectVersion, VersionId, ROOT_INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, VersionDetails, not_found, ObjectVersionDetails};
-use globset::{GlobMatcher, Glob};
+use globset::{Glob};
 use std::ops::Deref;
 
 pub struct FsOcflRepo {
@@ -35,14 +35,20 @@ impl FsOcflRepo {
 
 impl OcflRepo for FsOcflRepo {
     fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersionDetails>>>> {
-        Ok(Box::new(InventoryAdapterIter::new(InventoryIter::new(&self.storage_root, None, filter_glob)?, Box::new(|inventory| {
+        let inv_iter = match filter_glob {
+            Some(glob) => InventoryIter::new_glob_matching(&self.storage_root, glob)?,
+            None => InventoryIter::new(&self.storage_root, None)?
+        };
+
+        Ok(Box::new(InventoryAdapterIter::new(inv_iter, Box::new(|inventory| {
             ObjectVersionDetails::from_inventory(inventory, None)
         }))))
     }
 
     fn get_object(&self, object_id: &str, version: Option<VersionId>) -> Result<ObjectVersion> {
         let v = version.clone();
-        let mut iter = InventoryAdapterIter::new(InventoryIter::new(&self.storage_root, Some(object_id.to_string()), None)?, Box::new(move |inventory| {
+        let inv_iter = InventoryIter::new_id_matching(&self.storage_root, object_id.clone())?;
+        let mut iter = InventoryAdapterIter::new(inv_iter, Box::new(move |inventory| {
             ObjectVersion::from_inventory(inventory, v.as_ref())
         }));
 
@@ -56,7 +62,7 @@ impl OcflRepo for FsOcflRepo {
     }
 
     fn list_object_versions(&self, object_id: &str) -> Result<Vec<VersionDetails>> {
-        let mut iter = InventoryIter::new(&self.storage_root, Some(object_id.to_string()), None)?;
+        let mut iter = InventoryIter::new_id_matching(&self.storage_root, object_id.clone())?;
 
         loop {
             match iter.next() {
@@ -76,7 +82,7 @@ impl OcflRepo for FsOcflRepo {
     }
 
     fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Vec<VersionDetails>> {
-        let mut iter = InventoryIter::new(&self.storage_root, Some(object_id.to_string()), None)?;
+        let mut iter = InventoryIter::new_id_matching(&self.storage_root, object_id.clone())?;
 
         loop {
             match iter.next() {
@@ -143,47 +149,35 @@ impl<T> Iterator for InventoryAdapterIter<T> {
 struct InventoryIter {
     dir_iters: Vec<ReadDir>,
     current: RefCell<Option<ReadDir>>,
-    object_id: Option<String>,
-    object_id_glob: Option<GlobMatcher>,
+    id_matcher: Option<Box<dyn Fn(&str) -> bool>>,
 }
 
 impl InventoryIter {
-    fn new<P: AsRef<Path>>(root: P, object_id: Option<String>, object_id_glob: Option<&str>) -> Result<Self> {
+    fn new_id_matching<P: AsRef<Path>>(root: P, object_id: &str) -> Result<Self> {
+        let o = object_id.to_string();
+        InventoryIter::new(root, Some(Box::new(move |id| id == o)))
+    }
+
+    fn new_glob_matching<P: AsRef<Path>>(root: P, glob: &str) -> Result<Self> {
+        let matcher = Glob::new(glob)?.compile_matcher();
+        InventoryIter::new(root, Some(Box::new(move |id| matcher.is_match(id))))
+    }
+
+    fn new<P: AsRef<Path>>(root: P, id_matcher: Option<Box<dyn Fn(&str) -> bool>>) -> Result<Self> {
         Ok(InventoryIter {
             dir_iters: vec![std::fs::read_dir(&root)?],
             current: RefCell::new(None),
-            object_id,
-            object_id_glob: match object_id_glob {
-                Some(glob) => Some(Glob::new(glob)?.compile_matcher()),
-                None => None
-            },
+            id_matcher,
         })
-    }
-
-    fn is_matching(&self) -> bool {
-        self.object_id.is_some() || self.object_id_glob.is_some()
-    }
-
-    fn is_match(&self, object_id: &str) -> bool {
-        if self.object_id.is_some() {
-            return self.object_id.as_ref().unwrap().eq(object_id);
-        } else if self.object_id_glob.is_some() {
-            return self.object_id_glob.as_ref().unwrap().is_match(object_id);
-        }
-        false
     }
 
     fn create_if_matches<P: AsRef<Path>>(&self, object_root: P) -> Result<Option<Inventory>>{
         let inventory_path = object_root.as_ref().join(ROOT_INVENTORY_FILE);
 
-        if self.is_matching() {
-            match self.extract_object_id(&inventory_path) {
-                Ok(object_id) => {
-                    if self.is_match(&object_id) {
-                        return self.create_object_version(&object_root);
-                    }
-                },
-                Err(e) => return Err(e)
+        if self.id_matcher.is_some() {
+            let object_id = self.extract_object_id(&inventory_path)?;
+            if self.id_matcher.as_ref().unwrap().deref()(&object_id) {
+                return self.create_object_version(&object_root);
             }
         } else {
             return self.create_object_version(&object_root);
@@ -206,12 +200,13 @@ impl InventoryIter {
             OBJECT_ID_MATCHER.captures(line.as_bytes(), &mut captures)?;
             matches.push(line[captures.get(1).unwrap()].to_string());
             Ok(true)
-        }))?;
+        })).with_context(|| format!("Failed to locate object ID in inventory at {}",
+                        path.as_ref().to_string_lossy().to_string()))?;
 
         match matches.get(0) {
             Some(id) => Ok(id.to_string()),
             None => Err(anyhow!("Failed to locate object ID in inventory at {}",
-                        path.as_ref().to_str().unwrap_or_default()))
+                        path.as_ref().to_string_lossy().to_string()))
         }
     }
 
