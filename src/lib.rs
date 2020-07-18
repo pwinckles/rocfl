@@ -14,9 +14,9 @@ use serde::export::Formatter;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
+use std::str::FromStr;
 
 pub use self::fs::FsOcflRepo;
-use std::str::FromStr;
 
 const OBJECT_MARKER: &str = "0=ocfl_object_1.0";
 const ROOT_INVENTORY_FILE: &str = "inventory.json";

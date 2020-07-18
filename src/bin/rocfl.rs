@@ -9,13 +9,13 @@ use serde::export::Formatter;
 use core::fmt;
 use rocfl::{ObjectVersion, FileDetails, VersionId, OcflRepo, FsOcflRepo, VersionDetails, ObjectVersionDetails};
 use std::cmp::Ordering;
-use chrono::{DateTime, Local};
 use globset::Glob;
 use std::fmt::Display;
 use std::str::FromStr;
 use std::num::ParseIntError;
 use std::process::exit;
 use std::ops::Deref;
+use std::rc::Rc;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
@@ -67,7 +67,6 @@ struct List {
     #[structopt(short, long, value_name = "VERSION")]
     version: Option<VersionId>,
 
-    // TODO implement sort for object listing?
     /// Specifies the field to sort on. Sort is not supported when listing objects.
     #[structopt(short, long, value_name = "FIELD", possible_values = &Field::variants(), default_value = "name", case_insensitive = true)]
     sort: Field,
@@ -188,9 +187,9 @@ arg_enum! {
 impl Field {
     fn cmp_listings(&self, a: &Listing, b: &Listing) -> Ordering {
         match self {
-            Self::Name => a.name.cmp(b.name),
-            Self::Version => a.version.cmp(b.version),
-            Self::Updated => a.updated.cmp(b.updated),
+            Self::Name => a.name.cmp(&b.name),
+            Self::Version => a.version_details.version.cmp(&b.version_details.version),
+            Self::Updated => a.version_details.created.cmp(&b.version_details.created),
             Self::None => Ordering::Equal,
         }
     }
@@ -206,7 +205,7 @@ fn main() {
     let args = AppArgs::from_args();
     match exec_command(&args) {
         Err(e) => {
-            print_err(e.into(), args.quiet);
+            print_err(&e, args.quiet);
             exit(1);
         },
         _ => ()
@@ -242,6 +241,7 @@ fn log_command(repo: &FsOcflRepo, command: &Log) -> Result<()> {
     };
 
     let mut count = 0;
+    
     // TODO find a way to do this with less duplication
     if command.reverse {
         for version in versions.iter().rev() {
@@ -340,32 +340,53 @@ fn list_object_contents(repo: &FsOcflRepo, command: &List) -> Result<()> {
     let object_id = command.object_id.as_ref().unwrap();
     let object = repo.get_object(object_id, command.version.clone())
         .with_context(|| "Failed to list object")?;
-    print_object_contents(&object, command)?;
+    print_object_contents(object, command)?;
 
     Ok(())
 }
 
 fn list_objects(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()> {
-    // TODO not that the results are lighter weight consider sorting
-    for object in repo.list_objects(command.object_id.as_deref())
-        .with_context(|| "Failed to list objects")? {
-        match object {
-            Ok(object) => println!("{}", FormatListing::new(&Listing::from(&object), command)),
-            Err(e) => print_err(e, args.quiet)
+    let iter = repo.list_objects(command.object_id.as_deref())
+        .with_context(|| "Failed to list objects")?;
+
+    match command.sort {
+        Field::None => {
+            for object in iter {
+                match object {
+                    Ok(object) => println!("{}", FormatListing::new(&Listing::from(object), command)),
+                    Err(e) => print_err(&e, args.quiet)
+                }
+            }
+        },
+        _ => {
+            let listings: Vec<Listing> = iter.filter(|object| {
+                match object {
+                    Ok(_object) => true,
+                    Err(e) => {
+                        print_err(e, args.quiet);
+                        false
+                    }
+                }
+            }).map(|object| {
+                Listing::from(object.unwrap())
+            }).collect();
+
+            sort_and_print(listings, command);
         }
     }
 
     Ok(())
 }
 
-fn print_object_contents(object: &ObjectVersion, command: &List) -> Result<()> {
+fn print_object_contents(object: ObjectVersion, command: &List) -> Result<()> {
     let mut glob = None;
     if command.path.is_some() {
         glob = Some(Glob::new(command.path.as_ref().unwrap())?.compile_matcher());
     }
 
-    let mut listings: Vec<Listing> = object.state.iter().map(|(path, details)| {
-        Listing::new(path, details, &object.digest_algorithm)
+    let digest_algorithm = Rc::new(object.digest_algorithm.clone());
+    let listings: Vec<Listing> = object.state.into_iter().map(move |(path, details)| {
+        Listing::new(path, details, Rc::clone(&digest_algorithm))
     }).filter(|listing| {
         match &glob {
             Some(glob) => glob.is_match(&listing.name),
@@ -373,6 +394,12 @@ fn print_object_contents(object: &ObjectVersion, command: &List) -> Result<()> {
         }
     }).collect();
 
+    sort_and_print(listings, command);
+
+    Ok(())
+}
+
+fn sort_and_print(mut listings: Vec<Listing>, command: &List) {
     listings.sort_unstable_by(|a, b| {
         if command.reverse {
             command.sort.cmp_listings(b, a)
@@ -384,11 +411,9 @@ fn print_object_contents(object: &ObjectVersion, command: &List) -> Result<()> {
     for listing in listings {
         println!("{}", FormatListing::new(&listing, command));
     }
-
-    Ok(())
 }
 
-fn print_err(error: Error, quiet: bool) {
+fn print_err(error: &Error, quiet: bool) {
     if !quiet {
         let mut stderr = StandardStream::stderr(ColorChoice::Auto);
         match stderr.set_color(ColorSpec::new().set_fg(Some(Color::Red))) {
@@ -404,39 +429,36 @@ fn print_err(error: Error, quiet: bool) {
 }
 
 #[derive(Debug)]
-struct Listing<'a> {
-    version: &'a VersionId,
-    updated: &'a DateTime<Local>,
-    name: &'a String,
-    storage_path: &'a String,
-    digest_algorithm: Option<&'a String>,
-    digest: Option<&'a String>,
+struct Listing {
+    version_details: Rc<VersionDetails>,
+    name: String,
+    storage_path: String,
+    digest_algorithm: Option<Rc<String>>,
+    digest: Option<Rc<String>>,
 }
 
-impl<'a> Listing<'a> {
-    fn new(path: &'a String, details: &'a FileDetails, digest_algorithm: &'a String) -> Self {
+impl Listing {
+    fn new(path: String, details: FileDetails, digest_algorithm: Rc<String>) -> Self {
         Self {
-            version: &details.last_update.version,
-            updated: &details.last_update.created,
+            version_details: Rc::clone(&details.last_update),
             name: path,
-            storage_path: &details.storage_path,
+            storage_path: details.storage_path,
             digest_algorithm: Some(digest_algorithm),
-            digest: Some(&details.digest),
+            digest: Some(Rc::clone(&details.digest)),
         }
     }
 
     fn updated_str(&self) -> String {
-        self.updated.format(DATE_FORMAT).to_string()
+        self.version_details.created.format(DATE_FORMAT).to_string()
     }
 }
 
-impl<'a> From<&'a ObjectVersionDetails> for Listing<'a> {
-    fn from(object: &'a ObjectVersionDetails) -> Self {
+impl From<ObjectVersionDetails> for Listing {
+    fn from(object: ObjectVersionDetails) -> Self {
         Self {
-            version: &object.version_details.version,
-            updated: &object.version_details.created,
-            name: &object.id,
-            storage_path: &object.object_root,
+            version_details: Rc::new(object.version_details),
+            name: object.id,
+            storage_path: object.object_root,
             digest_algorithm: None,
             digest: None,
         }
@@ -445,12 +467,12 @@ impl<'a> From<&'a ObjectVersionDetails> for Listing<'a> {
 
 #[derive(Debug)]
 struct FormatListing<'a> {
-    listing: &'a Listing<'a>,
+    listing: &'a Listing,
     command: &'a List,
 }
 
 impl<'a> FormatListing<'a> {
-    fn new(listing: &'a Listing<'a>, command: &'a List) -> Self {
+    fn new(listing: &'a Listing, command: &'a List) -> Self {
         Self {
             listing,
             command,
@@ -466,7 +488,7 @@ impl<'a> fmt::Display for FormatListing<'a> {
         if self.command.long {
             write!(f, "{version:>5}\t{updated:<19}\t{name:<42}",
                    // For some reason the formatting is not applied to the output of VersionId::fmt()
-                   version = self.listing.version.to_string(),
+                   version = self.listing.version_details.version.to_string(),
                    updated = self.listing.updated_str(),
                    name = self.listing.name)?;
         } else {
@@ -478,7 +500,8 @@ impl<'a> fmt::Display for FormatListing<'a> {
         }
 
         if self.command.digest && self.listing.digest.is_some() {
-            write!(f, "\t{}:{}", self.listing.digest_algorithm.unwrap(), self.listing.digest.unwrap())?;
+            write!(f, "\t{}:{}", self.listing.digest_algorithm.as_ref().unwrap(),
+                   self.listing.digest.as_ref().unwrap())?;
         }
 
         Ok(())
