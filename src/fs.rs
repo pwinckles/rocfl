@@ -1,20 +1,27 @@
-use std::cell::RefCell;
-use std::io::{Read};
-use std::fs::{File, ReadDir};
-use std::path::{Path, PathBuf};
-use grep::searcher::Searcher;
-use anyhow::{anyhow, Result, Context};
-use grep::searcher::sinks::UTF8;
-use grep::matcher::{Matcher, Captures};
-use crate::{OcflRepo, OBJECT_MARKER, OBJECT_ID_MATCHER, Inventory, ObjectVersion, VersionId, ROOT_INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, VersionDetails, not_found, ObjectVersionDetails, Diff, invert_path_map};
-use globset::{GlobBuilder};
-use std::ops::Deref;
+//! Local filesystem OCFL implementation.
 
+use std::cell::RefCell;
+use std::fs::{self, File, ReadDir};
+use std::io::Read;
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
+
+use anyhow::{anyhow, Context, Result};
+use globset::GlobBuilder;
+use grep::matcher::{Captures, Matcher};
+use grep::searcher::Searcher;
+use grep::searcher::sinks::UTF8;
+
+use crate::{Diff, Inventory, invert_path_map, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_ID_MATCHER, OBJECT_MARKER, ObjectVersion, ObjectVersionDetails, OcflRepo, ROOT_INVENTORY_FILE, VersionDetails, VersionNum};
+
+/// Local filesystem OCFL repository
 pub struct FsOcflRepo {
+    /// The path to the OCFL storage root
     pub storage_root: PathBuf
 }
 
 impl FsOcflRepo {
+    /// Creates a new FsOcflRepo
     pub fn new<P: AsRef<Path>>(storage_root: P) -> Result<FsOcflRepo> {
         let storage_root = storage_root.as_ref().to_path_buf();
 
@@ -32,6 +39,7 @@ impl FsOcflRepo {
         })
     }
 
+    // TODO add this method to OcflRepo and then use it to create blanket implementations
     fn get_inventory(&self, object_id: &str) -> Result<Inventory> {
         let mut iter = InventoryIter::new_id_matching(&self.storage_root, object_id.clone())?;
 
@@ -48,6 +56,12 @@ impl FsOcflRepo {
 }
 
 impl OcflRepo for FsOcflRepo {
+    /// Returns an iterator that iterate through all of the objects in an OCFL repository.
+    /// Objects are lazy-loaded. An optional glob pattern may be provided to filter the objects
+    /// that are returned.
+    ///
+    /// The iterator return an error if it encounters a problem accessing an object. This does
+    /// terminate the iterator; there are still more objects until it returns `None`.
     fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersionDetails>>>> {
         let inv_iter = match filter_glob {
             Some(glob) => InventoryIter::new_glob_matching(&self.storage_root, glob)?,
@@ -59,16 +73,31 @@ impl OcflRepo for FsOcflRepo {
         }))))
     }
 
-    fn get_object(&self, object_id: &str, version: Option<&VersionId>) -> Result<ObjectVersion> {
+    /// Returns a view of a version of an object. If a [VersionNum](rocfl::VersionNum) is not specified,
+    /// then the head version of the object is returned.
+    ///
+    /// If the object or version of the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound)
+    /// error is returned.
+    fn get_object(&self, object_id: &str, version_num: Option<&VersionNum>) -> Result<ObjectVersion> {
         let inventory = self.get_inventory(object_id)?;
-        Ok(ObjectVersion::from_inventory(inventory, version)?)
+        Ok(ObjectVersion::from_inventory(inventory, version_num)?)
     }
 
-    fn get_object_details(&self, object_id: &str, version: Option<&VersionId>) -> Result<ObjectVersionDetails> {
+    /// Returns high-level details about an object version. This method is similar to
+    /// [get_object](rocfl::OcflRepo::get_object) except that it does less processing and does not
+    /// include the version's state.
+    ///
+    /// If the object or version of the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound)
+    /// error is returned.
+    fn get_object_details(&self, object_id: &str, version_num: Option<&VersionNum>) -> Result<ObjectVersionDetails> {
         let inventory = self.get_inventory(object_id)?;
-        Ok(ObjectVersionDetails::from_inventory(inventory, version)?)
+        Ok(ObjectVersionDetails::from_inventory(inventory, version_num)?)
     }
 
+    /// Returns a vector containing the version metadata for ever version of an object. The vector
+    /// is sorted in ascending order.
+    ///
+    /// If the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
     fn list_object_versions(&self, object_id: &str) -> Result<Vec<VersionDetails>> {
         let inventory = self.get_inventory(object_id)?;
         let mut versions = Vec::with_capacity(inventory.versions.len());
@@ -80,6 +109,10 @@ impl OcflRepo for FsOcflRepo {
         Ok(versions)
     }
 
+    /// Returns a vector contain the version metadata for every version of an object that
+    /// affected the specified file. The vector is sorted in ascending order.
+    ///
+    /// If the object or path cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
     fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Vec<VersionDetails>> {
         let inventory = self.get_inventory(object_id)?;
 
@@ -108,7 +141,11 @@ impl OcflRepo for FsOcflRepo {
         Ok(versions)
     }
 
-    fn diff(&self, object_id: &str, left_version: &VersionId, right_version: Option<&VersionId>) -> Result<Vec<Diff>> {
+    /// Returns the diff of two object versions. If only one version is specified, then the diff
+    /// is between the specified version and the version before it.
+    ///
+    /// If the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
+    fn diff(&self, object_id: &str, left_version: &VersionNum, right_version: Option<&VersionNum>) -> Result<Vec<Diff>> {
         if right_version.is_some() && left_version.eq(right_version.unwrap()) {
             return Ok(vec![])
         }
@@ -120,7 +157,7 @@ impl OcflRepo for FsOcflRepo {
         let right = match right_version {
             Some(version) => Some(inventory.remove_version(version)?),
             None => {
-                if left_version.version_num > 1 {
+                if left_version.number > 1 {
                     Some(inventory.remove_version(&left_version.previous().unwrap())?)
                 } else {
                     None
@@ -159,12 +196,15 @@ impl OcflRepo for FsOcflRepo {
     }
 }
 
+/// An iterator that adapts the out of `InventoryIter`.
 struct InventoryAdapterIter<T> {
     iter: InventoryIter,
     adapter: Box<dyn Fn(Inventory) -> Result<T>>
 }
 
 impl<T> InventoryAdapterIter<T> {
+    /// Creates a new `InventoryAdapterIter` that applies the `adapter` closure to the output
+    /// of every `next()` call.
     fn new(iter: InventoryIter, adapter: Box<dyn Fn(Inventory) -> Result<T>>) -> Self {
         Self {
             iter,
@@ -187,6 +227,7 @@ impl<T> Iterator for InventoryAdapterIter<T> {
     }
 }
 
+/// Iterates over ever object in an OCFL repository by walking the file tree.
 struct InventoryIter {
     dir_iters: Vec<ReadDir>,
     current: RefCell<Option<ReadDir>>,
@@ -194,19 +235,24 @@ struct InventoryIter {
 }
 
 impl InventoryIter {
+    /// Creates a new iterator that only returns objects that match the given object ID.
     fn new_id_matching<P: AsRef<Path>>(root: P, object_id: &str) -> Result<Self> {
         let o = object_id.to_string();
         InventoryIter::new(root, Some(Box::new(move |id| id == o)))
     }
 
+    /// Creates a new iterator that only returns objects with IDs that match the specified glob
+    /// pattern.
     fn new_glob_matching<P: AsRef<Path>>(root: P, glob: &str) -> Result<Self> {
         let matcher = GlobBuilder::new(glob).backslash_escape(true).build()?.compile_matcher();
         InventoryIter::new(root, Some(Box::new(move |id| matcher.is_match(id))))
     }
 
+    /// Creates a new iterator that returns all objects if no `id_matcher` is provided, or only
+    /// the objects the `id_matcher` returns `true` for if one is provided.
     fn new<P: AsRef<Path>>(root: P, id_matcher: Option<Box<dyn Fn(&str) -> bool>>) -> Result<Self> {
         Ok(InventoryIter {
-            dir_iters: vec![std::fs::read_dir(&root)?],
+            dir_iters: vec![fs::read_dir(&root)?],
             current: RefCell::new(None),
             id_matcher,
         })
@@ -305,6 +351,7 @@ impl Iterator for InventoryIter {
     }
 }
 
+/// Returns true if the path contains an OCFL object root marker file
 fn is_object_root<P: AsRef<Path>>(path: P) -> Result<bool> {
     for entry in std::fs::read_dir(path)? {
         let entry_path = entry?.path();
@@ -316,6 +363,9 @@ fn is_object_root<P: AsRef<Path>>(path: P) -> Result<bool> {
     Ok(false)
 }
 
+/// Parses the HEAD inventory of the OCFL object that's rooted in the specified directory.
+/// This is normally the `inventory.json` file in the object's root, but it could also be
+/// the inventory file in an extension directory, such as the mutable HEAD extension.
 fn parse_inventory<P: AsRef<Path>>(object_root: P) -> Result<Inventory> {
     let inventory_path = resolve_inventory_path(&object_root);
     // TODO should validate hash

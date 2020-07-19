@@ -1,22 +1,27 @@
-mod fs;
+//! This library is a storage agnostic abstraction over [OCFL repositories](https://ocfl.io/).
+//! Currently, the only concrete implementation, [FsOcflRepo](rocfl::FsOcflRepo) works against
+//! local filesystems.
 
-use std::collections::{HashMap, BTreeMap};
-use anyhow::{Result, anyhow, Error};
-use chrono::{Local, DateTime};
-use serde::Deserialize;
-use thiserror::Error;
-use std::convert::TryFrom;
-use lazy_static::lazy_static;
-use regex::Regex;
-use grep::regex::{RegexMatcher};
 use core::fmt;
-use serde::export::Formatter;
 use std::cmp::Ordering;
+use std::collections::{BTreeMap, HashMap};
+use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use std::str::FromStr;
 
+use anyhow::{anyhow, Error, Result};
+use chrono::{DateTime, Local};
+use grep::regex::RegexMatcher;
+use lazy_static::lazy_static;
+use regex::Regex;
+use serde::Deserialize;
+use serde::export::Formatter;
+use thiserror::Error;
+
 pub use self::fs::FsOcflRepo;
+
+mod fs;
 
 const OBJECT_MARKER: &str = "0=ocfl_object_1.0";
 const ROOT_INVENTORY_FILE: &str = "inventory.json";
@@ -27,61 +32,97 @@ lazy_static! {
     static ref OBJECT_ID_MATCHER: RegexMatcher = RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap();
 }
 
+/// Provides access to objects contained in OCFL repositories.
 pub trait OcflRepo {
 
+    /// Returns an iterator that iterate through all of the objects in an OCFL repository.
+    /// Objects are lazy-loaded. An optional glob pattern may be provided to filter the objects
+    /// that are returned.
+    ///
+    /// The iterator return an error if it encounters a problem accessing an object. This does
+    /// terminate the iterator; there are still more objects until it returns `None`.
     fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersionDetails>>>>;
 
-    fn get_object(&self, object_id: &str, version: Option<&VersionId>) -> Result<ObjectVersion>;
+    /// Returns a view of a version of an object. If a [VersionNum](rocfl::VersionNum) is not specified,
+    /// then the head version of the object is returned.
+    ///
+    /// If the object or version of the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound)
+    /// error is returned.
+    fn get_object(&self, object_id: &str, version_num: Option<&VersionNum>) -> Result<ObjectVersion>;
 
-    fn get_object_details(&self, object_id: &str, version: Option<&VersionId>) -> Result<ObjectVersionDetails>;
+    /// Returns high-level details about an object version. This method is similar to
+    /// [get_object](rocfl::OcflRepo::get_object) except that it does less processing and does not
+    /// include the version's state.
+    ///
+    /// If the object or version of the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound)
+    /// error is returned.
+    fn get_object_details(&self, object_id: &str, version_num: Option<&VersionNum>) -> Result<ObjectVersionDetails>;
 
+    /// Returns a vector containing the version metadata for ever version of an object. The vector
+    /// is sorted in ascending order.
+    ///
+    /// If the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
     fn list_object_versions(&self, object_id: &str) -> Result<Vec<VersionDetails>>;
 
+    /// Returns a vector contain the version metadata for every version of an object that
+    /// affected the specified file. The vector is sorted in ascending order.
+    ///
+    /// If the object or path cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
     fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Vec<VersionDetails>>;
 
-    fn diff(&self, object_id: &str, left_version: &VersionId, right_version: Option<&VersionId>) -> Result<Vec<Diff>>;
+    /// Returns the diff of two object versions. If only one version is specified, then the diff
+    /// is between the specified version and the version before it.
+    ///
+    /// If the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
+    fn diff(&self, object_id: &str, left_version: &VersionNum, right_version: Option<&VersionNum>) -> Result<Vec<Diff>>;
 
 }
 
+/// Represents an [OCFL object version](https://ocfl.io/1.0/spec/#version-directories).
 #[derive(Deserialize, Debug)]
 #[serde(try_from = "&str")]
-pub struct VersionId {
-    pub version_num: u32,
+pub struct VersionNum {
+    pub number: u32,
     pub width: usize,
 }
 
-impl VersionId {
-    pub fn previous(&self) -> Result<VersionId> {
-        if self.version_num - 1 < 1 {
+impl VersionNum {
+    /// Returns the previous version, or an Error if the previous version is invalid (less than 1).
+    pub fn previous(&self) -> Result<VersionNum> {
+        if self.number - 1 < 1 {
             return Err(anyhow!("Versions cannot be less than 1"));
         }
 
         Ok(Self {
-            version_num: self.version_num - 1,
+            number: self.number - 1,
             width: self.width,
         })
     }
 
-    pub fn next(&self) -> Result<VersionId> {
+    /// Returns the next version, or an Error if the next version is invalid. Version number only
+    /// have limits if they are zero-padded.
+    pub fn next(&self) -> Result<VersionNum> {
         let max = match self.width {
             0 => usize::MAX,
             _ => (10 * (self.width - 1)) - 1
         };
 
-        if self.version_num + 1 > max as u32 {
+        if self.number + 1 > max as u32 {
             return Err(anyhow!("Version cannot be greater than {}", max));
         }
 
         Ok(Self {
-            version_num: self.version_num + 1,
+            number: self.number + 1,
             width: self.width,
         })
     }
 }
 
-impl TryFrom<&str> for VersionId {
+impl TryFrom<&str> for VersionNum {
     type Error = RocflError;
 
+    /// Parses a string in the format of `v1` or `v0002` into a `VersionNum`. An error is return if
+    /// the version string is invalid.
     fn try_from(version: &str) -> Result<Self, Self::Error> {
         if !VERSION_REGEX.is_match(version) {
             return Err(RocflError::IllegalArgument(format!("Invalid version {}", version)));
@@ -99,7 +140,7 @@ impl TryFrom<&str> for VersionId {
                 };
 
                 Ok(Self {
-                    version_num: num,
+                    number: num,
                     width,
                 })
             },
@@ -108,118 +149,145 @@ impl TryFrom<&str> for VersionId {
     }
 }
 
-impl TryFrom<u32> for VersionId {
+impl TryFrom<u32> for VersionNum {
     type Error = RocflError;
 
+    /// Parses a positive integer into a `VersionNum`. An error is returned if it is invalid.
     fn try_from(version: u32) -> Result<Self, Self::Error> {
         if version < 1 {
             return Err(RocflError::IllegalArgument(format!("Invalid version number {}", version)));
         }
 
         Ok(Self {
-            version_num: version,
+            number: version,
             width: 0,
         })
     }
 }
 
-impl FromStr for VersionId {
+impl FromStr for VersionNum {
     type Err = Error;
 
+    /// This function is used when parsing command line arguments. It attempts to interpret a string
+    /// as a version if it is formatted like any of these examples: `v3`, `v00009`, or `8`.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match VersionId::try_from(s) {
+        match VersionNum::try_from(s) {
             Ok(v) => Ok(v),
-            Err(_) => Ok(VersionId::try_from(u32::from_str(s)?)?),
+            Err(_) => Ok(VersionNum::try_from(u32::from_str(s)?)?),
         }
     }
 }
 
-impl Clone for VersionId {
+impl Clone for VersionNum {
     fn clone(&self) -> Self {
         Self {
-            version_num: self.version_num,
+            number: self.number,
             width: self.width,
         }
     }
 }
 
-impl fmt::Display for VersionId {
+impl fmt::Display for VersionNum {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "v{:0width$}", self.version_num, width = self.width)
+        write!(f, "v{:0width$}", self.number, width = self.width)
     }
 }
 
-impl PartialEq for VersionId {
+impl PartialEq for VersionNum {
     fn eq(&self, other: &Self) -> bool {
-        self.version_num == other.version_num
+        self.number == other.number
     }
 }
 
-impl Eq for VersionId {}
+impl Eq for VersionNum {}
 
-impl Hash for VersionId {
+impl Hash for VersionNum {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.version_num.hash(state)
+        self.number.hash(state)
     }
 }
 
-impl PartialOrd for VersionId {
+impl PartialOrd for VersionNum {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for VersionId {
+impl Ord for VersionNum {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.version_num.cmp(&other.version_num)
+        self.number.cmp(&other.number)
     }
 }
 
+/// Represents a version of an OCFL object.
 #[derive(Debug)]
 pub struct ObjectVersion {
+    /// The object's ID
     pub id: String,
+    /// The path from the storage root to the object root
     pub object_root: String,
+    /// The algorithm used to calculate digests (sha512 or sha256)
     pub digest_algorithm: String,
+    /// Metadata about the version
     pub version_details: VersionDetails,
+    /// A map of files (logical paths) in the version to details about the files.
     pub state: HashMap<String, FileDetails>,
 }
 
+/// Details about a file in an OCFL object.
 #[derive(Debug)]
 pub struct FileDetails {
+    // TODO move digest algo here too
+    /// The file's digest
     pub digest: Rc<String>,
+    /// The path to the file relative the object root
     pub content_path: String,
+    /// The path to the file relative the storage root
     pub storage_path: String,
+    /// The version metadata for when the file was last updated
     pub last_update: Rc<VersionDetails>,
 }
 
+/// Metadata about a version.
 #[derive(Debug)]
 pub struct VersionDetails {
-    pub version: VersionId,
+    /// The version number of the version
+    pub version_num: VersionNum,
+    /// When the version was created
     pub created: DateTime<Local>,
+    /// The name of the person who created the version
     pub user_name: Option<String>,
+    /// The address of the person who created the version
     pub user_address: Option<String>,
+    /// A description of the version
     pub message: Option<String>,
 }
 
+/// Similar to [ObjectVersion](rocfl::ObjectVersion), except it does not contain the state map.
 #[derive(Debug)]
 pub struct ObjectVersionDetails {
+    /// The object's ID
     pub id: String,
+    /// The path from the storage root to the object root
     pub object_root: String,
+    /// The algorithm used to calculate digests (sha512 or sha256)
     pub digest_algorithm: String,
+    /// Metadata about the version
     pub version_details: VersionDetails,
 }
 
 impl ObjectVersion {
-    fn from_inventory(mut inventory: Inventory, version_id: Option<&VersionId>) -> Result<Self> {
-        let version_id = match version_id {
+    /// Creates an `ObjectVersion` by consuming the supplied `Inventory`.
+    fn from_inventory(mut inventory: Inventory, version_num: Option<&VersionNum>) -> Result<Self> {
+        let version_num = match version_num {
             Some(version) => version.clone(),
             None => inventory.head.clone(),
         };
 
-        let version = inventory.get_version(&version_id)?;
-        let version_details = VersionDetails::new(&version_id, version);
+        let version = inventory.get_version(&version_num)?;
+        let version_details = VersionDetails::new(&version_num, version);
 
-        let state = ObjectVersion::construct_state(&version_id, &mut inventory)?;
+        let state = ObjectVersion::construct_state(&version_num, &mut inventory)?;
 
         Ok(Self {
             id: inventory.id,
@@ -230,20 +298,20 @@ impl ObjectVersion {
         })
     }
 
-    fn construct_state(target: &VersionId, inventory: &mut Inventory) -> Result<HashMap<String, FileDetails>> {
+    fn construct_state(target: &VersionNum, inventory: &mut Inventory) -> Result<HashMap<String, FileDetails>> {
         let mut state = HashMap::new();
 
-        let mut current_version_id = (*target).clone();
+        let mut current_version_num = (*target).clone();
         let mut current_version = inventory.remove_version(target)?;
         let mut target_path_map = invert_path_map(current_version.state);
         current_version.state = HashMap::new();
 
         while !target_path_map.is_empty() {
             let mut not_found = HashMap::new();
-            let version_details = Rc::new(VersionDetails::from_version(current_version_id, current_version));
+            let version_details = Rc::new(VersionDetails::from_version(current_version_num, current_version));
 
             // No versions left to compare to; any remaining files were last updated here
-            if version_details.version.version_num == 1 {
+            if version_details.version_num.number == 1 {
                 for (target_path, target_digest) in target_path_map.into_iter() {
                     let content_path = inventory.lookup_content_path(&target_digest)?.to_string();
                     state.insert(target_path, FileDetails::new(content_path,
@@ -255,8 +323,8 @@ impl ObjectVersion {
                 break;
             }
 
-            let previous_version_id = version_details.version.previous()?;
-            let mut previous_version = inventory.remove_version(&previous_version_id)?;
+            let previous_version_num = version_details.version_num.previous()?;
+            let mut previous_version = inventory.remove_version(&previous_version_num)?;
             let mut previous_path_map = invert_path_map(previous_version.state);
             previous_version.state = HashMap::new();
 
@@ -274,7 +342,7 @@ impl ObjectVersion {
                 }
             }
 
-            current_version_id = previous_version_id;
+            current_version_num = previous_version_num;
             current_version = previous_version;
 
             target_path_map = not_found;
@@ -296,14 +364,15 @@ impl FileDetails {
 }
 
 impl VersionDetails {
-    fn new(version_id: &VersionId, version: &Version) -> Self {
+    /// Creates `VersionDetails` by cloning the input.
+    fn new(version_num: &VersionNum, version: &Version) -> Self {
         let (user, address) = match &version.user {
             Some(user) => (user.name.clone(), user.address.clone()),
             None => (None, None)
         };
 
         Self {
-            version: version_id.clone(),
+            version_num: version_num.clone(),
             created: version.created.clone(),
             user_name: user,
             user_address: address,
@@ -311,14 +380,15 @@ impl VersionDetails {
         }
     }
 
-    fn from_version(version_id: VersionId, version: Version) -> Self {
+    /// Creates `VersionDetails` by consuming the input.
+    fn from_version(version_num: VersionNum, version: Version) -> Self {
         let (user, address) = match version.user {
             Some(user) => (user.name, user.address),
             None => (None, None)
         };
 
         Self {
-            version: version_id,
+            version_num,
             created: version.created,
             user_name: user,
             user_address: address,
@@ -327,6 +397,8 @@ impl VersionDetails {
     }
 }
 
+/// Transforms an input map of digest to vector of paths to a map of paths to digests.
+/// The original map is consumed.
 fn invert_path_map(map: HashMap<String, Vec<String>>) -> HashMap<String, Rc<String>> {
     let mut inverted = HashMap::new();
 
@@ -341,14 +413,15 @@ fn invert_path_map(map: HashMap<String, Vec<String>>) -> HashMap<String, Rc<Stri
 }
 
 impl ObjectVersionDetails {
-    fn from_inventory(mut inventory: Inventory, version_id: Option<&VersionId>) -> Result<Self> {
-        let version_id = match version_id {
+    /// Creates `ObjectVersionDetails` by consuming the `Inventory`.
+    fn from_inventory(mut inventory: Inventory, version_num: Option<&VersionNum>) -> Result<Self> {
+        let version_num = match version_num {
             Some(version) => version.clone(),
             None => inventory.head.clone(),
         };
 
-        let version = inventory.remove_version(&version_id)?;
-        let version_details = VersionDetails::from_version(version_id, version);
+        let version = inventory.remove_version(&version_num)?;
+        let version_details = VersionDetails::from_version(version_num, version);
 
         Ok(Self {
             id: inventory.id,
@@ -359,12 +432,16 @@ impl ObjectVersionDetails {
     }
 }
 
+/// Represents a change to a file
 #[derive(Debug)]
 pub struct Diff {
+    /// The type of change
     pub diff_type: DiffType,
+    /// The affected logical path
     pub path: String,
 }
 
+/// Represents a type of change
 #[derive(Debug)]
 pub enum DiffType {
     Added,
@@ -393,6 +470,7 @@ impl Diff {
     }
 }
 
+/// OCFL inventory serialization object
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct Inventory {
@@ -400,10 +478,10 @@ struct Inventory {
     #[serde(rename = "type")]
     type_declaration: String,
     digest_algorithm: String,
-    head: VersionId,
+    head: VersionNum,
     content_directory: Option<String>,
     manifest: HashMap<String, Vec<String>>,
-    versions: BTreeMap<VersionId, Version>,
+    versions: BTreeMap<VersionNum, Version>,
     fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
 
     // This field is not in the inventory json file and must be added after deserialization
@@ -411,6 +489,7 @@ struct Inventory {
     object_root: String,
 }
 
+/// OCFL version serialization object
 #[derive(Deserialize, Debug)]
 struct Version {
     created: DateTime<Local>,
@@ -419,6 +498,7 @@ struct Version {
     user: Option<User>
 }
 
+/// OCFL user serialization object
 #[derive(Deserialize, Debug)]
 struct User {
     name: Option<String>,
@@ -428,30 +508,36 @@ struct User {
 impl Inventory {
     // TODO fill in more validations
     // TODO have a shallow and a deep validation
-    pub fn validate(&self) -> Result<(), RocflError> {
+    /// Performs a spot check on the inventory to see if it appears valid. This is not an
+    /// exhaustive check, and does not guarantee that the inventory is valid.
+    pub fn validate(&self) -> Result<()> {
         if !self.versions.contains_key(&self.head) {
             return Err(RocflError::CorruptObject {
                 object_id: self.id.clone(),
                 message: format!("HEAD version {} was not found", self.head),
-            })
+            }.into())
         }
         Ok(())
     }
 
-    fn get_version(&self, version: &VersionId) -> Result<&Version> {
-        match self.versions.get(version) {
+    /// Returns a reference to the specified version or an error if it does not exist.
+    fn get_version(&self, version_num: &VersionNum) -> Result<&Version> {
+        match self.versions.get(version_num) {
             Some(v) => Ok(v),
-            None => Err(not_found(&self.id, Some(version)).into())
+            None => Err(not_found(&self.id, Some(version_num)).into())
         }
     }
 
-    fn remove_version(&mut self, version: &VersionId) -> Result<Version> {
-        match self.versions.remove(version) {
+    /// Removes and returns the specified version from the inventory, or an error if it does not exist.
+    fn remove_version(&mut self, version_num: &VersionNum) -> Result<Version> {
+        match self.versions.remove(version_num) {
             Some(v) => Ok(v),
-            None => Err(not_found(&self.id, Some(version)).into())
+            None => Err(not_found(&self.id, Some(version_num)).into())
         }
     }
 
+    /// Returns the first content path associated with the specified digest, or an error if it does
+    /// not exist.
     fn lookup_content_path(&self, digest: &str) -> Result<&str> {
         match self.manifest.get(digest) {
             Some(paths) => {
@@ -472,6 +558,8 @@ impl Inventory {
 }
 
 impl Version {
+    /// Returns a reference to the digest associated to a logical path, or None if the logical
+    /// path does not exist in the version's state.
     fn lookup_digest(&self, logical_path: &String) -> Option<&String> {
         for (digest, paths) in &self.state {
             if paths.contains(logical_path) {
@@ -483,8 +571,9 @@ impl Version {
     }
 }
 
-fn not_found(object_id: &str, version: Option<&VersionId>) -> RocflError {
-    match version {
+/// Constructs a NonFound Error.
+fn not_found(object_id: &str, version_num: Option<&VersionNum>) -> RocflError {
+    match version_num {
         Some(version) => RocflError::NotFound(format!("Object {} version {}", object_id, version)),
         None => RocflError::NotFound(format!("Object {}", object_id))
     }

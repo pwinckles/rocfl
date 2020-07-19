@@ -36,25 +36,25 @@ Previous versions can be queried with the `-v` option.
 The following command lists all of the object IDs in a repository that's rooted in the current
 working directory:
 
-```
+```console
 rocfl ls
 ```
 
 This lists the same objects but with additional details, current version and updated date:
 
-```
+```console
 rocfl ls -l
 ```
 
 Adding the `-p` flag additionally provides the path from the storage root to the object:
 
-```
+```console
 rocfl ls -lp
 ```
 
 A subset of objects can be listed by providing a glob pattern to match on:
 
-```
+```console
 rocfl ls -lo foo*
 ```
 
@@ -62,39 +62,39 @@ rocfl ls -lo foo*
 
 The contents of an object's current state are displayed by invoking `ls` on a specific object ID:
 
-```
+```console
 rocfl ls foobar
 ```
 
 With the `-l` flag, additional details are displayed. In this case, the version and date indicate
 when the individual file was last updated:
 
-```
+```console
 rocfl ls -l foobar
 ```
 
 The `-p` flag can also be used here to display the paths to the physical files on disk:
 
-```
+```console
 rocfl ls -p foobar
 ```
 
 The contents of previous versions are displayed by using the `-v` option. The following command
 displays the files that were in the first version of the object:
 
-```
+```console
 rocfl ls -v1 foobar
 ```
 
 An object's contents can be filtered by specifying a glob pattern to match on:
 
-```
+```console
 rocfl ls foobar '*.txt'
 ```
 
 The output is sorted by name by default, but can also be sorted version or updated date:
 
-```
+```console
 rocfl ls -lsversion foobar
 ```
 
@@ -108,25 +108,25 @@ file are displayed.
 
 Show all of the versions of an object in ascending order:
 
-```
+```console
 rocfl log foobar
 ```
 
 Only display the five most recent versions:
 
-```
+```console
 rocfl log -rn5 foobar
 ```
 
 Show all of the versions, but formatted so each version is on a single line:
 
-```
+```console
 rocfl log -c foobar
 ```
 
 Show all of the versions that affected a specific file:
 
-```
+```console
 rocfl log foobar file1.txt
 ```
 
@@ -139,19 +139,19 @@ If no version is specified, the most recent changes are shown.
 
 Show the changes in the most recent version:
 
-```
+```console
 rocfl show foobar
 ```
 
 Show the changes in the first version:
 
-```
+```console
 rocfl show foobar v1
 ```
 
 Don't show the version metadata; only show the files that changed:
 
-```
+```console
 rocfl show -m foobar
 ```
 
@@ -163,6 +163,6 @@ The `diff` operation displays the files that changed between two specific versio
 
 Show the changes between the second and fourth versions:
 
-```
+```console
 rocfl diff v2 v4
 ```

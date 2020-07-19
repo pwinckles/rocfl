@@ -27,25 +27,25 @@ Previous versions can be queried with the `-v` option.
 The following command lists all of the object IDs in a repository that's rooted in the current
 working directory:
 
-```ignore
+```console
 rocfl ls
 ```
 
 This lists the same objects but with additional details, current version and updated date:
 
-```ignore
+```console
 rocfl ls -l
 ```
 
 Adding the `-p` flag additionally provides the path from the storage root to the object:
 
-```ignore
+```console
 rocfl ls -lp
 ```
 
 A subset of objects can be listed by providing a glob pattern to match on:
 
-```ignore
+```console
 rocfl ls -lo foo*
 ```
 
@@ -53,39 +53,39 @@ rocfl ls -lo foo*
 
 The contents of an object's current state are displayed by invoking `ls` on a specific object ID:
 
-```ignore
+```console
 rocfl ls foobar
 ```
 
 With the `-l` flag, additional details are displayed. In this case, the version and date indicate
 when the individual file was last updated:
 
-```ignore
+```console
 rocfl ls -l foobar
 ```
 
 The `-p` flag can also be used here to display the paths to the physical files on disk:
 
-```ignore
+```console
 rocfl ls -p foobar
 ```
 
 The contents of previous versions are displayed by using the `-v` option. The following command
 displays the files that were in the first version of the object:
 
-```ignore
+```console
 rocfl ls -v1 foobar
 ```
 
 An object's contents can be filtered by specifying a glob pattern to match on:
 
-```ignore
+```console
 rocfl ls foobar '*.txt'
 ```
 
 The output is sorted by name by default, but can also be sorted version or updated date:
 
-```ignore
+```console
 rocfl ls -lsversion foobar
 ```
 
@@ -99,25 +99,25 @@ file are displayed.
 
 Show all of the versions of an object in ascending order:
 
-```ignore
+```console
 rocfl log foobar
 ```
 
 Only display the five most recent versions:
 
-```ignore
+```console
 rocfl log -rn5 foobar
 ```
 
 Show all of the versions, but formatted so each version is on a single line:
 
-```ignore
+```console
 rocfl log -c foobar
 ```
 
 Show all of the versions that affected a specific file:
 
-```ignore
+```console
 rocfl log foobar file1.txt
 ```
 
@@ -130,19 +130,19 @@ If no version is specified, the most recent changes are shown.
 
 Show the changes in the most recent version:
 
-```ignore
+```console
 rocfl show foobar
 ```
 
 Show the changes in the first version:
 
-```ignore
+```console
 rocfl show foobar v1
 ```
 
 Don't show the version metadata; only show the files that changed:
 
-```ignore
+```console
 rocfl show -m foobar
 ```
 
@@ -154,28 +154,30 @@ The `diff` operation displays the files that changed between two specific versio
 
 Show the changes between the second and fourth versions:
 
-```ignore
+```console
 rocfl diff v2 v4
 ```
 */
 
-use structopt::StructOpt;
-use structopt::clap::AppSettings::{ColorAuto, ColoredHelp, DisableVersion};
-use clap::arg_enum;
-use lazy_static::lazy_static;
-use anyhow::{Result, Context, Error};
-use std::io::Write;
-use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
-use serde::export::Formatter;
 use core::fmt;
-use rocfl::{ObjectVersion, FileDetails, VersionId, OcflRepo, FsOcflRepo, VersionDetails, ObjectVersionDetails, Diff as VersionDiff, DiffType};
 use std::cmp::Ordering;
-use globset::{GlobBuilder};
 use std::fmt::Display;
-use std::str::FromStr;
+use std::io::Write;
 use std::num::ParseIntError;
 use std::process::exit;
 use std::rc::Rc;
+use std::str::FromStr;
+
+use anyhow::{Context, Error, Result};
+use clap::arg_enum;
+use globset::GlobBuilder;
+use lazy_static::lazy_static;
+use serde::export::Formatter;
+use structopt::clap::AppSettings::{ColorAuto, ColoredHelp, DisableVersion};
+use structopt::StructOpt;
+use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
+
+use rocfl::{Diff as VersionDiff, DiffType, FileDetails, FsOcflRepo, ObjectVersion, ObjectVersionDetails, OcflRepo, VersionDetails, VersionNum};
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
@@ -225,10 +227,10 @@ struct List {
 
     /// Specifies the version of the object to list
     #[structopt(short, long, value_name = "VERSION")]
-    version: Option<VersionId>,
+    version: Option<VersionNum>,
 
     /// Specifies the field to sort on. Sort is not supported when listing objects.
-    #[structopt(short, long, value_name = "FIELD", possible_values = &Field::variants(), default_value = "name", case_insensitive = true)]
+    #[structopt(short, long, value_name = "FIELD", possible_values = &Field::variants(), default_value = "Name", case_insensitive = true)]
     sort: Field,
 
     /// Reverses the direction of the sort
@@ -239,7 +241,7 @@ struct List {
     #[structopt(short, long)]
     objects: bool,
 
-    /// Wildcards in path glob expressions will not match separators
+    /// Wildcards in path glob expressions will not match '/'
     #[structopt(short, long)]
     glob_literal_separator: bool,
 
@@ -291,7 +293,7 @@ struct Show {
 
     /// Optional version to show
     #[structopt(name = "VERSION")]
-    version: Option<VersionId>,
+    version: Option<VersionNum>,
 }
 
 /// Shows the files that changed between two versions
@@ -304,11 +306,11 @@ struct Diff {
 
     /// Left-hand side version
     #[structopt(name = "LEFT_VERSION")]
-    left: VersionId,
+    left: VersionNum,
 
     /// Right-hand side version
     #[structopt(name = "RIGHT_VERSION")]
-    right: VersionId,
+    right: VersionNum,
 }
 
 #[derive(Debug)]
@@ -332,8 +334,7 @@ impl FromStr for Num {
 
 impl Display for Num {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)?;
-        Ok(())
+        write!(f, "{}", self.0)
     }
 }
 
@@ -351,7 +352,7 @@ impl Field {
     fn cmp_listings(&self, a: &Listing, b: &Listing) -> Ordering {
         match self {
             Self::Name => a.name.cmp(&b.name),
-            Self::Version => a.version_details.version.cmp(&b.version_details.version),
+            Self::Version => a.version_details.version_num.cmp(&b.version_details.version_num),
             Self::Updated => a.version_details.created.cmp(&b.version_details.created),
             Self::None => Ordering::Equal,
         }
@@ -424,7 +425,7 @@ fn show_command(repo: &FsOcflRepo, command: &Show) -> Result<()> {
         println!("{}", FormatVersion::new(&object.version_details, false));
     }
 
-    diff_and_print(repo, &command.object_id, &object.version_details.version, None)
+    diff_and_print(repo, &command.object_id, &object.version_details.version_num, None)
 }
 
 fn diff_command(repo: &FsOcflRepo, command: &Diff) -> Result<()> {
@@ -435,8 +436,10 @@ fn diff_command(repo: &FsOcflRepo, command: &Diff) -> Result<()> {
     diff_and_print(repo, &command.object_id, &command.left, Some(&command.right))
 }
 
-fn diff_and_print(repo: &FsOcflRepo, object_id: &str, left: &VersionId, right: Option<&VersionId>) -> Result<()> {
-    let mut diffs: Vec<DiffLine> = repo.diff(object_id, left, right)?.into_iter().map(|diff| DiffLine(diff)).collect();
+fn diff_and_print(repo: &FsOcflRepo, object_id: &str, left: &VersionNum, right: Option<&VersionNum>) -> Result<()> {
+    let mut diffs: Vec<DiffLine> = repo.diff(object_id, left, right)?
+        .into_iter().map(|diff| DiffLine(diff)).collect();
+
     diffs.sort_unstable();
 
     for diff in diffs {
@@ -598,7 +601,7 @@ impl<'a> fmt::Display for FormatListing<'a> {
         if self.command.long {
             write!(f, "{version:>5}\t{updated:<19}\t{name:<42}",
                    // For some reason the formatting is not applied to the output of VersionId::fmt()
-                   version = self.listing.version_details.version.to_string(),
+                   version = self.listing.version_details.version_num.to_string(),
                    updated = self.listing.updated_str(),
                    name = self.listing.name)?;
         } else {
@@ -637,14 +640,14 @@ impl<'a> fmt::Display for FormatVersion<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if self.compact {
             write!(f, "{version:>5}\t{name}\t<{address}>\t{date:19}\t{message}",
-                   version = self.version.version.to_string(),
+                   version = self.version.version_num.to_string(),
                    name = self.version.user_name.as_ref().unwrap_or(&(*DEFAULT_USER)),
                    address = self.version.user_address.as_ref().unwrap_or(&(*DEFAULT_USER)),
                    date = self.version.created.format(DATE_FORMAT),
                    message = self.version.message.as_ref().unwrap_or(&"".to_string()))?;
         } else {
             write!(f, "{:width$} {}\n{:width$} {} <{}>\n{:width$} {}\n{:width$} {}\n",
-                   "Version:", self.version.version.to_string(),
+                   "Version:", self.version.version_num.to_string(),
                    "Author:",
                    self.version.user_name.as_ref().unwrap_or(&(*DEFAULT_USER)),
                    self.version.user_address.as_ref().unwrap_or(&(*DEFAULT_USER)),
