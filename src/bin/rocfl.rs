@@ -497,9 +497,8 @@ fn print_object_contents(object: ObjectVersion, command: &List) -> Result<()> {
             .backslash_escape(true).build()?.compile_matcher());
     }
 
-    let digest_algorithm = Rc::new(object.digest_algorithm.clone());
     let listings: Vec<Listing> = object.state.into_iter().map(move |(path, details)| {
-        Listing::new(path, details, Rc::clone(&digest_algorithm))
+        Listing::new(path, details)
     }).filter(|listing| {
         match &glob {
             Some(glob) => glob.is_match(&listing.name),
@@ -551,13 +550,13 @@ struct Listing {
 }
 
 impl Listing {
-    fn new(path: String, details: FileDetails, digest_algorithm: Rc<String>) -> Self {
+    fn new(path: String, details: FileDetails) -> Self {
         Self {
-            version_details: Rc::clone(&details.last_update),
+            version_details: details.last_update,
             name: path,
             storage_path: details.storage_path,
-            digest_algorithm: Some(digest_algorithm),
-            digest: Some(Rc::clone(&details.digest)),
+            digest_algorithm: Some(details.digest_algorithm),
+            digest: Some(details.digest),
         }
     }
 

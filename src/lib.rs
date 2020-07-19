@@ -422,9 +422,10 @@ pub struct ObjectVersion {
 /// Details about a file in an OCFL object.
 #[derive(Debug)]
 pub struct FileDetails {
-    // TODO move digest algo here too
     /// The file's digest
     pub digest: Rc<String>,
+    /// The digest algorithm
+    pub digest_algorithm: Rc<String>,
     /// The path to the file relative the object root
     pub content_path: String,
     /// The path to the file relative the storage root
@@ -486,6 +487,7 @@ impl ObjectVersion {
     fn construct_state(target: &VersionNum, inventory: &mut Inventory) -> Result<HashMap<String, FileDetails>> {
         let mut state = HashMap::new();
 
+        let digest_algorithm = Rc::new(inventory.digest_algorithm.clone());
         let mut current_version_num = (*target).clone();
         let mut current_version = inventory.remove_version(target)?;
         let mut target_path_map = invert_path_map(current_version.state);
@@ -501,6 +503,7 @@ impl ObjectVersion {
                     let content_path = inventory.lookup_content_path(&target_digest)?.to_string();
                     state.insert(target_path, FileDetails::new(content_path,
                                                                target_digest,
+                                                               Rc::clone(&digest_algorithm),
                                                                &inventory.object_root,
                                                                Rc::clone(&version_details)));
                 }
@@ -520,6 +523,7 @@ impl ObjectVersion {
                     let content_path = inventory.lookup_content_path(&target_digest)?.to_string();
                     state.insert(target_path, FileDetails::new(content_path,
                                                                target_digest,
+                                                               Rc::clone(&digest_algorithm),
                                                                &inventory.object_root,
                                                                Rc::clone(&version_details)));
                 } else {
@@ -538,11 +542,13 @@ impl ObjectVersion {
 }
 
 impl FileDetails {
-    fn new(content_path: String, digest: Rc<String>, object_root: &str, version_details: Rc<VersionDetails>) -> Self {
+    fn new(content_path: String, digest: Rc<String>, digest_algorithm: Rc<String>,
+           object_root: &str, version_details: Rc<VersionDetails>) -> Self {
         Self {
             storage_path: format!("{}/{}", object_root, content_path),
             content_path,
             digest,
+            digest_algorithm,
             last_update: version_details,
         }
     }
