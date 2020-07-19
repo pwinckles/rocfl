@@ -1,6 +1,13 @@
 //! This library is a storage agnostic abstraction over [OCFL repositories](https://ocfl.io/).
-//! Currently, the only concrete implementation, [FsOcflRepo](rocfl::FsOcflRepo) works against
-//! local filesystems.
+//! Currently, it only supports read-only operations on local filesystems.
+//!
+//! Create a new [`rocfl::OcflRepo] as follows:
+//!
+//! ```rust
+//! use rocfl::OcflRepo;
+//!
+//! let repo = OcflRepo::new_fs_repo("path/to/ocfl/storage/root");
+//! ```
 
 use core::fmt;
 use std::cmp::Ordering;
@@ -20,8 +27,7 @@ use regex::Regex;
 use serde::Deserialize;
 use serde::export::Formatter;
 use thiserror::Error;
-
-pub use self::fs::FsOcflStore;
+use crate::fs::FsOcflStore;
 
 mod fs;
 
@@ -62,10 +68,10 @@ impl OcflRepo {
         })))
     }
 
-    /// Returns a view of a version of an object. If a [VersionNum](rocfl::VersionNum) is not specified,
+    /// Returns a view of a version of an object. If a [`rocfl::VersionNum`] is not specified,
     /// then the head version of the object is returned.
     ///
-    /// If the object or version of the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound)
+    /// If the object or version of the object cannot be found, then a [`rocfl::RocflError::NotFound`]
     /// error is returned.
     pub fn get_object(&self, object_id: &str, version_num: Option<&VersionNum>) -> Result<ObjectVersion> {
         let inventory = self.store.get_inventory(object_id)?;
@@ -73,10 +79,10 @@ impl OcflRepo {
     }
 
     /// Returns high-level details about an object version. This method is similar to
-    /// [get_object](rocfl::OcflRepo::get_object) except that it does less processing and does not
+    /// [`rocfl::OcflRepo::get_object`] except that it does less processing and does not
     /// include the version's state.
     ///
-    /// If the object or version of the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound)
+    /// If the object or version of the object cannot be found, then a [`rocfl::RocflError::NotFound`]
     /// error is returned.
     pub fn get_object_details(&self, object_id: &str, version_num: Option<&VersionNum>) -> Result<ObjectVersionDetails> {
         let inventory = self.store.get_inventory(object_id)?;
@@ -86,7 +92,7 @@ impl OcflRepo {
     /// Returns a vector containing the version metadata for ever version of an object. The vector
     /// is sorted in ascending order.
     ///
-    /// If the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
+    /// If the object cannot be found, then a [`rocfl::RocflError::NotFound`] error is returned.
     pub fn list_object_versions(&self, object_id: &str) -> Result<Vec<VersionDetails>> {
         let inventory = self.store.get_inventory(object_id)?;
         let mut versions = Vec::with_capacity(inventory.versions.len());
@@ -101,7 +107,7 @@ impl OcflRepo {
     /// Returns a vector contain the version metadata for every version of an object that
     /// affected the specified file. The vector is sorted in ascending order.
     ///
-    /// If the object or path cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
+    /// If the object or path cannot be found, then a [`rocfl::RocflError::NotFound'] error is returned.
     pub fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Vec<VersionDetails>> {
         let inventory = self.store.get_inventory(object_id)?;
 
@@ -133,7 +139,7 @@ impl OcflRepo {
     /// Returns the diff of two object versions. If only one version is specified, then the diff
     /// is between the specified version and the version before it.
     ///
-    /// If the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
+    /// If the object cannot be found, then a [`rocfl::RocflError::NotFound`] error is returned.
     pub fn diff(&self, object_id: &str, left_version: &VersionNum, right_version: Option<&VersionNum>) -> Result<Vec<Diff>> {
         if right_version.is_some() && left_version.eq(right_version.unwrap()) {
             return Ok(vec![])
@@ -185,11 +191,11 @@ impl OcflRepo {
     }
 }
 
-/// Indicates the associated type can retrieve [Inventories](rocfl::Inventory). Implement this trait
-/// to get a blanket implementation of [OcflRepo](rocfl::OcflRepo).
+/// OCFL storage interface. Implementations are responsible for interacting with the physical
+/// files on disk.
 trait OcflStore {
     /// Returns the most recent inventory version for the specified object, or an a
-    /// [NotFound](rocfl::RocflError::NotFound) if it does not exist.
+    /// [`rocfl::RocflError::NotFound`] if it does not exist.
     fn get_inventory(&self, object_id: &str) -> Result<Inventory>;
 
     /// Returns an iterator that iterates over every object in an OCFL repository, returning
@@ -198,7 +204,7 @@ trait OcflStore {
     fn iter_inventories(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<Inventory>>>>;
 }
 
-/// An iterator that adapts the out of `InventoryIter`.
+/// An iterator that adapts the output of a delegate `Inventory` iterator into another type.
 struct InventoryAdapterIter<T> {
     iter: Box<dyn Iterator<Item=Result<Inventory>>>,
     adapter: Box<dyn Fn(Inventory) -> Result<T>>
@@ -370,7 +376,7 @@ impl Ord for VersionNum {
     }
 }
 
-/// Represents a version of an OCFL object.
+/// Represents a version of an OCFL object
 #[derive(Debug)]
 pub struct ObjectVersion {
     /// The object's ID
@@ -385,7 +391,7 @@ pub struct ObjectVersion {
     pub state: HashMap<String, FileDetails>,
 }
 
-/// Details about a file in an OCFL object.
+/// Details about a file in an OCFL object
 #[derive(Debug)]
 pub struct FileDetails {
     /// The file's digest
@@ -400,7 +406,7 @@ pub struct FileDetails {
     pub last_update: Rc<VersionDetails>,
 }
 
-/// Metadata about a version.
+/// Metadata about a version
 #[derive(Debug)]
 pub struct VersionDetails {
     /// The version number of the version
@@ -415,7 +421,7 @@ pub struct VersionDetails {
     pub message: Option<String>,
 }
 
-/// Similar to [ObjectVersion](rocfl::ObjectVersion), except it does not contain the state map.
+/// Similar to [`rocfl::ObjectVersion`], except it does not contain the state map.
 #[derive(Debug)]
 pub struct ObjectVersionDetails {
     /// The object's ID
@@ -728,7 +734,7 @@ impl Version {
     }
 }
 
-/// Constructs a NonFound Error.
+/// Constructs a [`rocfl::RocflError::NotFound`] error
 fn not_found(object_id: &str, version_num: Option<&VersionNum>) -> RocflError {
     match version_num {
         Some(version) => RocflError::NotFound(format!("Object {} version {}", object_id, version)),
@@ -736,6 +742,7 @@ fn not_found(object_id: &str, version_num: Option<&VersionNum>) -> RocflError {
     }
 }
 
+/// Application errors
 #[derive(Error, Debug)]
 pub enum RocflError {
     #[error("Object {object_id} is corrupt: {message}")]
