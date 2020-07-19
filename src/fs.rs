@@ -12,7 +12,7 @@ use grep::matcher::{Captures, Matcher};
 use grep::searcher::Searcher;
 use grep::searcher::sinks::UTF8;
 
-use crate::{Diff, Inventory, invert_path_map, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_ID_MATCHER, OBJECT_MARKER, ObjectVersion, ObjectVersionDetails, OcflRepo, ROOT_INVENTORY_FILE, VersionDetails, VersionNum};
+use crate::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_ID_MATCHER, OBJECT_MARKER, OcflStore, ROOT_INVENTORY_FILE};
 
 /// Local filesystem OCFL repository
 pub struct FsOcflRepo {
@@ -38,8 +38,11 @@ impl FsOcflRepo {
             storage_root
         })
     }
+}
 
-    // TODO add this method to OcflRepo and then use it to create blanket implementations
+impl OcflStore for FsOcflRepo {
+    /// Returns the most recent inventory version for the specified object, or an a
+    /// [NotFound](rocfl::RocflError::NotFound) if it does not exist.
     fn get_inventory(&self, object_id: &str) -> Result<Inventory> {
         let mut iter = InventoryIter::new_id_matching(&self.storage_root, object_id.clone())?;
 
@@ -53,177 +56,15 @@ impl FsOcflRepo {
             }
         }
     }
-}
 
-impl OcflRepo for FsOcflRepo {
-    /// Returns an iterator that iterate through all of the objects in an OCFL repository.
-    /// Objects are lazy-loaded. An optional glob pattern may be provided to filter the objects
-    /// that are returned.
-    ///
-    /// The iterator return an error if it encounters a problem accessing an object. This does
-    /// terminate the iterator; there are still more objects until it returns `None`.
-    fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersionDetails>>>> {
-        let inv_iter = match filter_glob {
+    /// Returns an iterator that iterates over every object in an OCFL repository, returning
+    /// the most recent inventory of each. Optionally, a glob pattern may be provided that filters
+    /// the objects that are returned by OCFL ID.
+    fn iter_inventories(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<Inventory>>>> {
+        Ok(Box::new(match filter_glob {
             Some(glob) => InventoryIter::new_glob_matching(&self.storage_root, glob)?,
             None => InventoryIter::new(&self.storage_root, None)?
-        };
-
-        Ok(Box::new(InventoryAdapterIter::new(inv_iter, Box::new(|inventory| {
-            ObjectVersionDetails::from_inventory(inventory, None)
-        }))))
-    }
-
-    /// Returns a view of a version of an object. If a [VersionNum](rocfl::VersionNum) is not specified,
-    /// then the head version of the object is returned.
-    ///
-    /// If the object or version of the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound)
-    /// error is returned.
-    fn get_object(&self, object_id: &str, version_num: Option<&VersionNum>) -> Result<ObjectVersion> {
-        let inventory = self.get_inventory(object_id)?;
-        Ok(ObjectVersion::from_inventory(inventory, version_num)?)
-    }
-
-    /// Returns high-level details about an object version. This method is similar to
-    /// [get_object](rocfl::OcflRepo::get_object) except that it does less processing and does not
-    /// include the version's state.
-    ///
-    /// If the object or version of the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound)
-    /// error is returned.
-    fn get_object_details(&self, object_id: &str, version_num: Option<&VersionNum>) -> Result<ObjectVersionDetails> {
-        let inventory = self.get_inventory(object_id)?;
-        Ok(ObjectVersionDetails::from_inventory(inventory, version_num)?)
-    }
-
-    /// Returns a vector containing the version metadata for ever version of an object. The vector
-    /// is sorted in ascending order.
-    ///
-    /// If the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
-    fn list_object_versions(&self, object_id: &str) -> Result<Vec<VersionDetails>> {
-        let inventory = self.get_inventory(object_id)?;
-        let mut versions = Vec::with_capacity(inventory.versions.len());
-
-        for (id, version) in inventory.versions {
-            versions.push(VersionDetails::from_version(id, version))
-        }
-
-        Ok(versions)
-    }
-
-    /// Returns a vector contain the version metadata for every version of an object that
-    /// affected the specified file. The vector is sorted in ascending order.
-    ///
-    /// If the object or path cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
-    fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Vec<VersionDetails>> {
-        let inventory = self.get_inventory(object_id)?;
-
-        let mut versions = Vec::new();
-
-        let path = path.to_string();
-        let mut current_digest: Option<String> = None;
-
-        for (id, version) in inventory.versions {
-            match version.lookup_digest(&path) {
-                Some(digest) => {
-                    if current_digest.is_none() || current_digest.as_ref().unwrap().ne(digest) {
-                        current_digest = Some(digest.clone());
-                        versions.push(VersionDetails::from_version(id, version));
-                    }
-                },
-                None => {
-                    if current_digest.is_some() {
-                        current_digest = None;
-                        versions.push(VersionDetails::from_version(id, version));
-                    }
-                }
-            }
-        }
-
-        Ok(versions)
-    }
-
-    /// Returns the diff of two object versions. If only one version is specified, then the diff
-    /// is between the specified version and the version before it.
-    ///
-    /// If the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
-    fn diff(&self, object_id: &str, left_version: &VersionNum, right_version: Option<&VersionNum>) -> Result<Vec<Diff>> {
-        if right_version.is_some() && left_version.eq(right_version.unwrap()) {
-            return Ok(vec![])
-        }
-
-        let mut inventory = self.get_inventory(object_id)?;
-
-        let left = inventory.remove_version(&left_version)?;
-
-        let right = match right_version {
-            Some(version) => Some(inventory.remove_version(version)?),
-            None => {
-                if left_version.number > 1 {
-                    Some(inventory.remove_version(&left_version.previous().unwrap())?)
-                } else {
-                    None
-                }
-            }
-        };
-
-        let mut left_state = invert_path_map(left.state);
-
-        let mut diffs = Vec::new();
-
-        if right.is_none() {
-            for (path, _digest) in left_state {
-                diffs.push(Diff::added(path));
-            }
-        } else {
-            let right_state = invert_path_map(right.unwrap().state);
-
-            for (path, right_digest) in right_state {
-                match left_state.remove(&path) {
-                    None => diffs.push(Diff::added(path)),
-                    Some(left_digest) => {
-                        if right_digest.deref().ne(left_digest.deref()) {
-                            diffs.push(Diff::modified(path))
-                        }
-                    }
-                }
-            }
-
-            for (path, _digest) in left_state {
-                diffs.push(Diff::deleted(path))
-            }
-        }
-
-        Ok(diffs)
-    }
-}
-
-/// An iterator that adapts the out of `InventoryIter`.
-struct InventoryAdapterIter<T> {
-    iter: InventoryIter,
-    adapter: Box<dyn Fn(Inventory) -> Result<T>>
-}
-
-impl<T> InventoryAdapterIter<T> {
-    /// Creates a new `InventoryAdapterIter` that applies the `adapter` closure to the output
-    /// of every `next()` call.
-    fn new(iter: InventoryIter, adapter: Box<dyn Fn(Inventory) -> Result<T>>) -> Self {
-        Self {
-            iter,
-            adapter
-        }
-    }
-}
-
-impl<T> Iterator for InventoryAdapterIter<T> {
-    type Item = Result<T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.iter.next() {
-            None => None,
-            Some(Err(e)) => Some(Err(e)),
-            Some(Ok(inventory)) => {
-                Some(self.adapter.deref()(inventory))
-            }
-        }
+        }))
     }
 }
 
@@ -353,7 +194,7 @@ impl Iterator for InventoryIter {
 
 /// Returns true if the path contains an OCFL object root marker file
 fn is_object_root<P: AsRef<Path>>(path: P) -> Result<bool> {
-    for entry in std::fs::read_dir(path)? {
+    for entry in fs::read_dir(path)? {
         let entry_path = entry?.path();
         if entry_path.is_file()
             && entry_path.file_name().unwrap_or_default() == OBJECT_MARKER {
