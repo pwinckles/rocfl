@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
+use std::path::Path;
 use std::rc::Rc;
 use std::str::FromStr;
 
@@ -20,7 +21,7 @@ use serde::Deserialize;
 use serde::export::Formatter;
 use thiserror::Error;
 
-pub use self::fs::FsOcflRepo;
+pub use self::fs::FsOcflStore;
 
 mod fs;
 
@@ -33,9 +34,19 @@ lazy_static! {
     static ref OBJECT_ID_MATCHER: RegexMatcher = RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap();
 }
 
-/// Provides access to objects contained in OCFL repositories. New backends should implement the
-/// [OcflStore](rocfl::OcflStore) trait, which provides a blanket implementation of this trait.
-pub trait OcflRepo {
+/// Interface for interacting with an OCFL repository
+pub struct OcflRepo {
+    store: Box<dyn OcflStore>
+}
+
+impl OcflRepo {
+    /// Creates a new `OcflRepo` instance backed by the local filesystem. `storage_root` is the
+    /// location of the OCFL repository to open.
+    pub fn new_fs_repo<P: AsRef<Path>>(storage_root: P) -> Result<Self> {
+        Ok(Self {
+            store: Box::new(FsOcflStore::new(storage_root)?)
+        })
+    }
 
     /// Returns an iterator that iterate through all of the objects in an OCFL repository.
     /// Objects are lazy-loaded. An optional glob pattern may be provided to filter the objects
@@ -43,66 +54,8 @@ pub trait OcflRepo {
     ///
     /// The iterator return an error if it encounters a problem accessing an object. This does
     /// terminate the iterator; there are still more objects until it returns `None`.
-    fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersionDetails>>>>;
-
-    /// Returns a view of a version of an object. If a [VersionNum](rocfl::VersionNum) is not specified,
-    /// then the head version of the object is returned.
-    ///
-    /// If the object or version of the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound)
-    /// error is returned.
-    fn get_object(&self, object_id: &str, version_num: Option<&VersionNum>) -> Result<ObjectVersion>;
-
-    /// Returns high-level details about an object version. This method is similar to
-    /// [get_object](rocfl::OcflRepo::get_object) except that it does less processing and does not
-    /// include the version's state.
-    ///
-    /// If the object or version of the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound)
-    /// error is returned.
-    fn get_object_details(&self, object_id: &str, version_num: Option<&VersionNum>) -> Result<ObjectVersionDetails>;
-
-    /// Returns a vector containing the version metadata for ever version of an object. The vector
-    /// is sorted in ascending order.
-    ///
-    /// If the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
-    fn list_object_versions(&self, object_id: &str) -> Result<Vec<VersionDetails>>;
-
-    /// Returns a vector contain the version metadata for every version of an object that
-    /// affected the specified file. The vector is sorted in ascending order.
-    ///
-    /// If the object or path cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
-    fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Vec<VersionDetails>>;
-
-    /// Returns the diff of two object versions. If only one version is specified, then the diff
-    /// is between the specified version and the version before it.
-    ///
-    /// If the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
-    fn diff(&self, object_id: &str, left_version: &VersionNum, right_version: Option<&VersionNum>) -> Result<Vec<Diff>>;
-
-}
-
-// TODO this trait currently needs to be public because of the blanket impl on OcflRepo -- not crazy about that
-/// Indicates the associated type can retrieve [Inventories](rocfl::Inventory). Implement this trait
-/// to get a blanket implementation of [OcflRepo](rocfl::OcflRepo).
-pub trait OcflStore {
-    /// Returns the most recent inventory version for the specified object, or an a
-    /// [NotFound](rocfl::RocflError::NotFound) if it does not exist.
-    fn get_inventory(&self, object_id: &str) -> Result<Inventory>;
-
-    /// Returns an iterator that iterates over every object in an OCFL repository, returning
-    /// the most recent inventory of each. Optionally, a glob pattern may be provided that filters
-    /// the objects that are returned by OCFL ID.
-    fn iter_inventories(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<Inventory>>>>;
-}
-
-impl<T: OcflStore> OcflRepo for T {
-    /// Returns an iterator that iterate through all of the objects in an OCFL repository.
-    /// Objects are lazy-loaded. An optional glob pattern may be provided to filter the objects
-    /// that are returned.
-    ///
-    /// The iterator return an error if it encounters a problem accessing an object. This does
-    /// terminate the iterator; there are still more objects until it returns `None`.
-    fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersionDetails>>>> {
-        let inv_iter = self.iter_inventories(filter_glob)?;
+    pub fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersionDetails>>>> {
+        let inv_iter = self.store.iter_inventories(filter_glob)?;
 
         Ok(Box::new(InventoryAdapterIter::new(inv_iter, |inventory| {
             ObjectVersionDetails::from_inventory(inventory, None)
@@ -114,8 +67,8 @@ impl<T: OcflStore> OcflRepo for T {
     ///
     /// If the object or version of the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound)
     /// error is returned.
-    fn get_object(&self, object_id: &str, version_num: Option<&VersionNum>) -> Result<ObjectVersion> {
-        let inventory = self.get_inventory(object_id)?;
+    pub fn get_object(&self, object_id: &str, version_num: Option<&VersionNum>) -> Result<ObjectVersion> {
+        let inventory = self.store.get_inventory(object_id)?;
         Ok(ObjectVersion::from_inventory(inventory, version_num)?)
     }
 
@@ -125,8 +78,8 @@ impl<T: OcflStore> OcflRepo for T {
     ///
     /// If the object or version of the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound)
     /// error is returned.
-    fn get_object_details(&self, object_id: &str, version_num: Option<&VersionNum>) -> Result<ObjectVersionDetails> {
-        let inventory = self.get_inventory(object_id)?;
+    pub fn get_object_details(&self, object_id: &str, version_num: Option<&VersionNum>) -> Result<ObjectVersionDetails> {
+        let inventory = self.store.get_inventory(object_id)?;
         Ok(ObjectVersionDetails::from_inventory(inventory, version_num)?)
     }
 
@@ -134,8 +87,8 @@ impl<T: OcflStore> OcflRepo for T {
     /// is sorted in ascending order.
     ///
     /// If the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
-    fn list_object_versions(&self, object_id: &str) -> Result<Vec<VersionDetails>> {
-        let inventory = self.get_inventory(object_id)?;
+    pub fn list_object_versions(&self, object_id: &str) -> Result<Vec<VersionDetails>> {
+        let inventory = self.store.get_inventory(object_id)?;
         let mut versions = Vec::with_capacity(inventory.versions.len());
 
         for (id, version) in inventory.versions {
@@ -149,8 +102,8 @@ impl<T: OcflStore> OcflRepo for T {
     /// affected the specified file. The vector is sorted in ascending order.
     ///
     /// If the object or path cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
-    fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Vec<VersionDetails>> {
-        let inventory = self.get_inventory(object_id)?;
+    pub fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Vec<VersionDetails>> {
+        let inventory = self.store.get_inventory(object_id)?;
 
         let mut versions = Vec::new();
 
@@ -181,12 +134,12 @@ impl<T: OcflStore> OcflRepo for T {
     /// is between the specified version and the version before it.
     ///
     /// If the object cannot be found, then a [NotFound](rocfl::RocflError::NotFound) error is returned.
-    fn diff(&self, object_id: &str, left_version: &VersionNum, right_version: Option<&VersionNum>) -> Result<Vec<Diff>> {
+    pub fn diff(&self, object_id: &str, left_version: &VersionNum, right_version: Option<&VersionNum>) -> Result<Vec<Diff>> {
         if right_version.is_some() && left_version.eq(right_version.unwrap()) {
             return Ok(vec![])
         }
 
-        let mut inventory = self.get_inventory(object_id)?;
+        let mut inventory = self.store.get_inventory(object_id)?;
 
         let left = inventory.remove_version(&left_version)?;
 
@@ -230,6 +183,19 @@ impl<T: OcflStore> OcflRepo for T {
 
         Ok(diffs)
     }
+}
+
+/// Indicates the associated type can retrieve [Inventories](rocfl::Inventory). Implement this trait
+/// to get a blanket implementation of [OcflRepo](rocfl::OcflRepo).
+trait OcflStore {
+    /// Returns the most recent inventory version for the specified object, or an a
+    /// [NotFound](rocfl::RocflError::NotFound) if it does not exist.
+    fn get_inventory(&self, object_id: &str) -> Result<Inventory>;
+
+    /// Returns an iterator that iterates over every object in an OCFL repository, returning
+    /// the most recent inventory of each. Optionally, a glob pattern may be provided that filters
+    /// the objects that are returned by OCFL ID.
+    fn iter_inventories(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<Inventory>>>>;
 }
 
 /// An iterator that adapts the out of `InventoryIter`.
@@ -664,7 +630,7 @@ impl Diff {
 /// OCFL inventory serialization object
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct Inventory {
+struct Inventory {
     id: String,
     #[serde(rename = "type")]
     type_declaration: String,
@@ -682,7 +648,7 @@ pub struct Inventory {
 
 /// OCFL version serialization object
 #[derive(Deserialize, Debug)]
-pub struct Version {
+struct Version {
     created: DateTime<Local>,
     state: HashMap<String, Vec<String>>,
     message: Option<String>,
@@ -691,7 +657,7 @@ pub struct Version {
 
 /// OCFL user serialization object
 #[derive(Deserialize, Debug)]
-pub struct User {
+struct User {
     name: Option<String>,
     address: Option<String>
 }

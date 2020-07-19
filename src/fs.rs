@@ -1,4 +1,4 @@
-//! Local filesystem OCFL implementation.
+//! Local filesystem OCFL storage implementation.
 
 use std::cell::RefCell;
 use std::fs::{self, File, ReadDir};
@@ -15,14 +15,14 @@ use grep::searcher::sinks::UTF8;
 use crate::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_ID_MATCHER, OBJECT_MARKER, OcflStore, ROOT_INVENTORY_FILE};
 
 /// Local filesystem OCFL repository
-pub struct FsOcflRepo {
+pub struct FsOcflStore {
     /// The path to the OCFL storage root
     pub storage_root: PathBuf
 }
 
-impl FsOcflRepo {
+impl FsOcflStore {
     /// Creates a new FsOcflRepo
-    pub fn new<P: AsRef<Path>>(storage_root: P) -> Result<FsOcflRepo> {
+    pub fn new<P: AsRef<Path>>(storage_root: P) -> Result<FsOcflStore> {
         let storage_root = storage_root.as_ref().to_path_buf();
 
         if !storage_root.exists() {
@@ -34,13 +34,13 @@ impl FsOcflRepo {
         // TODO verify is an OCFL repository
         // TODO load storage layout
 
-        Ok(FsOcflRepo {
+        Ok(FsOcflStore {
             storage_root
         })
     }
 }
 
-impl OcflStore for FsOcflRepo {
+impl OcflStore for FsOcflStore {
     /// Returns the most recent inventory version for the specified object, or an a
     /// [NotFound](rocfl::RocflError::NotFound) if it does not exist.
     fn get_inventory(&self, object_id: &str) -> Result<Inventory> {

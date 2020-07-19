@@ -177,7 +177,7 @@ use structopt::clap::AppSettings::{ColorAuto, ColoredHelp, DisableVersion};
 use structopt::StructOpt;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
-use rocfl::{Diff as VersionDiff, DiffType, FileDetails, FsOcflRepo, ObjectVersion, ObjectVersionDetails, OcflRepo, VersionDetails, VersionNum};
+use rocfl::{Diff as VersionDiff, DiffType, FileDetails, ObjectVersion, ObjectVersionDetails, OcflRepo, VersionDetails, VersionNum};
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
@@ -377,7 +377,7 @@ fn main() {
 }
 
 fn exec_command(args: &AppArgs) -> Result<()> {
-    let repo = FsOcflRepo::new(args.root.clone())?;
+    let repo = OcflRepo::new_fs_repo(args.root.clone())?;
     match &args.command {
         Command::List(list) => list_command(&repo, &list, args),
         Command::Log(log) => log_command(&repo, &log),
@@ -386,7 +386,7 @@ fn exec_command(args: &AppArgs) -> Result<()> {
     }
 }
 
-fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()> {
+fn list_command(repo: &OcflRepo, command: &List, args: &AppArgs) -> Result<()> {
     if command.objects || command.object_id.is_none() {
         list_objects(repo, command, args)
     } else {
@@ -394,7 +394,7 @@ fn list_command(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()>
     }
 }
 
-fn log_command(repo: &FsOcflRepo, command: &Log) -> Result<()> {
+fn log_command(repo: &OcflRepo, command: &Log) -> Result<()> {
     let versions = match &command.path {
         Some(path) => repo.list_file_versions(&command.object_id, path)?,
         None => repo.list_object_versions(&command.object_id)?,
@@ -418,7 +418,7 @@ fn log_command(repo: &FsOcflRepo, command: &Log) -> Result<()> {
     Ok(())
 }
 
-fn show_command(repo: &FsOcflRepo, command: &Show) -> Result<()> {
+fn show_command(repo: &OcflRepo, command: &Show) -> Result<()> {
     let object = repo.get_object_details(&command.object_id, command.version.as_ref())?;
 
     if !command.minimal {
@@ -428,7 +428,7 @@ fn show_command(repo: &FsOcflRepo, command: &Show) -> Result<()> {
     diff_and_print(repo, &command.object_id, &object.version_details.version_num, None)
 }
 
-fn diff_command(repo: &FsOcflRepo, command: &Diff) -> Result<()> {
+fn diff_command(repo: &OcflRepo, command: &Diff) -> Result<()> {
     if command.left == command.right {
         return Ok(());
     }
@@ -436,7 +436,7 @@ fn diff_command(repo: &FsOcflRepo, command: &Diff) -> Result<()> {
     diff_and_print(repo, &command.object_id, &command.left, Some(&command.right))
 }
 
-fn diff_and_print(repo: &FsOcflRepo, object_id: &str, left: &VersionNum, right: Option<&VersionNum>) -> Result<()> {
+fn diff_and_print(repo: &OcflRepo, object_id: &str, left: &VersionNum, right: Option<&VersionNum>) -> Result<()> {
     let mut diffs: Vec<DiffLine> = repo.diff(object_id, left, right)?
         .into_iter().map(|diff| DiffLine(diff)).collect();
 
@@ -449,14 +449,14 @@ fn diff_and_print(repo: &FsOcflRepo, object_id: &str, left: &VersionNum, right: 
     Ok(())
 }
 
-fn list_object_contents(repo: &FsOcflRepo, command: &List) -> Result<()> {
+fn list_object_contents(repo: &OcflRepo, command: &List) -> Result<()> {
     let object_id = command.object_id.as_ref().unwrap();
     let object = repo.get_object(object_id, command.version.as_ref())
         .with_context(|| "Failed to list object")?;
     print_object_contents(object, command)
 }
 
-fn list_objects(repo: &FsOcflRepo, command: &List, args: &AppArgs) -> Result<()> {
+fn list_objects(repo: &OcflRepo, command: &List, args: &AppArgs) -> Result<()> {
     let iter = repo.list_objects(command.object_id.as_deref())
         .with_context(|| "Failed to list objects")?;
 
