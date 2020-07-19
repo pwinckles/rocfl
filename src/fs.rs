@@ -14,11 +14,19 @@ use grep::searcher::sinks::UTF8;
 
 use crate::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_ID_MATCHER, OBJECT_MARKER, OcflStore, ROOT_INVENTORY_FILE};
 
+// ================================================== //
+//             public structs+enums+traits            //
+// ================================================== //
+
 /// Local filesystem OCFL repository
 pub struct FsOcflStore {
     /// The path to the OCFL storage root
     pub storage_root: PathBuf
 }
+
+// ================================================== //
+//                   public impls+fns                 //
+// ================================================== //
 
 impl FsOcflStore {
     /// Creates a new FsOcflRepo
@@ -50,7 +58,7 @@ impl OcflStore for FsOcflStore {
             match iter.next() {
                 Some(Ok(inventory)) => {
                     return Ok(inventory)
-                },
+                }
                 Some(Err(_)) => (),  // Errors are ignored because we don't know what object they're for
                 None => return Err(not_found(&object_id, None).into())
             }
@@ -68,12 +76,20 @@ impl OcflStore for FsOcflStore {
     }
 }
 
+// ================================================== //
+//            private structs+enums+traits            //
+// ================================================== //
+
 /// Iterates over ever object in an OCFL repository by walking the file tree.
 struct InventoryIter {
     dir_iters: Vec<ReadDir>,
     current: RefCell<Option<ReadDir>>,
     id_matcher: Option<Box<dyn Fn(&str) -> bool>>,
 }
+
+// ================================================== //
+//                private impls+fns                   //
+// ================================================== //
 
 impl InventoryIter {
     /// Creates a new iterator that only returns objects that match the given object ID.
@@ -155,7 +171,7 @@ impl Iterator for InventoryIter {
             match entry {
                 None => {
                     self.current.replace(None);
-                },
+                }
                 Some(Err(e)) => return Some(Err(e.into())),
                 Some(Ok(entry)) => {
                     match entry.file_type() {
@@ -170,23 +186,23 @@ impl Iterator for InventoryIter {
                                         Ok(None) => (),
                                         Err(e) => return Some(Err(e))
                                     }
-                                },
+                                }
                                 Ok(is_root) if !is_root => {
                                     self.dir_iters.push(self.current.replace(None).unwrap());
                                     match std::fs::read_dir(&path) {
                                         Ok(next) => {
                                             self.current.replace(Some(next));
-                                        },
+                                        }
                                         Err(e) => return Some(Err(e.into()))
                                     }
-                                },
+                                }
                                 Err(e) => return Some(Err(e.into())),
                                 _ => panic!("This code is unreachable")
                             }
-                        },
+                        }
                         _ => ()
                     }
-                },
+                }
             }
         }
     }

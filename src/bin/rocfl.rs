@@ -316,6 +316,16 @@ struct Diff {
 #[derive(Debug)]
 struct Num(u32);
 
+arg_enum! {
+    #[derive(Debug)]
+    enum Field {
+        Name,
+        Version,
+        Updated,
+        None
+    }
+}
+
 impl Default for Num {
     fn default() -> Self {
         Self {
@@ -335,16 +345,6 @@ impl FromStr for Num {
 impl Display for Num {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-arg_enum! {
-    #[derive(Debug)]
-    enum Field {
-        Name,
-        Version,
-        Updated,
-        None
     }
 }
 
@@ -371,7 +371,7 @@ fn main() {
         Err(e) => {
             print_err(&e, args.quiet);
             exit(1);
-        },
+        }
         _ => ()
     }
 }
@@ -468,7 +468,7 @@ fn list_objects(repo: &OcflRepo, command: &List, args: &AppArgs) -> Result<()> {
                     Err(e) => print_err(&e, args.quiet)
                 }
             }
-        },
+        }
         _ => {
             let listings: Vec<Listing> = iter.filter(|object| {
                 match object {
@@ -534,7 +534,7 @@ fn print_err(error: &Error, quiet: bool) {
                     eprintln!("Error: {:#}", error)
                 }
                 let _ = stderr.reset();
-            },
+            }
             Err(_) => eprintln!("Error: {:#}", error)
         }
     }
@@ -548,6 +548,21 @@ struct Listing {
     digest_algorithm: Option<Rc<String>>,
     digest: Option<Rc<String>>,
 }
+
+#[derive(Debug)]
+struct FormatListing<'a> {
+    listing: &'a Listing,
+    command: &'a List,
+}
+
+#[derive(Debug)]
+struct FormatVersion<'a> {
+    version: &'a VersionDetails,
+    compact: bool,
+}
+
+#[derive(Debug)]
+struct DiffLine(VersionDiff);
 
 impl Listing {
     fn new(path: String, details: FileDetails) -> Self {
@@ -575,12 +590,6 @@ impl From<ObjectVersionDetails> for Listing {
             digest: None,
         }
     }
-}
-
-#[derive(Debug)]
-struct FormatListing<'a> {
-    listing: &'a Listing,
-    command: &'a List,
 }
 
 impl<'a> FormatListing<'a> {
@@ -620,12 +629,6 @@ impl<'a> fmt::Display for FormatListing<'a> {
     }
 }
 
-#[derive(Debug)]
-struct FormatVersion<'a> {
-    version: &'a VersionDetails,
-    compact: bool,
-}
-
 impl<'a> FormatVersion<'a> {
     fn new(version: &'a VersionDetails, compact: bool) -> Self {
         Self {
@@ -658,9 +661,6 @@ impl<'a> fmt::Display for FormatVersion<'a> {
         Ok(())
     }
 }
-
-#[derive(Debug)]
-struct DiffLine(VersionDiff);
 
 impl fmt::Display for DiffLine {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

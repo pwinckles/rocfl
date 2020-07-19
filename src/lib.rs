@@ -40,10 +40,116 @@ lazy_static! {
     static ref OBJECT_ID_MATCHER: RegexMatcher = RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap();
 }
 
+// ================================================== //
+//             public structs+enums+traits            //
+// ================================================== //
+
 /// Interface for interacting with an OCFL repository
 pub struct OcflRepo {
     store: Box<dyn OcflStore>
 }
+
+/// Represents an [OCFL object version](https://ocfl.io/1.0/spec/#version-directories).
+#[derive(Deserialize, Debug)]
+#[serde(try_from = "&str")]
+pub struct VersionNum {
+    pub number: u32,
+    pub width: usize,
+}
+
+
+/// Represents a version of an OCFL object
+#[derive(Debug)]
+pub struct ObjectVersion {
+    /// The object's ID
+    pub id: String,
+    /// The path from the storage root to the object root
+    pub object_root: String,
+    /// The algorithm used to calculate digests (sha512 or sha256)
+    pub digest_algorithm: String,
+    /// Metadata about the version
+    pub version_details: VersionDetails,
+    /// A map of files (logical paths) in the version to details about the files.
+    pub state: HashMap<String, FileDetails>,
+}
+
+/// Details about a file in an OCFL object
+#[derive(Debug)]
+pub struct FileDetails {
+    /// The file's digest
+    pub digest: Rc<String>,
+    /// The digest algorithm
+    pub digest_algorithm: Rc<String>,
+    /// The path to the file relative the object root
+    pub content_path: String,
+    /// The path to the file relative the storage root
+    pub storage_path: String,
+    /// The version metadata for when the file was last updated
+    pub last_update: Rc<VersionDetails>,
+}
+
+/// Metadata about a version
+#[derive(Debug)]
+pub struct VersionDetails {
+    /// The version number of the version
+    pub version_num: VersionNum,
+    /// When the version was created
+    pub created: DateTime<Local>,
+    /// The name of the person who created the version
+    pub user_name: Option<String>,
+    /// The address of the person who created the version
+    pub user_address: Option<String>,
+    /// A description of the version
+    pub message: Option<String>,
+}
+
+/// Similar to `ObjectVersion`, except it does not contain the state map.
+#[derive(Debug)]
+pub struct ObjectVersionDetails {
+    /// The object's ID
+    pub id: String,
+    /// The path from the storage root to the object root
+    pub object_root: String,
+    /// The algorithm used to calculate digests (sha512 or sha256)
+    pub digest_algorithm: String,
+    /// Metadata about the version
+    pub version_details: VersionDetails,
+}
+
+/// Represents a change to a file
+#[derive(Debug)]
+pub struct Diff {
+    /// The type of change
+    pub diff_type: DiffType,
+    /// The affected logical path
+    pub path: String,
+}
+
+/// Represents a type of change
+#[derive(Debug)]
+pub enum DiffType {
+    Added,
+    Modified,
+    Deleted,
+}
+
+/// Application errors
+#[derive(Error, Debug)]
+pub enum RocflError {
+    #[error("Object {object_id} is corrupt: {message}")]
+    CorruptObject {
+        object_id: String,
+        message: String,
+    },
+    #[error("Not found: {0}")]
+    NotFound(String),
+    #[error("Illegal argument: {0}")]
+    IllegalArgument(String)
+}
+
+// ================================================== //
+//                   public impls+fns                 //
+// ================================================== //
 
 impl OcflRepo {
     /// Creates a new `OcflRepo` instance backed by the local filesystem. `storage_root` is the
@@ -123,7 +229,7 @@ impl OcflRepo {
                         current_digest = Some(digest.clone());
                         versions.push(VersionDetails::from_version(id, version));
                     }
-                },
+                }
                 None => {
                     if current_digest.is_some() {
                         current_digest = None;
@@ -191,58 +297,6 @@ impl OcflRepo {
     }
 }
 
-/// OCFL storage interface. Implementations are responsible for interacting with the physical
-/// files on disk.
-trait OcflStore {
-    /// Returns the most recent inventory version for the specified object, or an a
-    /// `RocflError::NotFound` if it does not exist.
-    fn get_inventory(&self, object_id: &str) -> Result<Inventory>;
-
-    /// Returns an iterator that iterates over every object in an OCFL repository, returning
-    /// the most recent inventory of each. Optionally, a glob pattern may be provided that filters
-    /// the objects that are returned by OCFL ID.
-    fn iter_inventories(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<Inventory>>>>;
-}
-
-/// An iterator that adapts the output of a delegate `Inventory` iterator into another type.
-struct InventoryAdapterIter<T> {
-    iter: Box<dyn Iterator<Item=Result<Inventory>>>,
-    adapter: Box<dyn Fn(Inventory) -> Result<T>>
-}
-
-impl<T> InventoryAdapterIter<T> {
-    /// Creates a new `InventoryAdapterIter` that applies the `adapter` closure to the output
-    /// of every `next()` call.
-    fn new(iter: Box<dyn Iterator<Item=Result<Inventory>>>, adapter: impl Fn(Inventory) -> Result<T> + 'static) -> Self {
-        Self {
-            iter,
-            adapter: Box::new(adapter)
-        }
-    }
-}
-
-impl<T> Iterator for InventoryAdapterIter<T> {
-    type Item = Result<T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.iter.next() {
-            None => None,
-            Some(Err(e)) => Some(Err(e)),
-            Some(Ok(inventory)) => {
-                Some(self.adapter.deref()(inventory))
-            }
-        }
-    }
-}
-
-/// Represents an [OCFL object version](https://ocfl.io/1.0/spec/#version-directories).
-#[derive(Deserialize, Debug)]
-#[serde(try_from = "&str")]
-pub struct VersionNum {
-    pub number: u32,
-    pub width: usize,
-}
-
 impl VersionNum {
     /// Returns the previous version, or an Error if the previous version is invalid (less than 1).
     pub fn previous(&self) -> Result<VersionNum> {
@@ -300,7 +354,7 @@ impl TryFrom<&str> for VersionNum {
                     number: num,
                     width,
                 })
-            },
+            }
             Err(_) => return Err(RocflError::IllegalArgument(format!("Invalid version {}", version)))
         }
     }
@@ -374,64 +428,6 @@ impl Ord for VersionNum {
     fn cmp(&self, other: &Self) -> Ordering {
         self.number.cmp(&other.number)
     }
-}
-
-/// Represents a version of an OCFL object
-#[derive(Debug)]
-pub struct ObjectVersion {
-    /// The object's ID
-    pub id: String,
-    /// The path from the storage root to the object root
-    pub object_root: String,
-    /// The algorithm used to calculate digests (sha512 or sha256)
-    pub digest_algorithm: String,
-    /// Metadata about the version
-    pub version_details: VersionDetails,
-    /// A map of files (logical paths) in the version to details about the files.
-    pub state: HashMap<String, FileDetails>,
-}
-
-/// Details about a file in an OCFL object
-#[derive(Debug)]
-pub struct FileDetails {
-    /// The file's digest
-    pub digest: Rc<String>,
-    /// The digest algorithm
-    pub digest_algorithm: Rc<String>,
-    /// The path to the file relative the object root
-    pub content_path: String,
-    /// The path to the file relative the storage root
-    pub storage_path: String,
-    /// The version metadata for when the file was last updated
-    pub last_update: Rc<VersionDetails>,
-}
-
-/// Metadata about a version
-#[derive(Debug)]
-pub struct VersionDetails {
-    /// The version number of the version
-    pub version_num: VersionNum,
-    /// When the version was created
-    pub created: DateTime<Local>,
-    /// The name of the person who created the version
-    pub user_name: Option<String>,
-    /// The address of the person who created the version
-    pub user_address: Option<String>,
-    /// A description of the version
-    pub message: Option<String>,
-}
-
-/// Similar to `ObjectVersion`, except it does not contain the state map.
-#[derive(Debug)]
-pub struct ObjectVersionDetails {
-    /// The object's ID
-    pub id: String,
-    /// The path from the storage root to the object root
-    pub object_root: String,
-    /// The algorithm used to calculate digests (sha512 or sha256)
-    pub digest_algorithm: String,
-    /// Metadata about the version
-    pub version_details: VersionDetails,
 }
 
 impl ObjectVersion {
@@ -560,21 +556,6 @@ impl VersionDetails {
     }
 }
 
-/// Transforms an input map of digest to vector of paths to a map of paths to digests.
-/// The original map is consumed.
-fn invert_path_map(map: HashMap<String, Vec<String>>) -> HashMap<String, Rc<String>> {
-    let mut inverted = HashMap::new();
-
-    for (digest, paths) in map.into_iter() {
-        let digest = Rc::new(digest);
-        for path in paths.into_iter() {
-            inverted.insert(path, Rc::clone(&digest));
-        }
-    }
-
-    inverted
-}
-
 impl ObjectVersionDetails {
     /// Creates `ObjectVersionDetails` by consuming the `Inventory`.
     fn from_inventory(mut inventory: Inventory, version_num: Option<&VersionNum>) -> Result<Self> {
@@ -593,23 +574,6 @@ impl ObjectVersionDetails {
             version_details,
         })
     }
-}
-
-/// Represents a change to a file
-#[derive(Debug)]
-pub struct Diff {
-    /// The type of change
-    pub diff_type: DiffType,
-    /// The affected logical path
-    pub path: String,
-}
-
-/// Represents a type of change
-#[derive(Debug)]
-pub enum DiffType {
-    Added,
-    Modified,
-    Deleted,
 }
 
 impl Diff {
@@ -631,6 +595,23 @@ impl Diff {
             path
         }
     }
+}
+
+// ================================================== //
+//            private structs+enums+traits            //
+// ================================================== //
+
+/// OCFL storage interface. Implementations are responsible for interacting with the physical
+/// files on disk.
+trait OcflStore {
+    /// Returns the most recent inventory version for the specified object, or an a
+    /// `RocflError::NotFound` if it does not exist.
+    fn get_inventory(&self, object_id: &str) -> Result<Inventory>;
+
+    /// Returns an iterator that iterates over every object in an OCFL repository, returning
+    /// the most recent inventory of each. Optionally, a glob pattern may be provided that filters
+    /// the objects that are returned by OCFL ID.
+    fn iter_inventories(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<Inventory>>>>;
 }
 
 /// OCFL inventory serialization object
@@ -667,6 +648,16 @@ struct User {
     name: Option<String>,
     address: Option<String>
 }
+
+/// An iterator that adapts the output of a delegate `Inventory` iterator into another type.
+struct InventoryAdapterIter<T> {
+    iter: Box<dyn Iterator<Item=Result<Inventory>>>,
+    adapter: Box<dyn Fn(Inventory) -> Result<T>>
+}
+
+// ================================================== //
+//                private impls+fns                   //
+// ================================================== //
 
 impl Inventory {
     // TODO fill in more validations
@@ -711,7 +702,7 @@ impl Inventory {
                         message: format!("Digest {} is not mapped to any content paths", digest)
                     }.into())
                 }
-            },
+            }
             None => Err(RocflError::CorruptObject {
                 object_id: self.id.clone(),
                 message: format!("Digest {} not found in manifest", digest)
@@ -734,24 +725,50 @@ impl Version {
     }
 }
 
+impl<T> InventoryAdapterIter<T> {
+    /// Creates a new `InventoryAdapterIter` that applies the `adapter` closure to the output
+    /// of every `next()` call.
+    fn new(iter: Box<dyn Iterator<Item=Result<Inventory>>>, adapter: impl Fn(Inventory) -> Result<T> + 'static) -> Self {
+        Self {
+            iter,
+            adapter: Box::new(adapter)
+        }
+    }
+}
+
+impl<T> Iterator for InventoryAdapterIter<T> {
+    type Item = Result<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.iter.next() {
+            None => None,
+            Some(Err(e)) => Some(Err(e)),
+            Some(Ok(inventory)) => {
+                Some(self.adapter.deref()(inventory))
+            }
+        }
+    }
+}
+
+/// Transforms an input map of digest to vector of paths to a map of paths to digests.
+/// The original map is consumed.
+fn invert_path_map(map: HashMap<String, Vec<String>>) -> HashMap<String, Rc<String>> {
+    let mut inverted = HashMap::new();
+
+    for (digest, paths) in map.into_iter() {
+        let digest = Rc::new(digest);
+        for path in paths.into_iter() {
+            inverted.insert(path, Rc::clone(&digest));
+        }
+    }
+
+    inverted
+}
+
 /// Constructs a `RocflError::NotFound` error
 fn not_found(object_id: &str, version_num: Option<&VersionNum>) -> RocflError {
     match version_num {
         Some(version) => RocflError::NotFound(format!("Object {} version {}", object_id, version)),
         None => RocflError::NotFound(format!("Object {}", object_id))
     }
-}
-
-/// Application errors
-#[derive(Error, Debug)]
-pub enum RocflError {
-    #[error("Object {object_id} is corrupt: {message}")]
-    CorruptObject {
-        object_id: String,
-        message: String,
-    },
-    #[error("Not found: {0}")]
-    NotFound(String),
-    #[error("Illegal argument: {0}")]
-    IllegalArgument(String)
 }
