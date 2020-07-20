@@ -57,9 +57,8 @@ pub struct VersionNum {
     pub width: usize,
 }
 
-
 /// Represents a version of an OCFL object
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ObjectVersion {
     /// The object's ID
     pub id: String,
@@ -74,7 +73,7 @@ pub struct ObjectVersion {
 }
 
 /// Details about a file in an OCFL object
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct FileDetails {
     /// The file's digest
     pub digest: Rc<String>,
@@ -89,7 +88,7 @@ pub struct FileDetails {
 }
 
 /// Metadata about a version
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct VersionDetails {
     /// The version number of the version
     pub version_num: VersionNum,
@@ -104,7 +103,7 @@ pub struct VersionDetails {
 }
 
 /// Similar to `ObjectVersion`, except it does not contain the state map.
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ObjectVersionDetails {
     /// The object's ID
     pub id: String,
@@ -117,7 +116,7 @@ pub struct ObjectVersionDetails {
 }
 
 /// Represents a change to a file
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Diff {
     /// The type of change
     pub diff_type: DiffType,
@@ -126,7 +125,7 @@ pub struct Diff {
 }
 
 /// Represents a type of change
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum DiffType {
     Added,
     Modified,
@@ -237,6 +236,10 @@ impl OcflRepo {
                     }
                 }
             }
+        }
+
+        if versions.is_empty() {
+            return Err(RocflError::NotFound(format!("Path {} not found in object {}", path, object_id)).into());
         }
 
         Ok(versions)
