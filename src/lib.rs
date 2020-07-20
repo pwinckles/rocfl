@@ -246,50 +246,50 @@ impl OcflRepo {
     /// is between the specified version and the version before it.
     ///
     /// If the object cannot be found, then a `RocflError::NotFound` error is returned.
-    pub fn diff(&self, object_id: &str, left_version: &VersionNum, right_version: Option<&VersionNum>) -> Result<Vec<Diff>> {
-        if right_version.is_some() && left_version.eq(right_version.unwrap()) {
+    pub fn diff(&self, object_id: &str, left_version: Option<&VersionNum>, right_version: &VersionNum) -> Result<Vec<Diff>> {
+        if left_version.is_some() && right_version.eq(left_version.unwrap()) {
             return Ok(vec![])
         }
 
         let mut inventory = self.store.get_inventory(object_id)?;
 
-        let left = inventory.remove_version(&left_version)?;
+        let right = inventory.remove_version(&right_version)?;
 
-        let right = match right_version {
+        let left = match left_version {
             Some(version) => Some(inventory.remove_version(version)?),
             None => {
-                if left_version.number > 1 {
-                    Some(inventory.remove_version(&left_version.previous().unwrap())?)
+                if right_version.number > 1 {
+                    Some(inventory.remove_version(&right_version.previous().unwrap())?)
                 } else {
                     None
                 }
             }
         };
 
-        let mut left_state = invert_path_map(left.state);
+        let mut right_state = invert_path_map(right.state);
 
         let mut diffs = Vec::new();
 
-        if right.is_none() {
-            for (path, _digest) in left_state {
+        if left.is_none() {
+            for (path, _digest) in right_state {
                 diffs.push(Diff::added(path));
             }
         } else {
-            let right_state = invert_path_map(right.unwrap().state);
+            let left_state = invert_path_map(left.unwrap().state);
 
-            for (path, right_digest) in right_state {
-                match left_state.remove(&path) {
-                    None => diffs.push(Diff::added(path)),
-                    Some(left_digest) => {
-                        if right_digest.deref().ne(left_digest.deref()) {
+            for (path, left_digest) in left_state {
+                match right_state.remove(&path) {
+                    None => diffs.push(Diff::deleted(path)),
+                    Some(right_digest) => {
+                        if left_digest.deref().ne(right_digest.deref()) {
                             diffs.push(Diff::modified(path))
                         }
                     }
                 }
             }
 
-            for (path, _digest) in left_state {
-                diffs.push(Diff::deleted(path))
+            for (path, _digest) in right_state {
+                diffs.push(Diff::added(path))
             }
         }
 

@@ -425,7 +425,7 @@ fn show_command(repo: &OcflRepo, command: &Show) -> Result<()> {
         println!("{}", FormatVersion::new(&object.version_details, false));
     }
 
-    diff_and_print(repo, &command.object_id, &object.version_details.version_num, None)
+    diff_and_print(repo, &command.object_id, None, &object.version_details.version_num)
 }
 
 fn diff_command(repo: &OcflRepo, command: &Diff) -> Result<()> {
@@ -433,10 +433,10 @@ fn diff_command(repo: &OcflRepo, command: &Diff) -> Result<()> {
         return Ok(());
     }
 
-    diff_and_print(repo, &command.object_id, &command.left, Some(&command.right))
+    diff_and_print(repo, &command.object_id, Some(&command.left), &command.right)
 }
 
-fn diff_and_print(repo: &OcflRepo, object_id: &str, left: &VersionNum, right: Option<&VersionNum>) -> Result<()> {
+fn diff_and_print(repo: &OcflRepo, object_id: &str, left: Option<&VersionNum>, right: &VersionNum) -> Result<()> {
     let mut diffs: Vec<DiffLine> = repo.diff(object_id, left, right)?
         .into_iter().map(|diff| DiffLine(diff)).collect();
 
