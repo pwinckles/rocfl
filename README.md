@@ -1,5 +1,7 @@
 # rocfl
 
+[![Build Status](https://travis-ci.com/pwinckles/rocfl.svg?branch=master)](https://travis-ci.com/pwinckles/rocfl)
+
 `rocfl` is a command line utility for working with [OCFL](https://ocfl.io/) repositories.
 It currently only supports read operations.
 
