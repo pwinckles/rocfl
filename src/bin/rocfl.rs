@@ -367,6 +367,7 @@ lazy_static! {
 
 fn main() {
     let args = AppArgs::from_args();
+    reset_signal_pipe_handler();
     match exec_command(&args) {
         Err(e) => {
             print_err(&e, args.quiet);
@@ -538,6 +539,18 @@ fn print_err(error: &Error, quiet: bool) {
             Err(_) => eprintln!("Error: {:#}", error)
         }
     }
+}
+
+// https://github.com/rust-lang/rust/issues/46016
+pub fn reset_signal_pipe_handler() {
+    #[cfg(target_family = "unix")]
+        {
+            use nix::sys::signal;
+
+            unsafe {
+                signal::signal(signal::Signal::SIGPIPE, signal::SigHandler::SigDfl).unwrap();
+            }
+        }
 }
 
 #[derive(Debug)]
