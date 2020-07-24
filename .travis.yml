@@ -1,29 +1,31 @@
 language: rust
 rust:
 - stable
-- beta
-- nightly
 cache: cargo
-matrix:
-  allow_failures:
-  - rust: nightly
+jobs:
   fast_finish: true
 os:
 - linux
 - osx
 - windows
-script: cargo build --verbose --release; cargo test --verbose
+script:
+  - |
+    if [ $TRAVIS_TAG == "" ]; then
+      cargo build --verbose; cargo test --verbose;
+    else
+      cargo build --verbose --release; cargo test --verbose;
+    fi
 before_deploy:
-- mv target/release/rocfl "target/release/rocfl-$TRAVIS_TAG-$TRAVIS_OS_NAME"
+- if [[ -f target/release/rocfl ]]; then mv target/release/rocfl target/release/rocfl-$TRAVIS_TAG-$TRAVIS_OS_NAME; fi
 deploy:
   - provider: releases
     skip_cleanup: true
     draft: true
     on:
       tags: true
-      condition: "$TRAVIS_RUST_VERSION = stable"
       repo: pwinckles/rocfl
       branch: master
+    file_glob: true
     file:
       - target/release/rocfl-*
     api_key:
