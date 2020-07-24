@@ -7,11 +7,14 @@ It currently only supports read operations.
 
 ## Installation
 
+You can either download a pre-built binary from the [releases page](https://github.com/pwinckles/rocfl/releases),
+or build your own copy locally.
+
+### Local Build
+
 1. Install [Rust](https://www.rust-lang.org/tools/install), and make sure `cargo` is on your `PATH`
 1. Execute: `cargo install rocfl`
 1. Verify the install: `rocfl help`
-
-Theoretically `rocfl` works on Windows, but I haven't tried it.
 
 ## Usage
 
