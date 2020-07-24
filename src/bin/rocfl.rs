@@ -162,6 +162,7 @@ rocfl diff v2 v4
 use core::fmt;
 use std::cmp::Ordering;
 use std::fmt::Display;
+use std::io;
 use std::io::Write;
 use std::num::ParseIntError;
 use std::process::exit;
@@ -367,7 +368,6 @@ lazy_static! {
 
 fn main() {
     let args = AppArgs::from_args();
-    reset_signal_pipe_handler();
     match exec_command(&args) {
         Err(e) => {
             print_err(&e, args.quiet);
@@ -412,7 +412,7 @@ fn log_command(repo: &OcflRepo, command: &Log) -> Result<()> {
         if count == command.num.0 {
             break;
         }
-        println!("{}", FormatVersion::new(version, command.compact));
+        println(FormatVersion::new(version, command.compact));
         count += 1;
     }
 
@@ -423,7 +423,7 @@ fn show_command(repo: &OcflRepo, command: &Show) -> Result<()> {
     let object = repo.get_object_details(&command.object_id, command.version.as_ref())?;
 
     if !command.minimal {
-        println!("{}", FormatVersion::new(&object.version_details, false));
+        println(FormatVersion::new(&object.version_details, false));
     }
 
     diff_and_print(repo, &command.object_id, None, &object.version_details.version_num)
@@ -444,7 +444,7 @@ fn diff_and_print(repo: &OcflRepo, object_id: &str, left: Option<&VersionNum>, r
     diffs.sort_unstable();
 
     for diff in diffs {
-        println!("{}", diff);
+        println(diff);
     }
 
     Ok(())
@@ -465,7 +465,7 @@ fn list_objects(repo: &OcflRepo, command: &List, args: &AppArgs) -> Result<()> {
         Field::None => {
             for object in iter {
                 match object {
-                    Ok(object) => println!("{}", FormatListing::new(&Listing::from(object), command)),
+                    Ok(object) => println(FormatListing::new(&Listing::from(object), command)),
                     Err(e) => print_err(&e, args.quiet)
                 }
             }
@@ -522,8 +522,14 @@ fn sort_and_print(mut listings: Vec<Listing>, command: &List) {
     });
 
     for listing in listings {
-        println!("{}", FormatListing::new(&listing, command));
+        println(FormatListing::new(&listing, command));
     }
+}
+
+// https://github.com/rust-lang/rust/issues/46016
+fn println(value: impl Display) {
+    // Don't care about errors
+    let _ = writeln!(io::stdout(), "{}", value);
 }
 
 fn print_err(error: &Error, quiet: bool) {
@@ -539,18 +545,6 @@ fn print_err(error: &Error, quiet: bool) {
             Err(_) => eprintln!("Error: {:#}", error)
         }
     }
-}
-
-// https://github.com/rust-lang/rust/issues/46016
-pub fn reset_signal_pipe_handler() {
-    #[cfg(target_family = "unix")]
-        {
-            use nix::sys::signal;
-
-            unsafe {
-                signal::signal(signal::Signal::SIGPIPE, signal::SigHandler::SigDfl).unwrap();
-            }
-        }
 }
 
 #[derive(Debug)]
@@ -654,7 +648,7 @@ impl<'a> FormatVersion<'a> {
 impl<'a> fmt::Display for FormatVersion<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if self.compact {
-            write!(f, "{version:>5}\t{name}\t<{address}>\t{date:19}\t{message}",
+            write!(f, "{version:>5}\t{name}\t{address}\t{date:19}\t{message}",
                    version = self.version.version_num.to_string(),
                    name = self.version.user_name.as_ref().unwrap_or(&(*DEFAULT_USER)),
                    address = self.version.user_address.as_ref().unwrap_or(&(*DEFAULT_USER)),
