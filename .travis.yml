@@ -12,6 +12,7 @@ os:
 - linux
 - osx
 - windows
+script: cargo build --verbose --release; cargo test --verbose
 before_deploy:
 - mv target/release/rocfl "target/release/rocfl-$TRAVIS_TAG-$TRAVIS_OS_NAME"
 deploy:
