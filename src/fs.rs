@@ -8,11 +8,17 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use globset::GlobBuilder;
-use grep::matcher::{Captures, Matcher};
-use grep::searcher::Searcher;
-use grep::searcher::sinks::UTF8;
+use grep_matcher::{Captures, Matcher};
+use grep_regex::RegexMatcher;
+use grep_searcher::Searcher;
+use grep_searcher::sinks::UTF8;
+use lazy_static::lazy_static;
 
-use crate::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_ID_MATCHER, OBJECT_MARKER, OcflStore, ROOT_INVENTORY_FILE};
+use crate::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_MARKER, OcflStore, ROOT_INVENTORY_FILE};
+
+lazy_static! {
+    static ref OBJECT_ID_MATCHER: RegexMatcher = RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap();
+}
 
 // ================================================== //
 //             public structs+enums+traits            //

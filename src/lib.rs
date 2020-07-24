@@ -21,12 +21,12 @@ use std::str::FromStr;
 
 use anyhow::{anyhow, Error, Result};
 use chrono::{DateTime, Local};
-use grep::regex::RegexMatcher;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::Deserialize;
 use serde::export::Formatter;
 use thiserror::Error;
+
 use crate::fs::FsOcflStore;
 
 mod fs;
@@ -37,7 +37,6 @@ const MUTABLE_HEAD_INVENTORY_FILE: &str = "extensions/0004-mutable-head/head/inv
 
 lazy_static! {
     static ref VERSION_REGEX: Regex = Regex::new(r#"^v\d+$"#).unwrap();
-    static ref OBJECT_ID_MATCHER: RegexMatcher = RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap();
 }
 
 // ================================================== //

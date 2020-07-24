@@ -42,12 +42,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8aac770f1885fd7e387acedd76065302551364496e46b3dd00860b2f8359b9d"
 
 [[package]]
-name = "base64"
-version = "0.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3441f0f7b02788e948e47f457ca01f1d7e6d92c693bc132c22b087d3141c03ff"
-
-[[package]]
 name = "bitflags"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -147,58 +141,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "grep"
-version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "582e93ba59eae0f9607f53832326f351f87a5175f17ff123b3986b927a0e7e68"
-dependencies = [
- "grep-cli",
- "grep-matcher",
- "grep-printer",
- "grep-regex",
- "grep-searcher",
-]
-
-[[package]]
-name = "grep-cli"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3592784f7791f5f0bfc2e4b5595dc2d4e34a79099d7228d121b954bae73db182"
-dependencies = [
- "atty",
- "bstr",
- "globset",
- "lazy_static",
- "log",
- "regex",
- "same-file",
- "termcolor",
- "winapi-util",
-]
-
-[[package]]
 name = "grep-matcher"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fdf0e1fd5af17008a918fd868e63ec0226e96ce88b832f00c7fb041e014b9350"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "grep-printer"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f34d40c840fe8e413a94598345d8a4bb25fdbb4f3860a6c00a88bb296d89d00"
-dependencies = [
- "base64",
- "bstr",
- "grep-matcher",
- "grep-searcher",
- "serde",
- "serde_derive",
- "serde_json",
- "termcolor",
 ]
 
 [[package]]
@@ -396,7 +344,9 @@ dependencies = [
  "chrono",
  "clap",
  "globset",
- "grep",
+ "grep-matcher",
+ "grep-regex",
+ "grep-searcher",
  "lazy_static",
  "maplit",
  "regex",
@@ -412,15 +362,6 @@ name = "ryu"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71d301d4193d031abdd79ff7e3dd721168a9572ef3fe51a1517aba235bd8f86e"
-
-[[package]]
-name = "same-file"
-version = "1.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
-dependencies = [
- "winapi-util",
-]
 
 [[package]]
 name = "serde"
