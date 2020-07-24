@@ -21,7 +21,7 @@ fn list_all_objects() -> Result<()> {
 
     assert_eq!(objects.remove(0), ObjectVersionDetails {
         id: "o1".to_string(),
-        object_root: repo_root.join("235/2da/728/2352da7280f1decc3acf1ba84eb945c9fc2b7b541094e1d0992dbffd1b6664cc")
+        object_root: repo_root.join("235").join("2da").join("728").join("2352da7280f1decc3acf1ba84eb945c9fc2b7b541094e1d0992dbffd1b6664cc")
             .to_string_lossy().to_string(),
         digest_algorithm: "sha512".to_string(),
         version_details: VersionDetails {
@@ -35,7 +35,7 @@ fn list_all_objects() -> Result<()> {
 
     assert_eq!(objects.remove(0), ObjectVersionDetails {
         id: "o2".to_string(),
-        object_root: repo_root.join("925/0b9/912/9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04")
+        object_root: repo_root.join("925").join("0b9").join("912").join("9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04")
             .to_string_lossy().to_string(),
         digest_algorithm: "sha512".to_string(),
         version_details: o2_v3_details()
@@ -43,7 +43,7 @@ fn list_all_objects() -> Result<()> {
 
     assert_eq!(objects.remove(0), ObjectVersionDetails {
         id: "o3".to_string(),
-        object_root: repo_root.join("de2/d91/dc0/de2d91dc0a2580414e9a70f7dfc76af727b69cac0838f2cbe0a88d12642efcbf")
+        object_root: repo_root.join("de2").join("d91").join("dc0").join("de2d91dc0a2580414e9a70f7dfc76af727b69cac0838f2cbe0a88d12642efcbf")
             .to_string_lossy().to_string(),
         digest_algorithm: "sha512".to_string(),
         version_details: VersionDetails {
@@ -69,7 +69,7 @@ fn list_single_object_from_glob() -> Result<()> {
 
     assert_eq!(objects.remove(0), ObjectVersionDetails {
         id: "o1".to_string(),
-        object_root: repo_root.join("235/2da/728/2352da7280f1decc3acf1ba84eb945c9fc2b7b541094e1d0992dbffd1b6664cc")
+        object_root: repo_root.join("235").join("2da").join("728").join("2352da7280f1decc3acf1ba84eb945c9fc2b7b541094e1d0992dbffd1b6664cc")
             .to_string_lossy().to_string(),
         digest_algorithm: "sha512".to_string(),
         version_details: VersionDetails {
@@ -101,6 +101,9 @@ fn list_repo_with_invalid_objects() -> Result<()> {
     let repo_root = create_repo_root("invalid");
     let repo = OcflRepo::new_fs_repo(&repo_root)?;
 
+    let object_root = repo_root.join("925").join("0b9").join("912")
+        .join("9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04");
+
     let iter = repo.list_objects(None)?;
 
     for result in iter {
@@ -108,8 +111,7 @@ fn list_repo_with_invalid_objects() -> Result<()> {
             Ok(object) => {
                 assert_eq!(object, ObjectVersionDetails {
                     id: "o2".to_string(),
-                    object_root: repo_root.join("925/0b9/912/9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04")
-                        .to_string_lossy().to_string(),
+                    object_root: object_root.to_string_lossy().to_string(),
                     digest_algorithm: "sha512".to_string(),
                     version_details: o2_v3_details()
                 });
@@ -131,7 +133,8 @@ fn get_object_when_exists() -> Result<()> {
 
     let object = repo.get_object("o2", None)?;
 
-    let object_root = repo_root.join("925/0b9/912/9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04");
+    let object_root = repo_root.join("925").join("0b9").join("912")
+        .join("9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04");
 
     assert_eq!(object, ObjectVersion {
         id: "o2".to_string(),
@@ -143,14 +146,16 @@ fn get_object_when_exists() -> Result<()> {
                 digest: Rc::new("6e027f3dc89e0bfd97e4c2ec6919a8fb793bdc7b5c513bea618f174beec32a66d2fc0ce19439751e2f01ae49f78c56dcfc7b49c167a751c823d09da8419a4331".to_string()),
                 digest_algorithm: Rc::new("sha512".to_string()),
                 content_path: "v3/content/dir1/file3".to_string(),
-                storage_path: object_root.join("v3/content/dir1/file3").to_string_lossy().to_string(),
+                storage_path: object_root.join("v3").join("content").join("dir1").join("file3")
+                    .to_string_lossy().to_string(),
                 last_update: Rc::new(o2_v3_details())
             },
             "dir1/dir2/file2".to_string() => FileDetails {
                 digest: Rc::new("4cf0ff5673ec65d9900df95502ed92b2605fc602ca20b6901652c7561b302668026095813af6adb0e663bdcdbe1f276d18bf0de254992a78573ad6574e7ae1f6".to_string()),
                 digest_algorithm: Rc::new("sha512".to_string()),
                 content_path: "v1/content/dir1/dir2/file2".to_string(),
-                storage_path: object_root.join("v1/content/dir1/dir2/file2").to_string_lossy().to_string(),
+                storage_path: object_root.join("v1").join("content").join("dir1").join("dir2").join("file2")
+                    .to_string_lossy().to_string(),
                 last_update: Rc::new(o2_v1_details())
             }
         }
@@ -166,7 +171,8 @@ fn get_object_version_when_exists() -> Result<()> {
 
     let object = repo.get_object("o2", Some(&VersionNum::try_from(2)?))?;
 
-    let object_root = repo_root.join("925/0b9/912/9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04");
+    let object_root = repo_root.join("925").join("0b9").join("912")
+        .join("9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04");
 
     assert_eq!(object, ObjectVersion {
         id: "o2".to_string(),
@@ -178,21 +184,24 @@ fn get_object_version_when_exists() -> Result<()> {
                 digest: Rc::new("7b866cfcfe06bf2bcaea7086f2a059854afe8de12a6e21e4286bec4828d3da36bdef28599be8c9be49da3e45ede3ddbc049f99ee197e5244c33e294748b1a986".to_string()),
                 digest_algorithm: Rc::new("sha512".to_string()),
                 content_path: "v2/content/dir1/file3".to_string(),
-                storage_path: object_root.join("v2/content/dir1/file3").to_string_lossy().to_string(),
+                storage_path: object_root.join("v2").join("content").join("dir1").join("file3")
+                    .to_string_lossy().to_string(),
                 last_update: Rc::new(o2_v2_details())
             },
             "dir1/dir2/file2".to_string() => FileDetails {
                 digest: Rc::new("4cf0ff5673ec65d9900df95502ed92b2605fc602ca20b6901652c7561b302668026095813af6adb0e663bdcdbe1f276d18bf0de254992a78573ad6574e7ae1f6".to_string()),
                 digest_algorithm: Rc::new("sha512".to_string()),
                 content_path: "v1/content/dir1/dir2/file2".to_string(),
-                storage_path: object_root.join("v1/content/dir1/dir2/file2").to_string_lossy().to_string(),
+                storage_path: object_root.join("v1").join("content").join("dir1").join("dir2").join("file2")
+                    .to_string_lossy().to_string(),
                 last_update: Rc::new(o2_v1_details())
             },
             "dir3/file1".to_string() => FileDetails {
                 digest: Rc::new("96a26e7629b55187f9ba3edc4acc940495d582093b8a88cb1f0303cf3399fe6b1f5283d76dfd561fc401a0cdf878c5aad9f2d6e7e2d9ceee678757bb5d95c39e".to_string()),
                 digest_algorithm: Rc::new("sha512".to_string()),
                 content_path: "v1/content/file1".to_string(),
-                storage_path: object_root.join("v1/content/file1").to_string_lossy().to_string(),
+                storage_path: object_root.join("v1").join("content").join("file1")
+                    .to_string_lossy().to_string(),
                 last_update: Rc::new(o2_v2_details())
             }
         }
@@ -401,7 +410,9 @@ fn o2_v3_details() -> VersionDetails {
 
 fn create_repo_root(name: &str) -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("resources/test/repos");
+    path.push("resources");
+    path.push("test");
+    path.push("repos");
     path.push(name);
     path
 }

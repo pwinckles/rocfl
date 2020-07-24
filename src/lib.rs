@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
-use std::path::Path;
+use std::path::{self, Path};
 use std::rc::Rc;
 use std::str::FromStr;
 
@@ -516,8 +516,9 @@ impl FileDetails {
     fn new(content_path: String, digest: Rc<String>, digest_algorithm: Rc<String>,
            object_root: &str, version_details: Rc<VersionDetails>) -> Self {
         Self {
-            storage_path: format!("{}/{}", object_root, content_path),
-            content_path,
+            content_path: content_path.clone(),
+            // TODO this is not correct for s3
+            storage_path: join(object_root, &convert_path_separator(content_path)),
             digest,
             digest_algorithm,
             last_update: version_details,
@@ -766,6 +767,17 @@ fn invert_path_map(map: HashMap<String, Vec<String>>) -> HashMap<String, Rc<Stri
     }
 
     inverted
+}
+
+fn join(parent: &str, child: &str) -> String {
+    format!("{}{}{}", parent, path::MAIN_SEPARATOR, child)
+}
+
+fn convert_path_separator(path: String) -> String {
+    if path::MAIN_SEPARATOR == '\\' {
+        return path.replace("/", "\\");
+    }
+    path
 }
 
 /// Constructs a `RocflError::NotFound` error
