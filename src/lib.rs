@@ -20,6 +20,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 
 use anyhow::{anyhow, Error, Result};
+use awsregion::Region;
 use chrono::{DateTime, Local};
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -28,8 +29,10 @@ use serde::export::Formatter;
 use thiserror::Error;
 
 use crate::fs::FsOcflStore;
+use crate::s3::S3OcflStore;
 
 mod fs;
+mod s3;
 
 const OBJECT_MARKER: &str = "0=ocfl_object_1.0";
 const ROOT_INVENTORY_FILE: &str = "inventory.json";
@@ -158,13 +161,21 @@ impl OcflRepo {
         })
     }
 
+    /// Creates a new `OcflRepo` instance backed by S3. `prefix` used to specify a virtual
+    /// sub directory within a bucket that the OCFL repository is rooted in.
+    pub fn new_s3_repo(region: Region, bucket: &str, prefix: Option<&str>) -> Result<Self> {
+        Ok(Self {
+            store: Box::new(S3OcflStore::new(region, bucket, prefix)?)
+        })
+    }
+
     /// Returns an iterator that iterate through all of the objects in an OCFL repository.
     /// Objects are lazy-loaded. An optional glob pattern may be provided to filter the objects
     /// that are returned.
     ///
     /// The iterator return an error if it encounters a problem accessing an object. This does
     /// terminate the iterator; there are still more objects until it returns `None`.
-    pub fn list_objects(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersionDetails>>>> {
+    pub fn list_objects<'a>(&'a self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersionDetails>> + 'a>> {
         let inv_iter = self.store.iter_inventories(filter_glob)?;
 
         Ok(Box::new(InventoryAdapterIter::new(inv_iter, |inventory| {
@@ -614,7 +625,7 @@ trait OcflStore {
     /// Returns an iterator that iterates over every object in an OCFL repository, returning
     /// the most recent inventory of each. Optionally, a glob pattern may be provided that filters
     /// the objects that are returned by OCFL ID.
-    fn iter_inventories(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<Inventory>>>>;
+    fn iter_inventories<'a>(&'a self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<Inventory>> + 'a>>;
 }
 
 /// OCFL inventory serialization object
@@ -653,8 +664,8 @@ struct User {
 }
 
 /// An iterator that adapts the output of a delegate `Inventory` iterator into another type.
-struct InventoryAdapterIter<T> {
-    iter: Box<dyn Iterator<Item=Result<Inventory>>>,
+struct InventoryAdapterIter<'a, T> {
+    iter: Box<dyn Iterator<Item=Result<Inventory>> + 'a>,
     adapter: Box<dyn Fn(Inventory) -> Result<T>>
 }
 
@@ -728,10 +739,10 @@ impl Version {
     }
 }
 
-impl<T> InventoryAdapterIter<T> {
+impl<'a, T> InventoryAdapterIter<'a, T> {
     /// Creates a new `InventoryAdapterIter` that applies the `adapter` closure to the output
     /// of every `next()` call.
-    fn new(iter: Box<dyn Iterator<Item=Result<Inventory>>>, adapter: impl Fn(Inventory) -> Result<T> + 'static) -> Self {
+    fn new(iter: Box<dyn Iterator<Item=Result<Inventory>> + 'a>, adapter: impl Fn(Inventory) -> Result<T> + 'a + 'static) -> Self {
         Self {
             iter,
             adapter: Box::new(adapter)
@@ -739,7 +750,7 @@ impl<T> InventoryAdapterIter<T> {
     }
 }
 
-impl<T> Iterator for InventoryAdapterIter<T> {
+impl<'a, T> Iterator for InventoryAdapterIter<'a, T> {
     type Item = Result<T>;
 
     fn next(&mut self) -> Option<Self::Item> {

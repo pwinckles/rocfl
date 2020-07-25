@@ -5,6 +5,11 @@
 `rocfl` is a command line utility for working with [OCFL](https://ocfl.io/) repositories.
 It currently only supports read operations.
 
+`rocfl` is able to interact with OCFL repositories located on the local filesystem or in S3. However, the
+S3 support is currently very slow. Listing all of the objects in an S3 repository will always be slow, but
+performance when interacting with individual objects will improve once it's possible to navigate directly to
+an object rather than having to crawl the entire repository looking for it.
+
 ## Installation
 
 You can either download a pre-built binary from the [releases page](https://github.com/pwinckles/rocfl/releases),
@@ -170,4 +175,21 @@ Show the changes between the second and fourth versions:
 
 ```console
 rocfl diff v2 v4
+```
+
+
+## S3
+
+In order to interrogate a repository located in S3, you first need to create an IAM user with access to S3, and then
+setup a local `~/.aws/credentials` file as [described here](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html).
+Then, when you invoke `rocfl` you must specify the bucket the repository is in as well as the bucket region. For example:
+
+```console
+rocfl -R us-east-2 -b example-ocfl-repo ls
+```
+
+You can specify a sub directory, or prefix, that the repository is rooted in within the bucket like this:
+
+```console
+rocfl -R us-east-2 -b example-ocfl-repo -r ocfl-root ls
 ```

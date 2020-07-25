@@ -1,164 +1,3 @@
-/*!
-`rocfl` is a command line utility for working with [OCFL](https://ocfl.io/) repositories.
-It currently only supports read operations.
-
-# Usage
-
-It is intended to be run from within an OCFL repository's storage root. I can be run outside
-of a storage root by specifying the repository root using the `--root` option.
-
-Objects are identified by crawling the directories under the storage root. It does not presently
-map object IDs directly to storage directories.
-
-The following is an overview of the features that `rocfl` supports. For a detailed description of
-all of the options available, consult the builtin help by executing `rocfl help` or
-`rocfl help <COMMAND>`.
-
-## List
-
-The `ls` operation can be used to either list all of the objects in a repository or list all of
-the files in an OCFL object. When listing files, only files in the HEAD object state are returned.
-Previous versions can be queried with the `-v` option.
-
-### Examples
-
-#### Listing Objects
-
-The following command lists all of the object IDs in a repository that's rooted in the current
-working directory:
-
-```console
-rocfl ls
-```
-
-This lists the same objects but with additional details, current version and updated date:
-
-```console
-rocfl ls -l
-```
-
-Adding the `-p` flag additionally provides the path from the storage root to the object:
-
-```console
-rocfl ls -lp
-```
-
-A subset of objects can be listed by providing a glob pattern to match on:
-
-```console
-rocfl ls -lo foo*
-```
-
-#### Listing Object Contents
-
-The contents of an object's current state are displayed by invoking `ls` on a specific object ID:
-
-```console
-rocfl ls foobar
-```
-
-With the `-l` flag, additional details are displayed. In this case, the version and date indicate
-when the individual file was last updated:
-
-```console
-rocfl ls -l foobar
-```
-
-The `-p` flag can also be used here to display the paths to the physical files on disk:
-
-```console
-rocfl ls -p foobar
-```
-
-The contents of previous versions are displayed by using the `-v` option. The following command
-displays the files that were in the first version of the object:
-
-```console
-rocfl ls -v1 foobar
-```
-
-An object's contents can be filtered by specifying a glob pattern to match on:
-
-```console
-rocfl ls foobar '*.txt'
-```
-
-The output is sorted by name by default, but can also be sorted version or updated date:
-
-```console
-rocfl ls -lsversion foobar
-```
-
-## Log
-
-The `log` operation displays the version metadata for all versions of an object. It can also be
-executed on a file within an object, in which case only versions that affected the specified
-file are displayed.
-
-### Examples
-
-Show all of the versions of an object in ascending order:
-
-```console
-rocfl log foobar
-```
-
-Only display the five most recent versions:
-
-```console
-rocfl log -rn5 foobar
-```
-
-Show all of the versions, but formatted so each version is on a single line:
-
-```console
-rocfl log -c foobar
-```
-
-Show all of the versions that affected a specific file:
-
-```console
-rocfl log foobar file1.txt
-```
-
-## Show
-
-The `show` operation displays everything that changed in an object within a specific version.
-If no version is specified, the most recent changes are shown.
-
-### Examples
-
-Show the changes in the most recent version:
-
-```console
-rocfl show foobar
-```
-
-Show the changes in the first version:
-
-```console
-rocfl show foobar v1
-```
-
-Don't show the version metadata; only show the files that changed:
-
-```console
-rocfl show -m foobar
-```
-
-## Diff
-
-The `diff` operation displays the files that changed between two specific versions.
-
-### Example
-
-Show the changes between the second and fourth versions:
-
-```console
-rocfl diff v2 v4
-```
-*/
-
 use core::fmt;
 use std::cmp::Ordering;
 use std::fmt::Display;
@@ -170,6 +9,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 
 use anyhow::{Context, Error, Result};
+use awsregion::Region;
 use clap::arg_enum;
 use globset::GlobBuilder;
 use lazy_static::lazy_static;
@@ -185,8 +25,20 @@ use rocfl::{Diff as VersionDiff, DiffType, FileDetails, ObjectVersion, ObjectVer
 #[structopt(setting(ColorAuto), setting(ColoredHelp))]
 struct AppArgs {
     /// Specifies the path to the OCFL storage root.
-    #[structopt(short = "R", long, value_name = "PATH", default_value = ".")]
+    #[structopt(short, long, value_name = "PATH", default_value = ".")]
     root: String,
+
+    /// Specifies the AWS region.
+    #[structopt(short = "R", long, value_name = "region", requires = "bucket")]
+    region: Option<String>,
+
+    /// Specifies the S3 bucket to use.
+    #[structopt(short, long, value_name = "BUCKET", requires = "region")]
+    bucket: Option<String>,
+
+    /// Specifies a custom S3 endpoint to use.
+    #[structopt(long, value_name = "ENDPOINT")]
+    endpoint: Option<String>,
 
     /// Suppresses error messages
     #[structopt(short, long)]
@@ -378,12 +230,38 @@ fn main() {
 }
 
 fn exec_command(args: &AppArgs) -> Result<()> {
-    let repo = OcflRepo::new_fs_repo(args.root.clone())?;
+    let repo = create_repo(&args)?;
     match &args.command {
         Command::List(list) => list_command(&repo, &list, args),
         Command::Log(log) => log_command(&repo, &log),
         Command::Show(show) => show_command(&repo, &show),
         Command::Diff(diff) => diff_command(&repo, &diff),
+    }
+}
+
+fn create_repo(args: &AppArgs) -> Result<OcflRepo> {
+    if args.bucket.is_none() {
+        OcflRepo::new_fs_repo(args.root.clone())
+    } else {
+        let prefix = match args.root.as_str() {
+            "." => None,
+            prefix => Some(prefix)
+        };
+
+        let region = match args.endpoint.is_some() {
+            true => {
+                Region::Custom {
+                    region: args.region.as_ref().unwrap().to_owned(),
+                    endpoint: args.endpoint.as_ref().unwrap().to_owned(),
+                }
+            }
+            false => args.region.as_ref().unwrap().parse()?
+        };
+
+        OcflRepo::new_s3_repo(
+            region,
+            args.bucket.as_ref().unwrap(),
+            prefix)
     }
 }
 

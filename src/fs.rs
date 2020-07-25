@@ -27,7 +27,7 @@ lazy_static! {
 /// Local filesystem OCFL repository
 pub struct FsOcflStore {
     /// The path to the OCFL storage root
-    pub storage_root: PathBuf
+    storage_root: PathBuf
 }
 
 // ================================================== //
@@ -35,8 +35,8 @@ pub struct FsOcflStore {
 // ================================================== //
 
 impl FsOcflStore {
-    /// Creates a new FsOcflRepo
-    pub fn new<P: AsRef<Path>>(storage_root: P) -> Result<FsOcflStore> {
+    /// Creates a new FsOcflStore
+    pub fn new<P: AsRef<Path>>(storage_root: P) -> Result<Self> {
         let storage_root = storage_root.as_ref().to_path_buf();
 
         if !storage_root.exists() {
@@ -48,7 +48,7 @@ impl FsOcflStore {
         // TODO verify is an OCFL repository
         // TODO load storage layout
 
-        Ok(FsOcflStore {
+        Ok(Self {
             storage_root
         })
     }
@@ -62,9 +62,7 @@ impl OcflStore for FsOcflStore {
 
         loop {
             match iter.next() {
-                Some(Ok(inventory)) => {
-                    return Ok(inventory)
-                }
+                Some(Ok(inventory)) => return Ok(inventory),
                 Some(Err(_)) => (),  // Errors are ignored because we don't know what object they're for
                 None => return Err(not_found(&object_id, None).into())
             }
@@ -74,7 +72,7 @@ impl OcflStore for FsOcflStore {
     /// Returns an iterator that iterates over every object in an OCFL repository, returning
     /// the most recent inventory of each. Optionally, a glob pattern may be provided that filters
     /// the objects that are returned by OCFL ID.
-    fn iter_inventories(&self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<Inventory>>>> {
+    fn iter_inventories<'a>(&'a self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<Inventory>> + 'a>> {
         Ok(Box::new(match filter_glob {
             Some(glob) => InventoryIter::new_glob_matching(&self.storage_root, glob)?,
             None => InventoryIter::new(&self.storage_root, None)?
@@ -121,26 +119,19 @@ impl InventoryIter {
         })
     }
 
-    fn create_if_matches<P: AsRef<Path>>(&self, object_root: P) -> Result<Option<Inventory>>{
+    fn create_if_matches<P: AsRef<Path>>(&self, object_root: P) -> Result<Option<Inventory>> {
         let inventory_path = object_root.as_ref().join(ROOT_INVENTORY_FILE);
 
         if self.id_matcher.is_some() {
             let object_id = self.extract_object_id(&inventory_path)?;
             if self.id_matcher.as_ref().unwrap().deref()(&object_id) {
-                return self.create_object_version(&object_root);
+                return Ok(Some(parse_inventory(&object_root)?));
             }
         } else {
-            return self.create_object_version(&object_root);
+            return Ok(Some(parse_inventory(&object_root)?));
         }
 
         Ok(None)
-    }
-
-    fn create_object_version<P: AsRef<Path>>(&self, path: P) -> Result<Option<Inventory>> {
-        match parse_inventory(&path) {
-            Ok(inventory) => Ok(Some(inventory)),
-            Err(e) => Err(e)
-        }
     }
 
     fn extract_object_id<P: AsRef<Path>>(&self, path: P) -> Result<String> {
