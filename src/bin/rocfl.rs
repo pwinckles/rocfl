@@ -37,7 +37,7 @@ struct AppArgs {
     bucket: Option<String>,
 
     /// Specifies a custom S3 endpoint to use.
-    #[structopt(long, value_name = "ENDPOINT")]
+    #[structopt(short, long, value_name = "ENDPOINT")]
     endpoint: Option<String>,
 
     /// Suppresses error messages
