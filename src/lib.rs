@@ -283,12 +283,8 @@ impl OcflRepo {
 
         let mut diffs = Vec::new();
 
-        if left.is_none() {
-            for (path, _digest) in right_state {
-                diffs.push(Diff::added(path));
-            }
-        } else {
-            let left_state = invert_path_map(left.unwrap().state);
+        if let Some(left) = left {
+            let left_state = invert_path_map(left.state);
 
             for (path, left_digest) in left_state {
                 match right_state.remove(&path) {
@@ -303,6 +299,10 @@ impl OcflRepo {
 
             for (path, _digest) in right_state {
                 diffs.push(Diff::added(path))
+            }
+        } else {
+            for (path, _digest) in right_state {
+                diffs.push(Diff::added(path));
             }
         }
 
@@ -368,7 +368,7 @@ impl TryFrom<&str> for VersionNum {
                     width,
                 })
             }
-            Err(_) => return Err(RocflError::IllegalArgument(format!("Invalid version {}", version)))
+            Err(_) => Err(RocflError::IllegalArgument(format!("Invalid version {}", version)))
         }
     }
 }
@@ -546,7 +546,7 @@ impl VersionDetails {
 
         Self {
             version_num: version_num.clone(),
-            created: version.created.clone(),
+            created: version.created,
             user_name: user,
             user_address: address,
             message: version.message.clone()
@@ -728,9 +728,9 @@ impl Inventory {
 impl Version {
     /// Returns a reference to the digest associated to a logical path, or None if the logical
     /// path does not exist in the version's state.
-    fn lookup_digest(&self, logical_path: &String) -> Option<&String> {
+    fn lookup_digest(&self, logical_path: &str) -> Option<&String> {
         for (digest, paths) in &self.state {
-            if paths.contains(logical_path) {
+            if paths.iter().any(|e| e == logical_path) {
                 return Some(digest);
             }
         }

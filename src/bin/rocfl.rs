@@ -167,7 +167,7 @@ struct Diff {
 }
 
 #[derive(Debug)]
-struct Num(u32);
+struct Num(usize);
 
 arg_enum! {
     #[derive(Debug)]
@@ -182,7 +182,7 @@ arg_enum! {
 impl Default for Num {
     fn default() -> Self {
         Self {
-            0: u32::MAX
+            0: usize::MAX
         }
     }
 }
@@ -191,7 +191,7 @@ impl FromStr for Num {
     type Err = ParseIntError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Num(u32::from_str(s)?))
+        Ok(Num(usize::from_str(s)?))
     }
 }
 
@@ -220,12 +220,9 @@ lazy_static! {
 
 fn main() {
     let args = AppArgs::from_args();
-    match exec_command(&args) {
-        Err(e) => {
-            print_err(&e, args.quiet);
-            exit(1);
-        }
-        _ => ()
+    if let Err(e) = exec_command(&args) {
+        print_err(&e, args.quiet);
+        exit(1);
     }
 }
 
@@ -284,14 +281,11 @@ fn log_command(repo: &OcflRepo, command: &Log) -> Result<()> {
         false => Box::new(versions.iter())
     };
 
-    let mut count = 0;
-
-    for version in iter {
+    for (count, version) in iter.enumerate() {
         if count == command.num.0 {
             break;
         }
         println(FormatVersion::new(version, command.compact));
-        count += 1;
     }
 
     Ok(())
@@ -317,7 +311,7 @@ fn diff_command(repo: &OcflRepo, command: &Diff) -> Result<()> {
 
 fn diff_and_print(repo: &OcflRepo, object_id: &str, left: Option<&VersionNum>, right: &VersionNum) -> Result<()> {
     let mut diffs: Vec<DiffLine> = repo.diff(object_id, left, right)?
-        .into_iter().map(|diff| DiffLine(diff)).collect();
+        .into_iter().map(DiffLine).collect();
 
     diffs.sort_unstable();
 
@@ -415,7 +409,7 @@ fn print_err(error: &Error, quiet: bool) {
         let mut stderr = StandardStream::stderr(ColorChoice::Auto);
         match stderr.set_color(ColorSpec::new().set_fg(Some(Color::Red))) {
             Ok(_) => {
-                if let Err(_) = writeln!(&mut stderr, "Error: {:#}", error) {
+                if writeln!(&mut stderr, "Error: {:#}", error).is_err() {
                     eprintln!("Error: {:#}", error)
                 }
                 let _ = stderr.reset();

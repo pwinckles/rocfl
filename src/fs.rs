@@ -58,7 +58,7 @@ impl OcflStore for FsOcflStore {
     /// Returns the most recent inventory version for the specified object, or an a
     /// `RocflError::NotFound` if it does not exist.
     fn get_inventory(&self, object_id: &str) -> Result<Inventory> {
-        let mut iter = InventoryIter::new_id_matching(&self.storage_root, object_id.clone())?;
+        let mut iter = InventoryIter::new_id_matching(&self.storage_root, &object_id)?;
 
         loop {
             match iter.next() {
@@ -193,7 +193,7 @@ impl Iterator for InventoryIter {
                                         Err(e) => return Some(Err(e.into()))
                                     }
                                 }
-                                Err(e) => return Some(Err(e.into())),
+                                Err(e) => return Some(Err(e)),
                                 _ => panic!("This code is unreachable")
                             }
                         }

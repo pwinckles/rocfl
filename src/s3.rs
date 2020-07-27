@@ -38,7 +38,7 @@ impl OcflStore for S3OcflStore {
     /// Returns the most recent inventory version for the specified object, or an a
     /// `RocflError::NotFound` if it does not exist.
     fn get_inventory(&self, object_id: &str) -> Result<Inventory> {
-        let mut iter = InventoryIter::new_id_matching(&self.s3_client, object_id.clone());
+        let mut iter = InventoryIter::new_id_matching(&self.s3_client, &object_id);
 
         loop {
             match iter.next() {
@@ -238,7 +238,7 @@ impl<'a> Iterator for InventoryIter<'a> {
                                 self.current.replace(Some(listing.directories.into_iter()));
                             }
                         }
-                        Err(e) => return Some(Err(e.into()))
+                        Err(e) => return Some(Err(e))
                     }
                 }
             }
@@ -246,7 +246,7 @@ impl<'a> Iterator for InventoryIter<'a> {
     }
 }
 
-fn is_object_dir(objects: &Vec<String>) -> bool {
+fn is_object_dir(objects: &[String]) -> bool {
     for object in objects {
         if object.ends_with(OBJECT_MARKER) {
             return true;
@@ -256,14 +256,14 @@ fn is_object_dir(objects: &Vec<String>) -> bool {
 }
 
 fn join(part1: &str, part2: &str) -> String {
-    let mut joined = match part1.ends_with("/") {
+    let mut joined = match part1.ends_with('/') {
         true => {
             part1[..part1.len() - 1].to_string()
         },
         false => part1.to_string()
     };
 
-    if part2.len() > 0 {
+    if !part2.is_empty() {
         if (!joined.is_empty() || part1 == "/")
             && !part2.starts_with('/') {
             joined.push('/');
@@ -277,7 +277,7 @@ fn join(part1: &str, part2: &str) -> String {
 fn join_with_trailing_slash(part1: &str, part2: &str) -> String {
     let mut joined = join(part1, part2);
 
-    if !joined.is_empty() && !joined.ends_with("/") {
+    if !joined.is_empty() && !joined.ends_with('/') {
         joined.push('/');
     }
 
@@ -285,7 +285,7 @@ fn join_with_trailing_slash(part1: &str, part2: &str) -> String {
 }
 
 fn strip_trailing_slash(path: &str) -> String {
-    if path.ends_with("/") {
+    if path.ends_with('/') {
         path[..path.len() - 1].to_owned()
     } else {
         path.to_owned()
