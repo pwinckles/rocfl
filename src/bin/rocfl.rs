@@ -9,10 +9,10 @@ use std::rc::Rc;
 use std::str::FromStr;
 
 use anyhow::{Context, Error, Result};
-use awsregion::Region;
 use clap::arg_enum;
 use globset::GlobBuilder;
 use lazy_static::lazy_static;
+use rusoto_core::Region;
 use serde::export::Formatter;
 use structopt::clap::AppSettings::{ColorAuto, ColoredHelp, DisableVersion};
 use structopt::StructOpt;
@@ -248,7 +248,7 @@ fn create_repo(args: &AppArgs) -> Result<OcflRepo> {
         let region = match args.endpoint.is_some() {
             true => {
                 Region::Custom {
-                    region: args.region.as_ref().unwrap().to_owned(),
+                    name: args.region.as_ref().unwrap().to_owned(),
                     endpoint: args.endpoint.as_ref().unwrap().to_owned(),
                 }
             }

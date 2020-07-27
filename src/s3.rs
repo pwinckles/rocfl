@@ -5,10 +5,10 @@ use std::ops::Deref;
 use std::vec::IntoIter;
 
 use anyhow::{anyhow, Context, Result};
-use awscreds::Credentials;
-use awsregion::Region;
 use globset::GlobBuilder;
-use s3::bucket::Bucket;
+use rusoto_core::{Region, RusotoError};
+use rusoto_s3::{GetObjectError, GetObjectRequest, ListObjectsV2Request, S3, S3Client as RusotoS3Client};
+use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
 
 use crate::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_MARKER, OcflStore, ROOT_INVENTORY_FILE};
@@ -65,7 +65,8 @@ impl OcflStore for S3OcflStore {
 // ================================================== //
 
 struct S3Client {
-    s3_client: Bucket,
+    s3_client: RusotoS3Client,
+    bucket: String,
     prefix: String,
     runtime: RefCell<Runtime>,
 }
@@ -89,7 +90,8 @@ struct InventoryIter<'a> {
 impl S3Client {
     fn new(region: Region, bucket: &str, prefix: Option<&str>) -> Result<Self> {
         Ok(S3Client {
-            s3_client: Bucket::new(bucket, region, Credentials::default_blocking()?)?,
+            s3_client: RusotoS3Client::new(region),
+            bucket: bucket.to_owned(),
             prefix: prefix.unwrap_or_default().to_owned(),
             runtime: RefCell::new(Runtime::new()?),
         })
@@ -98,19 +100,26 @@ impl S3Client {
     fn list_dir(&self, path: &str) -> Result<ListResult> {
         let prefix = join_with_trailing_slash(&self.prefix, &path);
 
-        let results = self.runtime.borrow_mut().block_on(self.s3_client.list(prefix, Some("/".to_owned())))?;
+        // TODO continuation
+        let results = self.runtime.borrow_mut().block_on(self.s3_client.list_objects_v2(ListObjectsV2Request {
+            bucket: self.bucket.clone(),
+            prefix: Some(prefix),
+            delimiter: Some("/".to_owned()),
+            ..Default::default()
+        }))?;
 
         let mut objects = Vec::new();
         let mut directories = Vec::new();
 
-        for list in results {
-            for object in list.contents {
-                objects.push(object.key[self.prefix.len()..].to_owned());
+        if let Some(contents) = &results.contents {
+            for object in contents {
+                objects.push(object.key.as_ref().unwrap()[self.prefix.len()..].to_owned());
             }
-            if list.common_prefixes.is_some() {
-                for prefix in list.common_prefixes.unwrap() {
-                    directories.push(prefix.prefix[self.prefix.len()..].to_owned());
-                }
+        }
+
+        if let Some(prefixes) = &results.common_prefixes {
+            for prefix in prefixes {
+                directories.push(prefix.prefix.as_ref().unwrap()[self.prefix.len()..].to_owned());
             }
         }
 
@@ -123,13 +132,22 @@ impl S3Client {
     fn get_object(&self, path: &str) -> Result<Option<Vec<u8>>> {
         let key = join(&self.prefix, &path);
 
-        let (content, code) = self.runtime.borrow_mut()
-            .block_on(self.s3_client.get_object(urlencoding::encode(&key)))?;
+        let result = self.runtime.borrow_mut().block_on(self.s3_client.get_object(GetObjectRequest {
+            bucket: self.bucket.clone(),
+            key,
+            ..Default::default()
+        }));
 
-        if code == 404 {
-            Ok(None)
-        } else {
-            Ok(Some(content))
+        match result {
+            Ok(result) => {
+                self.runtime.borrow_mut().block_on(async move {
+                    let mut buffer = Vec::new();
+                    result.body.unwrap().into_async_read().read_to_end(&mut buffer).await?;
+                    Ok(Some(buffer))
+                })
+            }
+            Err(RusotoError::Service(GetObjectError::NoSuchKey(_e))) => Ok(None),
+            Err(e) => Err(e.into())
         }
     }
 }
@@ -294,7 +312,7 @@ fn strip_trailing_slash(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::s3::{join, join_with_trailing_slash, strip_trailing_slash, is_object_dir};
+    use crate::s3::{is_object_dir, join, join_with_trailing_slash, strip_trailing_slash};
 
     #[test]
     fn join_path_when_both_empty() {

@@ -20,10 +20,10 @@ use std::rc::Rc;
 use std::str::FromStr;
 
 use anyhow::{anyhow, Error, Result};
-use awsregion::Region;
 use chrono::{DateTime, Local};
 use lazy_static::lazy_static;
 use regex::Regex;
+use rusoto_core::Region;
 use serde::Deserialize;
 use serde::export::Formatter;
 use thiserror::Error;

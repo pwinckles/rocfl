@@ -16,8 +16,6 @@ path = "src/bin/rocfl.rs"
 
 [dependencies]
 anyhow = "1.0"
-aws-creds = "0.22"
-aws-region = "0.21"
 chrono = { version = "0.4", features = ["serde"] }
 clap = "2"
 globset = "0.4"
@@ -26,7 +24,9 @@ grep-searcher = "0.1"
 grep-regex = "0.1"
 lazy_static = "1.4"
 regex = "1"
-rust-s3 = "0.22"
+rusoto_core = "0.45"
+rusoto_credential = "0.45"
+rusoto_s3 = "0.45"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 structopt = "0.3"
