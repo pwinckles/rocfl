@@ -7,7 +7,7 @@ use std::vec::IntoIter;
 use anyhow::{anyhow, Context, Result};
 use globset::GlobBuilder;
 use rusoto_core::{Region, RusotoError};
-use rusoto_s3::{GetObjectError, GetObjectRequest, ListObjectsV2Request, S3, S3Client as RusotoS3Client};
+use rusoto_s3::{GetObjectError, GetObjectRequest, ListObjectsV2Output, ListObjectsV2Request, S3, S3Client as RusotoS3Client};
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
 
@@ -100,26 +100,36 @@ impl S3Client {
     fn list_dir(&self, path: &str) -> Result<ListResult> {
         let prefix = join_with_trailing_slash(&self.prefix, &path);
 
-        // TODO continuation
-        let results = self.runtime.borrow_mut().block_on(self.s3_client.list_objects_v2(ListObjectsV2Request {
-            bucket: self.bucket.clone(),
-            prefix: Some(prefix),
-            delimiter: Some("/".to_owned()),
-            ..Default::default()
-        }))?;
-
         let mut objects = Vec::new();
         let mut directories = Vec::new();
+        let mut continuation = None;
 
-        if let Some(contents) = &results.contents {
-            for object in contents {
-                objects.push(object.key.as_ref().unwrap()[self.prefix.len()..].to_owned());
+        loop {
+            let result: ListObjectsV2Output = self.runtime.borrow_mut().block_on(
+                self.s3_client.list_objects_v2(ListObjectsV2Request {
+                    bucket: self.bucket.clone(),
+                    prefix: Some(prefix.clone()),
+                    delimiter: Some("/".to_owned()),
+                    continuation_token: continuation.clone(),
+                    ..Default::default()
+                }))?;
+
+            if let Some(contents) = &result.contents {
+                for object in contents {
+                    objects.push(object.key.as_ref().unwrap()[self.prefix.len()..].to_owned());
+                }
             }
-        }
 
-        if let Some(prefixes) = &results.common_prefixes {
-            for prefix in prefixes {
-                directories.push(prefix.prefix.as_ref().unwrap()[self.prefix.len()..].to_owned());
+            if let Some(prefixes) = &result.common_prefixes {
+                for prefix in prefixes {
+                    directories.push(prefix.prefix.as_ref().unwrap()[self.prefix.len()..].to_owned());
+                }
+            }
+
+            if result.is_truncated.unwrap() {
+                continuation = result.next_continuation_token.clone();
+            } else {
+                break;
             }
         }
 
