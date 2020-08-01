@@ -6,7 +6,7 @@ use anyhow::Result;
 use chrono::DateTime;
 use maplit::hashmap;
 
-use rocfl::{Diff, DiffType, FileDetails, ObjectVersion, ObjectVersionDetails, OcflRepo, VersionDetails, VersionNum};
+use rocfl::ocfl::{Diff, DiffType, FileDetails, ObjectVersion, ObjectVersionDetails, OcflRepo, VersionDetails, VersionNum};
 
 #[test]
 fn list_all_objects() -> Result<()> {

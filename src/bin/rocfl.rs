@@ -3,214 +3,18 @@ use std::cmp::Ordering;
 use std::fmt::Display;
 use std::io;
 use std::io::Write;
-use std::num::ParseIntError;
-use std::process::exit;
 use std::rc::Rc;
-use std::str::FromStr;
 
 use anyhow::{Context, Error, Result};
-use clap::arg_enum;
 use globset::GlobBuilder;
 use lazy_static::lazy_static;
 use rusoto_core::Region;
 use serde::export::Formatter;
-use structopt::clap::AppSettings::{ColorAuto, ColoredHelp, DisableVersion};
 use structopt::StructOpt;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
-use rocfl::{Diff as VersionDiff, DiffType, FileDetails, ObjectVersion, ObjectVersionDetails, OcflRepo, VersionDetails, VersionNum};
-
-#[derive(Debug, StructOpt)]
-#[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
-#[structopt(setting(ColorAuto), setting(ColoredHelp))]
-struct AppArgs {
-    /// Specifies the path to the OCFL storage root.
-    #[structopt(short, long, value_name = "PATH", default_value = ".")]
-    root: String,
-
-    /// Specifies the AWS region.
-    #[structopt(short = "R", long, value_name = "region", requires = "bucket")]
-    region: Option<String>,
-
-    /// Specifies the S3 bucket to use.
-    #[structopt(short, long, value_name = "BUCKET", requires = "region")]
-    bucket: Option<String>,
-
-    /// Specifies a custom S3 endpoint to use.
-    #[structopt(short, long, value_name = "ENDPOINT")]
-    endpoint: Option<String>,
-
-    /// Suppresses error messages
-    #[structopt(short, long)]
-    quiet: bool,
-
-    /// Subcommand to execute
-    #[structopt(subcommand)]
-    command: Command,
-}
-
-/// A CLI for OCFL repositories.
-#[derive(Debug, StructOpt)]
-enum Command {
-    #[structopt(name = "ls")]
-    List(List),
-    #[structopt(name = "log")]
-    Log(Log),
-    #[structopt(name = "show")]
-    Show(Show),
-    #[structopt(name = "diff")]
-    Diff(Diff),
-}
-
-/// Lists objects or files within objects.
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
-struct List {
-    /// Enables long output format: version, updated, name
-    #[structopt(short, long)]
-    long: bool,
-
-    /// Displays the physical path to the item
-    #[structopt(short, long)]
-    physical: bool,
-
-    /// Displays the digest of the item
-    #[structopt(short, long)]
-    digest: bool,
-
-    /// Specifies the version of the object to list
-    #[structopt(short, long, value_name = "VERSION")]
-    version: Option<VersionNum>,
-
-    /// Specifies the field to sort on. Sort is not supported when listing objects.
-    #[structopt(short, long, value_name = "FIELD", possible_values = &Field::variants(), default_value = "Name", case_insensitive = true)]
-    sort: Field,
-
-    /// Reverses the direction of the sort
-    #[structopt(short, long)]
-    reverse: bool,
-
-    /// Lists only objects; not their contents
-    #[structopt(short, long)]
-    objects: bool,
-
-    /// Wildcards in path glob expressions will not match '/'
-    #[structopt(short, long)]
-    glob_literal_separator: bool,
-
-    /// ID of the object to list. May be a glob when used with '-o'.
-    #[structopt(name = "OBJECT")]
-    object_id: Option<String>,
-
-    /// Path glob of files to list. May only be specified if an object is also specified.
-    #[structopt(name = "PATH")]
-    path: Option<String>,
-}
-
-/// Displays the version history of an object or file.
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
-struct Log {
-    /// Enables compact format
-    #[structopt(short, long)]
-    compact: bool,
-
-    /// Reverses the direction the versions are displayed
-    #[structopt(short, long)]
-    reverse: bool,
-
-    /// Limits the number of versions that are displayed
-    #[structopt(short, long, value_name = "NUM", default_value)]
-    num: Num,
-
-    /// ID of the object
-    #[structopt(name = "OBJECT")]
-    object_id: String,
-
-    /// Optional path to a file
-    #[structopt(name = "PATH")]
-    path: Option<String>,
-}
-
-/// Shows a summary of changes in a version.
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
-struct Show {
-    /// Suppresses the version details output
-    #[structopt(short, long)]
-    minimal: bool,
-
-    /// ID of the object
-    #[structopt(name = "OBJECT")]
-    object_id: String,
-
-    /// Optional version to show
-    #[structopt(name = "VERSION")]
-    version: Option<VersionNum>,
-}
-
-/// Shows the files that changed between two versions
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
-struct Diff {
-    /// ID of the object
-    #[structopt(name = "OBJECT")]
-    object_id: String,
-
-    /// Left-hand side version
-    #[structopt(name = "LEFT_VERSION")]
-    left: VersionNum,
-
-    /// Right-hand side version
-    #[structopt(name = "RIGHT_VERSION")]
-    right: VersionNum,
-}
-
-#[derive(Debug)]
-struct Num(usize);
-
-arg_enum! {
-    #[derive(Debug)]
-    enum Field {
-        Name,
-        Version,
-        Updated,
-        None
-    }
-}
-
-impl Default for Num {
-    fn default() -> Self {
-        Self {
-            0: usize::MAX
-        }
-    }
-}
-
-impl FromStr for Num {
-    type Err = ParseIntError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Num(usize::from_str(s)?))
-    }
-}
-
-impl Display for Num {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl Field {
-    fn cmp_listings(&self, a: &Listing, b: &Listing) -> Ordering {
-        match self {
-            Self::Name => a.name.cmp(&b.name),
-            Self::Version => a.version_details.version_num.cmp(&b.version_details.version_num),
-            Self::Updated => a.version_details.created.cmp(&b.version_details.created),
-            Self::None => Ordering::Equal,
-        }
-    }
-}
+use rocfl::cmd::opts::*;
+use rocfl::ocfl::{Diff as VersionDiff, DiffType, FileDetails, ObjectVersion, ObjectVersionDetails, OcflRepo, VersionDetails, VersionNum};
 
 const DATE_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 
@@ -219,14 +23,14 @@ lazy_static! {
 }
 
 fn main() {
-    let args = AppArgs::from_args();
+    let args = RocflArgs::from_args();
     if let Err(e) = exec_command(&args) {
         print_err(&e, args.quiet);
-        exit(1);
+        std::process::exit(1);
     }
 }
 
-fn exec_command(args: &AppArgs) -> Result<()> {
+fn exec_command(args: &RocflArgs) -> Result<()> {
     let repo = create_repo(&args)?;
     match &args.command {
         Command::List(list) => list_command(&repo, &list, args),
@@ -236,7 +40,7 @@ fn exec_command(args: &AppArgs) -> Result<()> {
     }
 }
 
-fn create_repo(args: &AppArgs) -> Result<OcflRepo> {
+fn create_repo(args: &RocflArgs) -> Result<OcflRepo> {
     if args.bucket.is_none() {
         OcflRepo::new_fs_repo(args.root.clone())
     } else {
@@ -262,7 +66,7 @@ fn create_repo(args: &AppArgs) -> Result<OcflRepo> {
     }
 }
 
-fn list_command(repo: &OcflRepo, command: &List, args: &AppArgs) -> Result<()> {
+fn list_command(repo: &OcflRepo, command: &List, args: &RocflArgs) -> Result<()> {
     if command.objects || command.object_id.is_none() {
         list_objects(repo, command, args)
     } else {
@@ -329,7 +133,7 @@ fn list_object_contents(repo: &OcflRepo, command: &List) -> Result<()> {
     print_object_contents(object, command)
 }
 
-fn list_objects(repo: &OcflRepo, command: &List, args: &AppArgs) -> Result<()> {
+fn list_objects(repo: &OcflRepo, command: &List, args: &RocflArgs) -> Result<()> {
     let iter = repo.list_objects(command.object_id.as_deref())
         .with_context(|| "Failed to list objects")?;
 
@@ -387,14 +191,23 @@ fn print_object_contents(object: ObjectVersion, command: &List) -> Result<()> {
 fn sort_and_print(mut listings: Vec<Listing>, command: &List) {
     listings.sort_unstable_by(|a, b| {
         if command.reverse {
-            command.sort.cmp_listings(b, a)
+            cmp_listings(&command.sort, b, a)
         } else {
-            command.sort.cmp_listings(a, b)
+            cmp_listings(&command.sort, a, b)
         }
     });
 
     for listing in listings {
         println(FormatListing::new(&listing, command));
+    }
+}
+
+fn cmp_listings(field: &Field, a: &Listing, b: &Listing) -> Ordering {
+    match field {
+        Field::Name => a.name.cmp(&b.name),
+        Field::Version => a.version_details.version_num.cmp(&b.version_details.version_num),
+        Field::Updated => a.version_details.created.cmp(&b.version_details.created),
+        Field::None => Ordering::Equal,
     }
 }
 

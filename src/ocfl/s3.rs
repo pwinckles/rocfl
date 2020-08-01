@@ -11,7 +11,7 @@ use rusoto_s3::{GetObjectError, GetObjectRequest, ListObjectsV2Output, ListObjec
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
 
-use crate::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_MARKER, OcflStore, ROOT_INVENTORY_FILE};
+use super::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_MARKER, OcflStore, ROOT_INVENTORY_FILE};
 
 // ================================================== //
 //             public structs+enums+traits            //
@@ -322,7 +322,7 @@ fn strip_trailing_slash(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::s3::{is_object_dir, join, join_with_trailing_slash, strip_trailing_slash};
+    use super::{is_object_dir, join, join_with_trailing_slash, strip_trailing_slash};
 
     #[test]
     fn join_path_when_both_empty() {

@@ -4,7 +4,7 @@
 //! Create a new `OcflRepo` as follows:
 //!
 //! ```rust
-//! use rocfl::OcflRepo;
+//! use rocfl::ocfl::OcflRepo;
 //!
 //! let repo = OcflRepo::new_fs_repo("path/to/ocfl/storage/root");
 //! ```
@@ -28,8 +28,8 @@ use serde::Deserialize;
 use serde::export::Formatter;
 use thiserror::Error;
 
-use crate::fs::FsOcflStore;
-use crate::s3::S3OcflStore;
+use self::fs::FsOcflStore;
+use self::s3::S3OcflStore;
 
 mod fs;
 mod s3;
