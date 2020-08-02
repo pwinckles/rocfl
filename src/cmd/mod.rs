@@ -3,7 +3,6 @@ use std::cmp::Ordering;
 use std::fmt::Display;
 use std::io;
 use std::io::Write;
-use std::rc::Rc;
 
 use anyhow::{Context, Error, Result};
 use globset::GlobBuilder;
@@ -13,17 +12,17 @@ use serde::export::Formatter;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
 use crate::cmd::opts::*;
-use crate::ocfl::{Diff as VersionDiff, DiffType, FileDetails, ObjectVersion, ObjectVersionDetails, OcflRepo, VersionDetails, VersionNum};
+use crate::cmd::print::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
+use crate::ocfl::{Diff as VersionDiff, DiffType, FileDetails, ObjectVersionDetails, OcflRepo, VersionDetails, VersionNum};
 
 pub mod opts;
+pub mod print;
 
 const DATE_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 
 lazy_static! {
     static ref DEFAULT_USER: String = "NA".to_string();
 }
-
-// TODO separate out display code
 
 // TODO
 pub fn exec_command(args: &RocflArgs) -> Result<()> {
@@ -138,87 +137,131 @@ fn diff_and_print(repo: &OcflRepo, object_id: &str, left: Option<&VersionNum>, r
     Ok(())
 }
 
-fn list_object_contents(repo: &OcflRepo, command: &List) -> Result<()> {
-    let object_id = command.object_id.as_ref().unwrap();
-    let object = repo.get_object(object_id, command.version.as_ref())
-        .with_context(|| "Failed to list object")?;
-    print_object_contents(object, command)
-}
-
 fn list_objects(repo: &OcflRepo, command: &List, args: &RocflArgs) -> Result<()> {
     let iter = repo.list_objects(command.object_id.as_deref())
         .with_context(|| "Failed to list objects")?;
 
-    match command.sort {
-        Field::None => {
-            for object in iter {
-                match object {
-                    Ok(object) => println(FormatListing::new(&Listing::from(object), command)),
-                    Err(e) => print_err(&e, args.quiet)
-                }
+    let mut objects: Vec<ObjectVersionDetails> = iter.filter(|result| {
+        match result {
+            Ok(_) => true,
+            Err(e) => {
+                print_err(e, args.quiet);
+                false
             }
         }
-        _ => {
-            let listings: Vec<Listing> = iter.filter(|object| {
-                match object {
-                    Ok(_object) => true,
-                    Err(e) => {
-                        print_err(e, args.quiet);
-                        false
-                    }
-                }
-            }).map(|object| {
-                Listing::from(object.unwrap())
-            }).collect();
+    }).map(Result::unwrap).collect();
 
-            sort_and_print(listings, command);
+    objects.sort_unstable_by(|a, b| {
+        if command.reverse {
+            cmp_objects(&command.sort, b, a)
+        } else {
+            cmp_objects(&command.sort, a, b)
         }
-    }
+    });
+
+    let mut table = object_table(&command);
+    objects.iter().for_each(|object| table.add_row(object));
+    table.write();
 
     Ok(())
 }
 
-fn print_object_contents(object: ObjectVersion, command: &List) -> Result<()> {
-    let mut glob = None;
-    if command.path.is_some() {
-        glob = Some(GlobBuilder::new(command.path.as_ref().unwrap())
-            .literal_separator(command.glob_literal_separator)
-            .backslash_escape(true).build()?.compile_matcher());
-    }
+fn list_object_contents(repo: &OcflRepo, command: &List) -> Result<()> {
+    let object_id = command.object_id.as_ref().unwrap();
+    let object = repo.get_object(object_id, command.version.as_ref())
+        .with_context(|| "Failed to list object")?;
 
-    let listings: Vec<Listing> = object.state.into_iter().map(move |(path, details)| {
-        Listing::new(path, details)
-    }).filter(|listing| {
+    let glob = match command.path.as_ref() {
+        Some(path) => Some(GlobBuilder::new(path)
+            .literal_separator(command.glob_literal_separator)
+            .backslash_escape(true).build()?.compile_matcher()),
+        None => None
+    };
+
+    let mut listings: Vec<ContentListing> = object.state.into_iter()
+        .map(move |(path, details)| {
+            ContentListing {
+                logical_path: path,
+                details
+            }
+        }).filter(|listing| {
         match &glob {
-            Some(glob) => glob.is_match(&listing.name),
+            Some(glob) => glob.is_match(&listing.logical_path),
             None => true
         }
     }).collect();
 
-    sort_and_print(listings, command);
+    listings.sort_unstable_by(|a, b| {
+        if command.reverse {
+            cmp_object_contents(&command.sort, b, a)
+        } else {
+            cmp_object_contents(&command.sort, a, b)
+        }
+    });
+
+    let mut table = object_content_table(command);
+    listings.iter().for_each(|listing| table.add_row(listing));
+    table.write();
 
     Ok(())
 }
 
-fn sort_and_print(mut listings: Vec<Listing>, command: &List) {
-    listings.sort_unstable_by(|a, b| {
-        if command.reverse {
-            cmp_listings(&command.sort, b, a)
-        } else {
-            cmp_listings(&command.sort, a, b)
-        }
-    });
+fn object_table(command: &List) -> TableView {
+    let mut columns = Vec::new();
 
-    for listing in listings {
-        println(FormatListing::new(&listing, command));
+    if command.long {
+        columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
+        columns.push(Column::new(ColumnId::Updated, "Updated", Alignment::Left));
+    }
+
+    columns.push(Column::new(ColumnId::ObjectId, "Object ID", Alignment::Left));
+
+    if command.physical {
+        columns.push(Column::new(ColumnId::PhysicalPath, "Physical Path", Alignment::Left));
+    }
+
+    TableView::new(columns, command.header)
+}
+
+fn object_content_table(command: &List) -> TableView {
+    let mut columns = Vec::new();
+
+    if command.long {
+        columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
+        columns.push(Column::new(ColumnId::Updated, "Updated", Alignment::Left));
+    }
+
+    columns.push(Column::new(ColumnId::LogicalPath, "Logical Path", Alignment::Left));
+
+    if command.physical {
+        columns.push(Column::new(ColumnId::PhysicalPath, "Physical Path", Alignment::Left));
+    }
+
+    if command.digest {
+        columns.push(Column::new(ColumnId::Digest, "Digest", Alignment::Left));
+    }
+
+    TableView::new(columns, command.header)
+}
+
+fn cmp_objects(field: &Field, a: &ObjectVersionDetails, b: &ObjectVersionDetails) -> Ordering {
+    match field {
+        Field::Name => natord::compare(&a.id, &b.id),
+        Field::Version => a.version_details.version_num.cmp(&b.version_details.version_num),
+        Field::Updated => a.version_details.created.cmp(&b.version_details.created),
+        Field::Physical => a.object_root.cmp(&b.object_root),
+        Field::Digest => Ordering::Equal,
+        Field::None => Ordering::Equal,
     }
 }
 
-fn cmp_listings(field: &Field, a: &Listing, b: &Listing) -> Ordering {
+fn cmp_object_contents(field: &Field, a: &ContentListing, b: &ContentListing) -> Ordering {
     match field {
-        Field::Name => a.name.cmp(&b.name),
-        Field::Version => a.version_details.version_num.cmp(&b.version_details.version_num),
-        Field::Updated => a.version_details.created.cmp(&b.version_details.created),
+        Field::Name => natord::compare(&a.logical_path, &b.logical_path),
+        Field::Version => a.details.last_update.version_num.cmp(&b.details.last_update.version_num),
+        Field::Updated => a.details.last_update.created.cmp(&b.details.last_update.created),
+        Field::Physical => natord::compare(&a.details.storage_path, &b.details.storage_path),
+        Field::Digest => a.details.digest.cmp(&b.details.digest),
         Field::None => Ordering::Equal,
     }
 }
@@ -230,18 +273,9 @@ fn println(value: impl Display) {
 }
 
 #[derive(Debug)]
-struct Listing {
-    version_details: Rc<VersionDetails>,
-    name: String,
-    storage_path: String,
-    digest_algorithm: Option<Rc<String>>,
-    digest: Option<Rc<String>>,
-}
-
-#[derive(Debug)]
-struct FormatListing<'a> {
-    listing: &'a Listing,
-    command: &'a List,
+struct ContentListing {
+    logical_path: String,
+    details: FileDetails,
 }
 
 #[derive(Debug)]
@@ -253,68 +287,50 @@ struct FormatVersion<'a> {
 #[derive(Debug)]
 struct DiffLine(VersionDiff);
 
-impl Listing {
-    fn new(path: String, details: FileDetails) -> Self {
-        Self {
-            version_details: details.last_update,
-            name: path,
-            storage_path: details.storage_path,
-            digest_algorithm: Some(details.digest_algorithm),
-            digest: Some(details.digest),
-        }
-    }
+impl<'a> AsRow<'a> for ContentListing {
+    fn as_row(&'a self, columns: &[Column]) -> Row<'a> {
+        let mut cells = Vec::new();
 
-    fn updated_str(&self) -> String {
-        self.version_details.created.format(DATE_FORMAT).to_string()
-    }
-}
+        for column in columns {
+            let cell = match column.id {
+                ColumnId::Version => TextCell::new_owned(
+                    &self.details.last_update.version_num.to_string()),
+                ColumnId::Updated => TextCell::new_owned(
+                    &self.details.last_update.created.format(DATE_FORMAT).to_string()),
+                ColumnId::LogicalPath =>TextCell::new_ref(&self.logical_path),
+                ColumnId::PhysicalPath => TextCell::new_ref(&self.details.storage_path),
+                ColumnId::Digest => TextCell::new_owned(&format!("{}:{}",
+                                                               self.details.digest_algorithm,
+                                                               self.details.digest)),
+                _ => TextCell::blank()
+            };
 
-impl From<ObjectVersionDetails> for Listing {
-    fn from(object: ObjectVersionDetails) -> Self {
-        Self {
-            version_details: Rc::new(object.version_details),
-            name: object.id,
-            storage_path: object.object_root,
-            digest_algorithm: None,
-            digest: None,
+            cells.push(cell);
         }
+
+        Row::new(cells)
     }
 }
 
-impl<'a> FormatListing<'a> {
-    fn new(listing: &'a Listing, command: &'a List) -> Self {
-        Self {
-            listing,
-            command,
-        }
-    }
-}
+impl<'a> AsRow<'a> for ObjectVersionDetails {
+    fn as_row(&'a self, columns: &[Column]) -> Row<'a> {
+        let mut cells = Vec::new();
 
-impl<'a> fmt::Display for FormatListing<'a> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        // TODO figure out length for id
-        // TODO allow time to be formatted as UTC or local?
+        for column in columns {
+            let cell = match column.id {
+                ColumnId::Version => TextCell::new_owned(
+                    &self.version_details.version_num.to_string()),
+                ColumnId::Updated => TextCell::new_owned(
+                    &self.version_details.created.format(DATE_FORMAT).to_string()),
+                ColumnId::ObjectId =>TextCell::new_ref(&self.id),
+                ColumnId::PhysicalPath => TextCell::new_ref(&self.object_root),
+                _ => TextCell::blank()
+            };
 
-        if self.command.long {
-            write!(f, "{version:>5}\t{updated:<19}\t{name:<42}",
-                   // For some reason the formatting is not applied to the output of VersionId::fmt()
-                   version = self.listing.version_details.version_num.to_string(),
-                   updated = self.listing.updated_str(),
-                   name = self.listing.name)?;
-        } else {
-            write!(f, "{:<42}", self.listing.name)?;
+            cells.push(cell);
         }
 
-        if self.command.physical {
-            write!(f, "\t{}", self.listing.storage_path)?;
-        }
-
-        if self.command.digest && self.listing.digest.is_some() {
-            write!(f, "\t{}:{}", self.listing.digest_algorithm.as_ref().unwrap(),
-                   self.listing.digest.as_ref().unwrap())?;
-        }
-
-        Ok(())
+        Row::new(cells)
     }
 }
 

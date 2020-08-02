@@ -54,7 +54,7 @@ pub enum Command {
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct List {
-    /// Enables long output format: version, updated, name
+    /// Enables long output format: Version, Updated, Name (Object ID or Logical Path)
     #[structopt(short, long)]
     pub long: bool,
 
@@ -66,12 +66,15 @@ pub struct List {
     #[structopt(short, long)]
     pub digest: bool,
 
+    /// Displays a header row
+    #[structopt(short, long)]
+    pub header: bool,
+
     /// Specifies the version of the object to list
     #[structopt(short, long, value_name = "VERSION")]
     pub version: Option<VersionNum>,
 
-    // TODO allow sorting on storage path and digest
-    /// Specifies the field to sort on. Sort is not supported when listing objects.
+    /// Specifies the field to sort on.
     #[structopt(short, long, value_name = "FIELD", possible_values = &Field::variants(), default_value = "Name", case_insensitive = true)]
     pub sort: Field,
 
@@ -164,6 +167,8 @@ arg_enum! {
         Name,
         Version,
         Updated,
+        Physical,
+        Digest,
         None
     }
 }
