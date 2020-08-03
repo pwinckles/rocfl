@@ -70,6 +70,10 @@ pub struct List {
     #[structopt(short, long)]
     pub header: bool,
 
+    /// Tab separate the output
+    #[structopt(short, long)]
+    pub tsv: bool,
+
     /// Specifies the version of the object to list
     #[structopt(short, long, value_name = "VERSION")]
     pub version: Option<VersionNum>,
@@ -106,6 +110,14 @@ pub struct Log {
     /// Enables compact format
     #[structopt(short, long)]
     pub compact: bool,
+
+    /// Displays a header row, only with compact format
+    #[structopt(short, long)]
+    pub header: bool,
+
+    /// Tab separate the output, only with compact format
+    #[structopt(short, long)]
+    pub tsv: bool,
 
     /// Reverses the direction the versions are displayed
     #[structopt(short, long)]

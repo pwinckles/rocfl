@@ -32,7 +32,7 @@ pub fn log_command(repo: &OcflRepo, command: &Log) -> Result<()> {
 
 fn print_versions(versions: &[VersionDetails], command: &Log) -> Result<()> {
     if command.compact {
-        let mut table = version_table();
+        let mut table = version_table(command);
         versions.iter().for_each(|version| table.add_row(version));
         Ok(table.write_stdio()?)
     } else {
@@ -85,7 +85,7 @@ fn println(value: impl Display) -> Result<()> {
     }
 }
 
-fn version_table<'a>() -> TableView<'a> {
+fn version_table<'a>(command: &Log) -> TableView<'a> {
     let mut columns = Vec::new();
 
     columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
@@ -94,7 +94,15 @@ fn version_table<'a>() -> TableView<'a> {
     columns.push(Column::new(ColumnId::Created, "Created", Alignment::Left));
     columns.push(Column::new(ColumnId::Message, "Message", Alignment::Left));
 
-    TableView::new(columns, false)
+    TableView::new(columns, &separator(command), command.header)
+}
+
+fn separator(command: &Log) -> String {
+    if command.tsv {
+        "\t".to_string()
+    } else {
+        " ".to_string()
+    }
 }
 
 #[derive(Debug)]

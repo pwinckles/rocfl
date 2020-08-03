@@ -49,14 +49,16 @@ pub struct TableView<'a> {
     display_header: bool,
     columns: Vec<Column>,
     rows: Vec<Row<'a>>,
+    separator: String,
 }
 
 impl<'a> TableView<'a> {
-    pub fn new(columns: Vec<Column>, display_header: bool) -> Self {
+    pub fn new(columns: Vec<Column>, separator: &str, display_header: bool) -> Self {
         let mut table = Self {
             display_header,
             columns,
             rows: Vec::new(),
+            separator: separator.to_owned(),
         };
 
         if display_header {
@@ -95,7 +97,7 @@ impl<'a> TableView<'a> {
         }
 
         for row in self.rows.iter() {
-            row.write(writer, &self.columns)?;
+            row.write(writer, &self.columns, &self.separator)?;
         }
 
         Ok(())
@@ -109,7 +111,7 @@ impl<'a> TableView<'a> {
             column.as_cell().write(writer, column.width, Alignment::Left)?;
             next = iter.next();
             if next.is_some() {
-                write!(writer, " ")?;
+                write!(writer, "{}", self.separator)?;
             }
         }
 
@@ -149,7 +151,7 @@ impl<'a> Row<'a> {
         }
     }
 
-    fn write(&self, writer: &mut impl Write, columns: &[Column]) -> Result<()> {
+    fn write(&self, writer: &mut impl Write, columns: &[Column], separator: &str) -> Result<()> {
         let mut iter = self.cells.iter().zip(columns);
         let mut next = iter.next();
 
@@ -157,7 +159,7 @@ impl<'a> Row<'a> {
             cell.write(writer, column.width, column.alignment)?;
             next = iter.next();
             if next.is_some() {
-                write!(writer, " ")?;
+                write!(writer, "{}", &separator)?;
             }
         }
 

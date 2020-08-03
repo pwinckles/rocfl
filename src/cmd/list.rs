@@ -96,7 +96,7 @@ fn object_table(command: &List) -> TableView {
         columns.push(Column::new(ColumnId::PhysicalPath, "Physical Path", Alignment::Left));
     }
 
-    TableView::new(columns, command.header)
+    TableView::new(columns, &separator(&command), command.header)
 }
 
 fn object_content_table(command: &List) -> TableView {
@@ -117,7 +117,7 @@ fn object_content_table(command: &List) -> TableView {
         columns.push(Column::new(ColumnId::Digest, "Digest", Alignment::Left));
     }
 
-    TableView::new(columns, command.header)
+    TableView::new(columns, &separator(&command), command.header)
 }
 
 fn cmp_objects(field: &Field, a: &ObjectVersionDetails, b: &ObjectVersionDetails) -> Ordering {
@@ -139,6 +139,14 @@ fn cmp_object_contents(field: &Field, a: &ContentListing, b: &ContentListing) ->
         Field::Physical => natord::compare(&a.details.storage_path, &b.details.storage_path),
         Field::Digest => a.details.digest.cmp(&b.details.digest),
         Field::None => Ordering::Equal,
+    }
+}
+
+fn separator(command: &List) -> String {
+    if command.tsv {
+        "\t".to_string()
+    } else {
+        " ".to_string()
     }
 }
 
