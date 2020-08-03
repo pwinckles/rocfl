@@ -8,7 +8,7 @@ use lazy_static::lazy_static;
 
 use crate::cmd::DATE_FORMAT;
 use crate::cmd::opts::{Diff, Log, Show};
-use crate::cmd::print::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
+use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
 use crate::ocfl::{Diff as VersionDiff, DiffType, OcflRepo, VersionDetails, VersionNum};
 
 lazy_static! {

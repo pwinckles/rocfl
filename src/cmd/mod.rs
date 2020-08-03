@@ -10,7 +10,7 @@ use crate::cmd::opts::*;
 use crate::ocfl::OcflRepo;
 
 pub mod opts;
-mod print;
+mod table;
 mod list;
 mod diff;
 

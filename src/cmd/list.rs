@@ -6,7 +6,7 @@ use globset::GlobBuilder;
 use crate::cmd::{DATE_FORMAT, print_err};
 use crate::cmd::opts::*;
 use crate::cmd::opts::{List, RocflArgs};
-use crate::cmd::print::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
+use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
 use crate::ocfl::{FileDetails, ObjectVersionDetails, OcflRepo};
 
 pub fn list_command(repo: &OcflRepo, command: &List, args: &RocflArgs) -> Result<()> {
