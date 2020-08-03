@@ -87,7 +87,7 @@ fn object_table(command: &List) -> TableView {
 
     if command.long {
         columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
-        columns.push(Column::new(ColumnId::Updated, "Updated", Alignment::Left));
+        columns.push(Column::new(ColumnId::Created, "Updated", Alignment::Left));
     }
 
     columns.push(Column::new(ColumnId::ObjectId, "Object ID", Alignment::Left));
@@ -104,7 +104,7 @@ fn object_content_table(command: &List) -> TableView {
 
     if command.long {
         columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
-        columns.push(Column::new(ColumnId::Updated, "Updated", Alignment::Left));
+        columns.push(Column::new(ColumnId::Created, "Updated", Alignment::Left));
     }
 
     columns.push(Column::new(ColumnId::LogicalPath, "Logical Path", Alignment::Left));
@@ -156,7 +156,7 @@ impl<'a> AsRow<'a> for ContentListing {
             let cell = match column.id {
                 ColumnId::Version => TextCell::new_owned(
                     &self.details.last_update.version_num.to_string()),
-                ColumnId::Updated => TextCell::new_owned(
+                ColumnId::Created => TextCell::new_owned(
                     &self.details.last_update.created.format(DATE_FORMAT).to_string()),
                 ColumnId::LogicalPath =>TextCell::new_ref(&self.logical_path),
                 ColumnId::PhysicalPath => TextCell::new_ref(&self.details.storage_path),
@@ -181,7 +181,7 @@ impl<'a> AsRow<'a> for ObjectVersionDetails {
             let cell = match column.id {
                 ColumnId::Version => TextCell::new_owned(
                     &self.version_details.version_num.to_string()),
-                ColumnId::Updated => TextCell::new_owned(
+                ColumnId::Created => TextCell::new_owned(
                     &self.version_details.created.format(DATE_FORMAT).to_string()),
                 ColumnId::ObjectId =>TextCell::new_ref(&self.id),
                 ColumnId::PhysicalPath => TextCell::new_ref(&self.object_root),

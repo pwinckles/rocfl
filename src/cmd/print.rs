@@ -10,11 +10,14 @@ pub trait AsRow<'a> {
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub enum ColumnId {
     Version,
-    Updated,
+    Created,
     ObjectId,
     LogicalPath,
     PhysicalPath,
     Digest,
+    Author,
+    Address,
+    Message,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -74,11 +77,10 @@ impl<'a> TableView<'a> {
     pub fn write_stdio(&self) -> Result<()> {
         let mut writer = io::stdout();
         writer.lock();
-
         if let Err(e) = self.write(&mut writer) {
             match e.kind() {
                 ErrorKind::BrokenPipe => Ok(()),
-                _ => Err(e)
+                _ => Err(e),
             }
         } else {
             Ok(())
@@ -86,12 +88,14 @@ impl<'a> TableView<'a> {
     }
 
     pub fn write(&self, writer: &mut impl Write) -> Result<()> {
+        // TODO add styling
+        // TODO There's a bug here where the final column is padded when it should not be
         if self.display_header {
-            let _ = self.write_header(writer)?;
+            self.write_header(writer)?;
         }
 
         for row in self.rows.iter() {
-            let _ = row.write(writer, &self.columns)?;
+            row.write(writer, &self.columns)?;
         }
 
         Ok(())
@@ -102,10 +106,10 @@ impl<'a> TableView<'a> {
         let mut next = iter.next();
 
         while let Some(column) = next {
-            let _ = column.as_cell().write(writer, column.width, Alignment::Left)?;
+            column.as_cell().write(writer, column.width, Alignment::Left)?;
             next = iter.next();
             if next.is_some() {
-                let _ = write!(writer, " ")?;
+                write!(writer, " ")?;
             }
         }
 
@@ -150,10 +154,10 @@ impl<'a> Row<'a> {
         let mut next = iter.next();
 
         while let Some((cell, column)) = next {
-            let _ = cell.write(writer, column.width, column.alignment)?;
+            cell.write(writer, column.width, column.alignment)?;
             next = iter.next();
             if next.is_some() {
-                let _ = write!(writer, " ")?;
+                write!(writer, " ")?;
             }
         }
 
