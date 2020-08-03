@@ -20,7 +20,7 @@ pub enum ColumnId {
     Message,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Alignment {
     Left,
     Right,
@@ -91,7 +91,6 @@ impl<'a> TableView<'a> {
 
     pub fn write(&self, writer: &mut impl Write) -> Result<()> {
         // TODO add styling
-        // TODO There's a bug here where the final column is padded when it should not be
         if self.display_header {
             self.write_header(writer)?;
         }
@@ -108,8 +107,12 @@ impl<'a> TableView<'a> {
         let mut next = iter.next();
 
         while let Some(column) = next {
-            column.as_cell().write(writer, column.width, Alignment::Left)?;
             next = iter.next();
+
+            let width = if next.is_some() { column.width } else { 0 };
+
+            column.as_cell().write(writer, width, Alignment::Left)?;
+
             if next.is_some() {
                 write!(writer, "{}", self.separator)?;
             }
@@ -156,8 +159,16 @@ impl<'a> Row<'a> {
         let mut next = iter.next();
 
         while let Some((cell, column)) = next {
-            cell.write(writer, column.width, column.alignment)?;
             next = iter.next();
+
+            let width = if next.is_some() || column.alignment == Alignment::Right {
+                column.width
+            } else {
+                0
+            };
+
+            cell.write(writer, width, column.alignment)?;
+
             if next.is_some() {
                 write!(writer, "{}", &separator)?;
             }
