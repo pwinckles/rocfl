@@ -1,4 +1,5 @@
-use std::cmp;
+use std::{cmp, io};
+use std::io::{ErrorKind, Result, Write};
 
 use unicode_width::UnicodeWidthStr;
 
@@ -16,18 +17,18 @@ pub enum ColumnId {
     Digest,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Alignment {
+    Left,
+    Right,
+}
+
 #[derive(Debug)]
 pub struct Column {
     pub id: ColumnId,
     heading: String,
     alignment: Alignment,
     width: usize,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Alignment {
-    Left,
-    Right,
 }
 
 pub struct Row<'a> {
@@ -70,27 +71,45 @@ impl<'a> TableView<'a> {
         self.rows.push(row);
     }
 
-    pub fn write(&self) {
-        if self.display_header {
-            self.write_header();
+    pub fn write_stdio(&self) -> Result<()> {
+        let mut writer = io::stdout();
+        writer.lock();
+
+        if let Err(e) = self.write(&mut writer) {
+            match e.kind() {
+                ErrorKind::BrokenPipe => Ok(()),
+                _ => Err(e)
+            }
+        } else {
+            Ok(())
         }
-        self.rows.iter().for_each(|row| row.write(&self.columns));
     }
 
-    fn write_header(&self) {
+    pub fn write(&self, writer: &mut impl Write) -> Result<()> {
+        if self.display_header {
+            let _ = self.write_header(writer)?;
+        }
+
+        for row in self.rows.iter() {
+            let _ = row.write(writer, &self.columns)?;
+        }
+
+        Ok(())
+    }
+
+    fn write_header(&self, writer: &mut impl Write) -> Result<()> {
         let iter = &mut self.columns.iter();
         let mut next = iter.next();
 
         while let Some(column) = next {
-            column.as_cell().write(column.width, Alignment::Left);
+            let _ = column.as_cell().write(writer, column.width, Alignment::Left)?;
             next = iter.next();
             if next.is_some() {
-                // TODO
-                print!(" ")
+                let _ = write!(writer, " ")?;
             }
         }
 
-        println!()
+        writeln!(writer)
     }
 
     fn add_heading_widths(&mut self) {
@@ -126,20 +145,19 @@ impl<'a> Row<'a> {
         }
     }
 
-    fn write(&self, columns: &[Column]) {
+    fn write(&self, writer: &mut impl Write, columns: &[Column]) -> Result<()> {
         let mut iter = self.cells.iter().zip(columns);
         let mut next = iter.next();
 
         while let Some((cell, column)) = next {
-            cell.write(column.width, column.alignment);
+            let _ = cell.write(writer, column.width, column.alignment)?;
             next = iter.next();
             if next.is_some() {
-                // TODO
-                print!(" ")
+                let _ = write!(writer, " ")?;
             }
         }
 
-        println!()
+        writeln!(writer)
     }
 }
 
@@ -176,11 +194,10 @@ impl<'a> TextCell<'a> {
         }
     }
 
-    fn write(&self, width: usize, alignment: Alignment) {
-        // TODO change to write
+    fn write(&self, writer: &mut impl Write, width: usize, alignment: Alignment) -> Result<()> {
         match alignment {
-            Alignment::Left => print!("{:<width$}", self.value(), width = width),
-            Alignment::Right => print!("{:>width$}", self.value(), width = width)
+            Alignment::Left => write!(writer, "{:<width$}", self.value(), width = width),
+            Alignment::Right => write!(writer, "{:>width$}", self.value(), width = width)
         }
     }
 }

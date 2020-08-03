@@ -161,9 +161,7 @@ fn list_objects(repo: &OcflRepo, command: &List, args: &RocflArgs) -> Result<()>
 
     let mut table = object_table(&command);
     objects.iter().for_each(|object| table.add_row(object));
-    table.write();
-
-    Ok(())
+    Ok(table.write_stdio()?)
 }
 
 fn list_object_contents(repo: &OcflRepo, command: &List) -> Result<()> {
@@ -201,9 +199,7 @@ fn list_object_contents(repo: &OcflRepo, command: &List) -> Result<()> {
 
     let mut table = object_content_table(command);
     listings.iter().for_each(|listing| table.add_row(listing));
-    table.write();
-
-    Ok(())
+    Ok(table.write_stdio()?)
 }
 
 fn object_table(command: &List) -> TableView {
