@@ -5,6 +5,8 @@ use std::io::{ErrorKind, Result, Write};
 use ansi_term::Style;
 use unicode_width::UnicodeWidthStr;
 
+use crate::cmd::style;
+
 pub trait AsRow<'a> {
     fn as_row(&'a self, columns: &[Column]) -> Row<'a>;
 }
@@ -45,7 +47,7 @@ pub struct TextCell<'a> {
     value_owned: Option<String>,
     value_ref: Option<&'a str>,
     width: usize,
-    style: Style,
+    style: &'static Style,
 }
 
 pub struct TableView<'a> {
@@ -151,7 +153,7 @@ impl Column {
 
     fn heading_cell(&self) -> TextCell {
         let mut cell = TextCell::new_ref(&self.heading);
-        cell.style = Style::new().underline();
+        cell.style = &*style::UNDERLINE;
         cell
     }
 }
@@ -196,7 +198,7 @@ impl<'a> TextCell<'a> {
             width: UnicodeWidthStr::width(value),
             value_owned: Some(value.to_owned()),
             value_ref: None,
-            style: Style::default(),
+            style: &*style::DEFAULT,
         }
     }
 
@@ -205,7 +207,7 @@ impl<'a> TextCell<'a> {
             width: UnicodeWidthStr::width(value),
             value_owned: None,
             value_ref: Some(value),
-            style: Style::default(),
+            style: &*style::DEFAULT,
         }
     }
 
@@ -213,7 +215,7 @@ impl<'a> TextCell<'a> {
         Self::new_owned("")
     }
 
-    pub fn with_style(mut self, style: Style) -> Self {
+    pub fn with_style(mut self, style: &'static Style) -> Self {
         self.style = style;
         self
     }
@@ -244,7 +246,7 @@ impl<'a> TextCell<'a> {
         let style = if enable_style {
             self.style
         } else {
-            Style::default()
+            &*style::DEFAULT
         };
 
         match alignment {

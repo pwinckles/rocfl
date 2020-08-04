@@ -1,12 +1,12 @@
 use std::cmp::Ordering;
 
-use ansi_term::{Color, Style};
 use anyhow::{Context, Result};
 use globset::GlobBuilder;
 
 use crate::cmd::{DATE_FORMAT, eprintln};
 use crate::cmd::opts::*;
 use crate::cmd::opts::{List, RocflArgs};
+use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
 use crate::ocfl::{FileDetails, ObjectVersionDetails, OcflRepo};
 
@@ -184,12 +184,12 @@ impl<'a> AsRow<'a> for ContentListing {
             let cell = match column.id {
                 ColumnId::Version => TextCell::new_owned(
                     &self.details.last_update.version_num.to_string())
-                    .with_style(Style::new().fg(Color::Green)),
+                    .with_style(&*style::GREEN),
                 ColumnId::Created => TextCell::new_owned(
                     &self.details.last_update.created.format(DATE_FORMAT).to_string())
-                    .with_style(Style::new().fg(Color::Yellow)),
+                    .with_style(&*style::YELLOW),
                 ColumnId::LogicalPath =>TextCell::new_ref(&self.logical_path)
-                    .with_style(Style::new().bold()),
+                    .with_style(&*style::BOLD),
                 ColumnId::PhysicalPath => TextCell::new_ref(&self.details.storage_path),
                 ColumnId::Digest => TextCell::new_owned(&format!("{}:{}",
                                                                  self.details.digest_algorithm,
@@ -212,12 +212,12 @@ impl<'a> AsRow<'a> for ObjectVersionDetails {
             let cell = match column.id {
                 ColumnId::Version => TextCell::new_owned(
                     &self.version_details.version_num.to_string())
-                    .with_style(Style::new().fg(Color::Green)),
+                    .with_style(&*style::GREEN),
                 ColumnId::Created => TextCell::new_owned(
                     &self.version_details.created.format(DATE_FORMAT).to_string())
-                    .with_style(Style::new().fg(Color::Yellow)),
+                    .with_style(&*style::YELLOW),
                 ColumnId::ObjectId =>TextCell::new_ref(&self.id)
-                    .with_style(Style::new().bold()),
+                    .with_style(&*style::BOLD),
                 ColumnId::PhysicalPath => TextCell::new_ref(&self.object_root),
                 _ => TextCell::blank()
             };

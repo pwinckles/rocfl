@@ -11,9 +11,10 @@ use crate::cmd::opts::*;
 use crate::ocfl::OcflRepo;
 
 pub mod opts;
-mod table;
-mod list;
 mod diff;
+mod list;
+mod style;
+mod table;
 
 const DATE_FORMAT: &str = "%Y-%m-%d %H:%M";
 

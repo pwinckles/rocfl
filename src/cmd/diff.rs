@@ -2,17 +2,20 @@ use core::fmt;
 use std::cmp::Ordering;
 use std::fmt::Formatter;
 
-use ansi_term::{Color, Style};
 use anyhow::Result;
 use lazy_static::lazy_static;
 
 use crate::cmd::{DATE_FORMAT, println};
 use crate::cmd::opts::{Diff, Log, RocflArgs, Show};
+use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
 use crate::ocfl::{Diff as VersionDiff, DiffType, OcflRepo, VersionDetails};
 
 lazy_static! {
-    static ref DEFAULT_USER: String = "NA".to_string();
+    static ref DEFAULT_USER: String = "NA".to_owned();
+    static ref ADDED: String = "A".to_owned();
+    static ref MODIFIED: String = "M".to_owned();
+    static ref DELETED: String = "D".to_owned();
 }
 
 pub fn log_command(repo: &OcflRepo, command: &Log, args: &RocflArgs) -> Result<()> {
@@ -192,9 +195,9 @@ impl fmt::Display for FormatVersion<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let version = format!("Version {}", self.details.version_num.number);
         let style = if self.enable_styling {
-            Style::new().fg(Color::Yellow)
+            &*style::YELLOW
         } else {
-            Style::default()
+            &*style::DEFAULT
         };
 
         write!(f, "{}\n{:width$} {} <{}>\n{:width$} {}\n{:width$} {}\n",
@@ -219,17 +222,16 @@ impl DiffLine {
 
 impl fmt::Display for DiffLine {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        // TODO see about statically initializing these
         let (letter, style) = match self.diff.diff_type {
-            DiffType::Added => ("A", Style::new().fg(Color::Green)),
-            DiffType::Modified => ("M", Style::new().fg(Color::Cyan)),
-            DiffType::Deleted => ("D", Style::new().fg(Color::Red)),
+            DiffType::Added => (&*ADDED, &*style::GREEN),
+            DiffType::Modified => (&*MODIFIED, &*style::CYAN),
+            DiffType::Deleted => (&*DELETED, &*style::RED),
         };
 
         let style = if self.enable_styling {
             style
         } else {
-            Style::default()
+            &*style::DEFAULT
         };
 
         write!(f, "{}\t{}", style.paint(letter), self.diff.path)
@@ -263,15 +265,15 @@ impl<'a> AsRow<'a> for VersionDetails {
         for column in columns {
             let cell = match column.id {
                 ColumnId::Version => TextCell::new_owned(&self.version_num.to_string())
-                    .with_style(Style::new().fg(Color::Green)),
+                    .with_style(&*style::GREEN),
                 ColumnId::Author => TextCell::new_owned(
-                    self.user_name.as_ref().unwrap_or(&(*DEFAULT_USER)))
-                    .with_style(Style::new().bold()),
+                    self.user_name.as_ref().unwrap_or(&*DEFAULT_USER))
+                    .with_style(&*style::BOLD),
                 ColumnId::Address =>TextCell::new_owned(
-                    self.user_address.as_ref().unwrap_or(&(*DEFAULT_USER))),
+                    self.user_address.as_ref().unwrap_or(&*DEFAULT_USER)),
                 ColumnId::Created => TextCell::new_owned(
                     &self.created.format(DATE_FORMAT).to_string())
-                    .with_style(Style::new().fg(Color::Yellow)),
+                    .with_style(&*style::YELLOW),
                 ColumnId::Message => TextCell::new_owned(
                     self.message.as_ref().unwrap_or(&"".to_string())),
                 _ => TextCell::blank()
