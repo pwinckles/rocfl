@@ -32,6 +32,10 @@ pub struct RocflArgs {
     #[structopt(short, long)]
     pub quiet: bool,
 
+    /// Disables all output styling
+    #[structopt(short = "S", long)]
+    pub no_styles: bool,
+
     /// Subcommand to execute
     #[structopt(subcommand)]
     pub command: Command,

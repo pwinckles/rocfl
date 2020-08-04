@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use ansi_term::{Color, Style};
 use anyhow::{Context, Result};
 use globset::GlobBuilder;
 
@@ -13,7 +14,7 @@ pub fn list_command(repo: &OcflRepo, command: &List, args: &RocflArgs) -> Result
     if command.objects || command.object_id.is_none() {
         list_objects(repo, command, args)
     } else {
-        list_object_contents(repo, command)
+        list_object_contents(repo, command, args)
     }
 }
 
@@ -39,12 +40,12 @@ fn list_objects(repo: &OcflRepo, command: &List, args: &RocflArgs) -> Result<()>
         }
     });
 
-    let mut table = object_table(&command);
+    let mut table = object_table(&command, args);
     objects.iter().for_each(|object| table.add_row(object));
     Ok(table.write_stdio()?)
 }
 
-fn list_object_contents(repo: &OcflRepo, command: &List) -> Result<()> {
+fn list_object_contents(repo: &OcflRepo, command: &List, args: &RocflArgs) -> Result<()> {
     let object_id = command.object_id.as_ref().unwrap();
     let object = repo.get_object(object_id, command.version.as_ref())
         .with_context(|| "Failed to list object")?;
@@ -77,12 +78,12 @@ fn list_object_contents(repo: &OcflRepo, command: &List) -> Result<()> {
         }
     });
 
-    let mut table = object_content_table(command);
+    let mut table = object_content_table(command, args);
     listings.iter().for_each(|listing| table.add_row(listing));
     Ok(table.write_stdio()?)
 }
 
-fn object_table(command: &List) -> TableView {
+fn object_table<'a, 'b>(command: &'a List, args: &'a RocflArgs) -> TableView<'b> {
     let mut columns = Vec::new();
 
     if command.long {
@@ -96,10 +97,10 @@ fn object_table(command: &List) -> TableView {
         columns.push(Column::new(ColumnId::PhysicalPath, "Physical Path", Alignment::Left));
     }
 
-    TableView::new(columns, &separator(&command), command.header)
+    TableView::new(columns, &separator(&command), command.header, !args.no_styles)
 }
 
-fn object_content_table(command: &List) -> TableView {
+fn object_content_table<'a, 'b>(command: &'a List, args: &'a RocflArgs) -> TableView<'b> {
     let mut columns = Vec::new();
 
     if command.long {
@@ -117,7 +118,7 @@ fn object_content_table(command: &List) -> TableView {
         columns.push(Column::new(ColumnId::Digest, "Digest", Alignment::Left));
     }
 
-    TableView::new(columns, &separator(&command), command.header)
+    TableView::new(columns, &separator(&command), command.header, !args.no_styles)
 }
 
 fn cmp_objects(field: &Field, a: &ObjectVersionDetails, b: &ObjectVersionDetails) -> Ordering {
@@ -163,10 +164,13 @@ impl<'a> AsRow<'a> for ContentListing {
         for column in columns {
             let cell = match column.id {
                 ColumnId::Version => TextCell::new_owned(
-                    &self.details.last_update.version_num.to_string()),
+                    &self.details.last_update.version_num.to_string())
+                    .with_style(Style::new().fg(Color::Green)),
                 ColumnId::Created => TextCell::new_owned(
-                    &self.details.last_update.created.format(DATE_FORMAT).to_string()),
-                ColumnId::LogicalPath =>TextCell::new_ref(&self.logical_path),
+                    &self.details.last_update.created.format(DATE_FORMAT).to_string())
+                    .with_style(Style::new().fg(Color::Yellow)),
+                ColumnId::LogicalPath =>TextCell::new_ref(&self.logical_path)
+                    .with_style(Style::new().bold()),
                 ColumnId::PhysicalPath => TextCell::new_ref(&self.details.storage_path),
                 ColumnId::Digest => TextCell::new_owned(&format!("{}:{}",
                                                                  self.details.digest_algorithm,
@@ -188,10 +192,13 @@ impl<'a> AsRow<'a> for ObjectVersionDetails {
         for column in columns {
             let cell = match column.id {
                 ColumnId::Version => TextCell::new_owned(
-                    &self.version_details.version_num.to_string()),
+                    &self.version_details.version_num.to_string())
+                    .with_style(Style::new().fg(Color::Green)),
                 ColumnId::Created => TextCell::new_owned(
-                    &self.version_details.created.format(DATE_FORMAT).to_string()),
-                ColumnId::ObjectId =>TextCell::new_ref(&self.id),
+                    &self.version_details.created.format(DATE_FORMAT).to_string())
+                    .with_style(Style::new().fg(Color::Yellow)),
+                ColumnId::ObjectId =>TextCell::new_ref(&self.id)
+                    .with_style(Style::new().bold()),
                 ColumnId::PhysicalPath => TextCell::new_ref(&self.object_root),
                 _ => TextCell::blank()
             };

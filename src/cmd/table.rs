@@ -1,6 +1,8 @@
+use core::iter;
 use std::{cmp, io};
 use std::io::{ErrorKind, Result, Write};
 
+use ansi_term::Style;
 use unicode_width::UnicodeWidthStr;
 
 pub trait AsRow<'a> {
@@ -43,6 +45,7 @@ pub struct TextCell<'a> {
     value_owned: Option<String>,
     value_ref: Option<&'a str>,
     width: usize,
+    style: Style,
 }
 
 pub struct TableView<'a> {
@@ -50,15 +53,20 @@ pub struct TableView<'a> {
     columns: Vec<Column>,
     rows: Vec<Row<'a>>,
     separator: String,
+    enable_styling: bool,
 }
 
 impl<'a> TableView<'a> {
-    pub fn new(columns: Vec<Column>, separator: &str, display_header: bool) -> Self {
+    pub fn new(columns: Vec<Column>,
+               separator: &str,
+               display_header: bool,
+               enable_styling: bool) -> Self {
         let mut table = Self {
             display_header,
             columns,
             rows: Vec::new(),
             separator: separator.to_owned(),
+            enable_styling,
         };
 
         if display_header {
@@ -90,13 +98,12 @@ impl<'a> TableView<'a> {
     }
 
     pub fn write(&self, writer: &mut impl Write) -> Result<()> {
-        // TODO add styling
         if self.display_header {
             self.write_header(writer)?;
         }
 
         for row in self.rows.iter() {
-            row.write(writer, &self.columns, &self.separator)?;
+            row.write(writer, &self.columns, &self.separator, self.enable_styling)?;
         }
 
         Ok(())
@@ -111,7 +118,7 @@ impl<'a> TableView<'a> {
 
             let width = if next.is_some() { column.width } else { 0 };
 
-            column.as_cell().write(writer, width, Alignment::Left)?;
+            column.heading_cell().write(writer, width, Alignment::Left, self.enable_styling)?;
 
             if next.is_some() {
                 write!(writer, "{}", self.separator)?;
@@ -142,8 +149,10 @@ impl Column {
         self.width = cmp::max(self.width, new_width);
     }
 
-    fn as_cell(&self) -> TextCell {
-        TextCell::new_ref(&self.heading)
+    fn heading_cell(&self) -> TextCell {
+        let mut cell = TextCell::new_ref(&self.heading);
+        cell.style = Style::new().underline();
+        cell
     }
 }
 
@@ -154,7 +163,10 @@ impl<'a> Row<'a> {
         }
     }
 
-    fn write(&self, writer: &mut impl Write, columns: &[Column], separator: &str) -> Result<()> {
+    fn write(&self, writer: &mut impl Write,
+             columns: &[Column],
+             separator: &str,
+             enable_styling: bool) -> Result<()> {
         let mut iter = self.cells.iter().zip(columns);
         let mut next = iter.next();
 
@@ -167,7 +179,7 @@ impl<'a> Row<'a> {
                 0
             };
 
-            cell.write(writer, width, column.alignment)?;
+            cell.write(writer, width, column.alignment, enable_styling)?;
 
             if next.is_some() {
                 write!(writer, "{}", &separator)?;
@@ -184,6 +196,7 @@ impl<'a> TextCell<'a> {
             width: UnicodeWidthStr::width(value),
             value_owned: Some(value.to_owned()),
             value_ref: None,
+            style: Style::default(),
         }
     }
 
@@ -192,11 +205,17 @@ impl<'a> TextCell<'a> {
             width: UnicodeWidthStr::width(value),
             value_owned: None,
             value_ref: Some(value),
+            style: Style::default(),
         }
     }
 
     pub fn blank() -> Self {
         Self::new_owned("")
+    }
+
+    pub fn with_style(mut self, style: Style) -> Self {
+        self.style = style;
+        self
     }
 
     fn width(&self) -> usize {
@@ -211,10 +230,26 @@ impl<'a> TextCell<'a> {
         }
     }
 
-    fn write(&self, writer: &mut impl Write, width: usize, alignment: Alignment) -> Result<()> {
+    fn write(&self, writer: &mut impl Write,
+             width: usize,
+             alignment: Alignment,
+             enable_style: bool) -> Result<()> {
+
+        let spaces: String = if width == 0 {
+            "".to_owned()
+        } else {
+            iter::repeat(' ').take(width - self.width).collect()
+        };
+
+        let style = if enable_style {
+            self.style
+        } else {
+            Style::default()
+        };
+
         match alignment {
-            Alignment::Left => write!(writer, "{:<width$}", self.value(), width = width),
-            Alignment::Right => write!(writer, "{:>width$}", self.value(), width = width)
+            Alignment::Left => write!(writer, "{}{}", style.paint(self.value()), spaces),
+            Alignment::Right => write!(writer, "{}{}", spaces, style.paint(self.value()))
         }
     }
 }

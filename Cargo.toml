@@ -15,6 +15,7 @@ name = "rocfl"
 path = "src/bin/rocfl.rs"
 
 [dependencies]
+ansi_term = "0.12"
 anyhow = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 clap = "2"
@@ -31,7 +32,6 @@ rusoto_s3 = "0.45"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 structopt = "0.3"
-termcolor = "1.1"
 thiserror = "1.0"
 tokio = "0.2"
 unicode-width = "0.1"
