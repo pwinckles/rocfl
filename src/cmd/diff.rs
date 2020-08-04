@@ -10,76 +10,164 @@ use lazy_static::lazy_static;
 use crate::cmd::DATE_FORMAT;
 use crate::cmd::opts::{Diff, Log, RocflArgs, Show};
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
-use crate::ocfl::{Diff as VersionDiff, DiffType, OcflRepo, VersionDetails, VersionNum};
+use crate::ocfl::{Diff as VersionDiff, DiffType, OcflRepo, VersionDetails};
 
 lazy_static! {
     static ref DEFAULT_USER: String = "NA".to_string();
 }
 
-// TODO implement command structs
-
 pub fn log_command(repo: &OcflRepo, command: &Log, args: &RocflArgs) -> Result<()> {
-    let mut versions = match &command.path {
-        Some(path) => repo.list_file_versions(&command.object_id, path)?,
-        None => repo.list_object_versions(&command.object_id)?,
-    };
-
-    if command.reverse {
-        versions.reverse();
-    }
-
-    versions.truncate(command.num.0);
-
-    print_versions(&versions, command, args)
+    LogCmd::new(repo, command, args).execute()
 }
 
-fn print_versions(versions: &[VersionDetails], command: &Log, args: &RocflArgs) -> Result<()> {
-    if command.compact {
-        let mut table = version_table(command, args);
-        versions.iter().for_each(|version| table.add_row(version));
-        Ok(table.write_stdio()?)
-    } else {
-        for version in versions {
-            println(FormatVersion::new(version, !args.no_styles))?
+pub fn show_command(repo: &OcflRepo, command: &Show, args: &RocflArgs) -> Result<()> {
+    ShowCmd::new(repo, command, args).execute()
+}
+
+pub fn diff_command(repo: &OcflRepo, command: &Diff, args: &RocflArgs) -> Result<()> {
+    DiffCmd::new(repo, command, args).execute()
+}
+
+struct LogCmd<'a> {
+    repo: &'a OcflRepo,
+    command: &'a Log,
+    args: &'a RocflArgs,
+}
+
+struct ShowCmd<'a> {
+    repo: &'a OcflRepo,
+    command: &'a Show,
+    args: &'a RocflArgs,
+}
+
+struct DiffCmd<'a> {
+    repo: &'a OcflRepo,
+    command: &'a Diff,
+    args: &'a RocflArgs,
+}
+
+impl<'a> LogCmd<'a> {
+    fn new(repo: &'a OcflRepo, command: &'a Log, args: &'a RocflArgs) -> Self {
+        Self {
+            repo,
+            command,
+            args,
         }
+    }
+
+    fn execute(&self) -> Result<()> {
+        let mut versions = match &self.command.path {
+            Some(path) => self.repo.list_file_versions(&self.command.object_id, path)?,
+            None => self.repo.list_object_versions(&self.command.object_id)?,
+        };
+
+        if self.command.reverse {
+            versions.reverse();
+        }
+
+        versions.truncate(self.command.num.0);
+
+        self.print_versions(&versions)
+    }
+
+    fn print_versions(&self, versions: &[VersionDetails]) -> Result<()> {
+        if self.command.compact {
+            let mut table = self.version_table();
+            versions.iter().for_each(|version| table.add_row(version));
+            Ok(table.write_stdio()?)
+        } else {
+            for version in versions {
+                println(FormatVersion::new(version, !self.args.no_styles))?
+            }
+            Ok(())
+        }
+    }
+
+    fn version_table(&self) -> TableView {
+        let mut columns = Vec::new();
+
+        columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
+        columns.push(Column::new(ColumnId::Author, "Author", Alignment::Left));
+        columns.push(Column::new(ColumnId::Address, "Address", Alignment::Left));
+        columns.push(Column::new(ColumnId::Created, "Created", Alignment::Left));
+        columns.push(Column::new(ColumnId::Message, "Message", Alignment::Left));
+
+        TableView::new(columns, &self.separator(), self.command.header, !self.args.no_styles)
+    }
+
+    fn separator(&self) -> String {
+        if self.command.tsv {
+            "\t".to_string()
+        } else {
+            " ".to_string()
+        }
+    }
+}
+
+impl<'a> ShowCmd<'a> {
+    fn new(repo: &'a OcflRepo, command: &'a Show, args: &'a RocflArgs) -> Self {
+        Self {
+            repo,
+            command,
+            args,
+        }
+    }
+
+    fn execute(&self) -> Result<()> {
+        let object = self.repo.get_object_details(&self.command.object_id,
+                                                  self.command.version.as_ref())?;
+
+        if !self.command.minimal {
+            println(FormatVersion::new(&object.version_details, !self.args.no_styles))?;
+        }
+
+        let right = &object.version_details.version_num;
+
+        let mut diffs: Vec<DiffLine> = self.repo.diff(&self.command.object_id, None, right)?
+            .into_iter()
+            .map(|diff| DiffLine::new(diff, !self.args.no_styles))
+            .collect();
+
+        diffs.sort_unstable();
+
+        for diff in diffs {
+            println(diff)?;
+        }
+
         Ok(())
     }
 }
 
-pub fn show_command(repo: &OcflRepo, command: &Show, args: &RocflArgs) -> Result<()> {
-    let object = repo.get_object_details(&command.object_id, command.version.as_ref())?;
-
-    if !command.minimal {
-        println(FormatVersion::new(&object.version_details, !args.no_styles))?;
+impl<'a> DiffCmd<'a> {
+    fn new(repo: &'a OcflRepo, command: &'a Diff, args: &'a RocflArgs) -> Self {
+        Self {
+            repo,
+            command,
+            args,
+        }
     }
 
-    diff_and_print(repo, &command.object_id, None, &object.version_details.version_num, args)
-}
+    fn execute(&self) -> Result<()> {
+        if self.command.left == self.command.right {
+            return Ok(());
+        }
 
-pub fn diff_command(repo: &OcflRepo, command: &Diff, args: &RocflArgs) -> Result<()> {
-    if command.left == command.right {
-        return Ok(());
+        let raw_diffs = self.repo.diff(&self.command.object_id,
+                                          Some(&self.command.left),
+                                          &self.command.right)?;
+
+        let mut diffs: Vec<DiffLine> = raw_diffs.into_iter()
+            .map(|diff| DiffLine::new(diff, !self.args.no_styles))
+            .collect();
+
+        diffs.sort_unstable();
+
+        for diff in diffs {
+            println(diff)?;
+        }
+
+        Ok(())
     }
-
-    diff_and_print(repo, &command.object_id, Some(&command.left), &command.right, args)
-}
-
-fn diff_and_print(repo: &OcflRepo,
-                  object_id: &str,
-                  left: Option<&VersionNum>,
-                  right: &VersionNum,
-                  args: &RocflArgs) -> Result<()> {
-
-    let mut diffs: Vec<DiffLine> = repo.diff(object_id, left, right)?
-        .into_iter().map(|diff| DiffLine::new(diff, !args.no_styles)).collect();
-
-    diffs.sort_unstable();
-
-    for diff in diffs {
-        println(diff)?;
-    }
-
-    Ok(())
 }
 
 fn println(value: impl Display) -> Result<()> {
@@ -93,33 +181,11 @@ fn println(value: impl Display) -> Result<()> {
     }
 }
 
-fn version_table<'a, 'b>(command: &'a Log, args: &'a RocflArgs) -> TableView<'b> {
-    let mut columns = Vec::new();
-
-    columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
-    columns.push(Column::new(ColumnId::Author, "Author", Alignment::Left));
-    columns.push(Column::new(ColumnId::Address, "Address", Alignment::Left));
-    columns.push(Column::new(ColumnId::Created, "Created", Alignment::Left));
-    columns.push(Column::new(ColumnId::Message, "Message", Alignment::Left));
-
-    TableView::new(columns, &separator(command), command.header, !args.no_styles)
-}
-
-fn separator(command: &Log) -> String {
-    if command.tsv {
-        "\t".to_string()
-    } else {
-        " ".to_string()
-    }
-}
-
-#[derive(Debug)]
 struct FormatVersion<'a> {
     details: &'a VersionDetails,
     enable_styling: bool,
 }
 
-#[derive(Debug)]
 struct DiffLine {
     diff: VersionDiff,
     enable_styling: bool,

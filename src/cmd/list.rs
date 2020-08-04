@@ -11,114 +11,142 @@ use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, Text
 use crate::ocfl::{FileDetails, ObjectVersionDetails, OcflRepo};
 
 pub fn list_command(repo: &OcflRepo, command: &List, args: &RocflArgs) -> Result<()> {
-    if command.objects || command.object_id.is_none() {
-        list_objects(repo, command, args)
-    } else {
-        list_object_contents(repo, command, args)
-    }
+    ListCmd::new(repo, command, args).execute()
 }
 
-fn list_objects(repo: &OcflRepo, command: &List, args: &RocflArgs) -> Result<()> {
-    let iter = repo.list_objects(command.object_id.as_deref())
-        .with_context(|| "Failed to list objects")?;
+struct ListCmd<'a> {
+    repo: &'a OcflRepo,
+    command: &'a List,
+    args: &'a RocflArgs,
+}
 
-    let mut objects: Vec<ObjectVersionDetails> = iter.filter(|result| {
-        match result {
-            Ok(_) => true,
-            Err(e) => {
-                print_err(e, args.quiet);
-                false
-            }
+impl<'a> ListCmd<'a> {
+    fn new(repo: &'a OcflRepo, command: &'a List, args: &'a RocflArgs) -> Self {
+        Self {
+            repo,
+            command,
+            args,
         }
-    }).map(Result::unwrap).collect();
+    }
 
-    objects.sort_unstable_by(|a, b| {
-        if command.reverse {
-            cmp_objects(&command.sort, b, a)
+    fn execute(&self) -> Result<()> {
+        if self.command.objects || self.command.object_id.is_none() {
+            self.list_objects()
         } else {
-            cmp_objects(&command.sort, a, b)
+            self.list_object_contents()
         }
-    });
+    }
 
-    let mut table = object_table(&command, args);
-    objects.iter().for_each(|object| table.add_row(object));
-    Ok(table.write_stdio()?)
-}
+    fn list_objects(&self) -> Result<()> {
+        let iter = self.repo.list_objects(self.command.object_id.as_deref())
+            .with_context(|| "Failed to list objects")?;
 
-fn list_object_contents(repo: &OcflRepo, command: &List, args: &RocflArgs) -> Result<()> {
-    let object_id = command.object_id.as_ref().unwrap();
-    let object = repo.get_object(object_id, command.version.as_ref())
-        .with_context(|| "Failed to list object")?;
-
-    let glob = match command.path.as_ref() {
-        Some(path) => Some(GlobBuilder::new(path)
-            .literal_separator(command.glob_literal_separator)
-            .backslash_escape(true).build()?.compile_matcher()),
-        None => None
-    };
-
-    let mut listings: Vec<ContentListing> = object.state.into_iter()
-        .map(move |(path, details)| {
-            ContentListing {
-                logical_path: path,
-                details
+        let mut objects: Vec<ObjectVersionDetails> = iter.filter(|result| {
+            match result {
+                Ok(_) => true,
+                Err(e) => {
+                    print_err(e, self.args.quiet);
+                    false
+                }
             }
-        }).filter(|listing| {
-        match &glob {
-            Some(glob) => glob.is_match(&listing.logical_path),
-            None => true
-        }
-    }).collect();
+        }).map(Result::unwrap).collect();
 
-    listings.sort_unstable_by(|a, b| {
-        if command.reverse {
-            cmp_object_contents(&command.sort, b, a)
+        objects.sort_unstable_by(|a, b| {
+            if self.command.reverse {
+                cmp_objects(&self.command.sort, b, a)
+            } else {
+                cmp_objects(&self.command.sort, a, b)
+            }
+        });
+
+        let mut table = self.object_table();
+        objects.iter().for_each(|object| table.add_row(object));
+        Ok(table.write_stdio()?)
+    }
+
+    fn list_object_contents(&self,) -> Result<()> {
+        let object_id = self.command.object_id.as_ref().unwrap();
+        let object = self.repo.get_object(object_id, self.command.version.as_ref())
+            .with_context(|| "Failed to list object")?;
+
+        let glob = match self.command.path.as_ref() {
+            Some(path) => Some(GlobBuilder::new(path)
+                .literal_separator(self.command.glob_literal_separator)
+                .backslash_escape(true).build()?.compile_matcher()),
+            None => None
+        };
+
+        let mut listings: Vec<ContentListing> = object.state.into_iter()
+            .map(move |(path, details)| {
+                ContentListing {
+                    logical_path: path,
+                    details
+                }
+            }).filter(|listing| {
+            match &glob {
+                Some(glob) => glob.is_match(&listing.logical_path),
+                None => true
+            }
+        }).collect();
+
+        listings.sort_unstable_by(|a, b| {
+            if self.command.reverse {
+                cmp_object_contents(&self.command.sort, b, a)
+            } else {
+                cmp_object_contents(&self.command.sort, a, b)
+            }
+        });
+
+        let mut table = self.object_content_table();
+        listings.iter().for_each(|listing| table.add_row(listing));
+        Ok(table.write_stdio()?)
+    }
+
+    fn object_table(&self) -> TableView {
+        let mut columns = Vec::new();
+
+        if self.command.long {
+            columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
+            columns.push(Column::new(ColumnId::Created, "Updated", Alignment::Left));
+        }
+
+        columns.push(Column::new(ColumnId::ObjectId, "Object ID", Alignment::Left));
+
+        if self.command.physical {
+            columns.push(Column::new(ColumnId::PhysicalPath, "Physical Path", Alignment::Left));
+        }
+
+        TableView::new(columns, &self.separator(), self.command.header, !self.args.no_styles)
+    }
+
+    fn object_content_table(&self) -> TableView {
+        let mut columns = Vec::new();
+
+        if self.command.long {
+            columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
+            columns.push(Column::new(ColumnId::Created, "Updated", Alignment::Left));
+        }
+
+        columns.push(Column::new(ColumnId::LogicalPath, "Logical Path", Alignment::Left));
+
+        if self.command.physical {
+            columns.push(Column::new(ColumnId::PhysicalPath, "Physical Path", Alignment::Left));
+        }
+
+        if self.command.digest {
+            columns.push(Column::new(ColumnId::Digest, "Digest", Alignment::Left));
+        }
+
+        TableView::new(columns, &self.separator(), self.command.header, !self.args.no_styles)
+    }
+
+    fn separator(&self) -> String {
+        if self.command.tsv {
+            "\t".to_string()
         } else {
-            cmp_object_contents(&command.sort, a, b)
+            " ".to_string()
         }
-    });
-
-    let mut table = object_content_table(command, args);
-    listings.iter().for_each(|listing| table.add_row(listing));
-    Ok(table.write_stdio()?)
-}
-
-fn object_table<'a, 'b>(command: &'a List, args: &'a RocflArgs) -> TableView<'b> {
-    let mut columns = Vec::new();
-
-    if command.long {
-        columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
-        columns.push(Column::new(ColumnId::Created, "Updated", Alignment::Left));
     }
-
-    columns.push(Column::new(ColumnId::ObjectId, "Object ID", Alignment::Left));
-
-    if command.physical {
-        columns.push(Column::new(ColumnId::PhysicalPath, "Physical Path", Alignment::Left));
-    }
-
-    TableView::new(columns, &separator(&command), command.header, !args.no_styles)
-}
-
-fn object_content_table<'a, 'b>(command: &'a List, args: &'a RocflArgs) -> TableView<'b> {
-    let mut columns = Vec::new();
-
-    if command.long {
-        columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
-        columns.push(Column::new(ColumnId::Created, "Updated", Alignment::Left));
-    }
-
-    columns.push(Column::new(ColumnId::LogicalPath, "Logical Path", Alignment::Left));
-
-    if command.physical {
-        columns.push(Column::new(ColumnId::PhysicalPath, "Physical Path", Alignment::Left));
-    }
-
-    if command.digest {
-        columns.push(Column::new(ColumnId::Digest, "Digest", Alignment::Left));
-    }
-
-    TableView::new(columns, &separator(&command), command.header, !args.no_styles)
 }
 
 fn cmp_objects(field: &Field, a: &ObjectVersionDetails, b: &ObjectVersionDetails) -> Ordering {
@@ -143,15 +171,6 @@ fn cmp_object_contents(field: &Field, a: &ContentListing, b: &ContentListing) ->
     }
 }
 
-fn separator(command: &List) -> String {
-    if command.tsv {
-        "\t".to_string()
-    } else {
-        " ".to_string()
-    }
-}
-
-#[derive(Debug)]
 struct ContentListing {
     logical_path: String,
     details: FileDetails,
