@@ -1,3 +1,6 @@
+use std::fmt::Display;
+use std::io::{self, ErrorKind, Write};
+
 use ansi_term::Color;
 use anyhow::{Error, Result};
 use rusoto_core::Region;
@@ -24,9 +27,20 @@ pub fn exec_command(args: &RocflArgs) -> Result<()> {
     }
 }
 
-pub fn print_err(error: &Error, quiet: bool) {
+pub fn eprintln(error: &Error, quiet: bool) {
     if !quiet {
         eprintln!("{}", Color::Red.paint(format!("Error: {:#}", error)));
+    }
+}
+
+pub fn println(value: impl Display) -> Result<()> {
+    if let Err(e) = writeln!(io::stdout(), "{}", value) {
+        match e.kind() {
+            ErrorKind::BrokenPipe => Ok(()),
+            _ => Err(e.into()),
+        }
+    } else {
+        Ok(())
     }
 }
 

@@ -1,13 +1,12 @@
 use core::fmt;
 use std::cmp::Ordering;
-use std::fmt::{Display, Formatter};
-use std::io::{self, ErrorKind, Write};
+use std::fmt::Formatter;
 
 use ansi_term::{Color, Style};
 use anyhow::Result;
 use lazy_static::lazy_static;
 
-use crate::cmd::DATE_FORMAT;
+use crate::cmd::{DATE_FORMAT, println};
 use crate::cmd::opts::{Diff, Log, RocflArgs, Show};
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
 use crate::ocfl::{Diff as VersionDiff, DiffType, OcflRepo, VersionDetails};
@@ -166,17 +165,6 @@ impl<'a> DiffCmd<'a> {
             println(diff)?;
         }
 
-        Ok(())
-    }
-}
-
-fn println(value: impl Display) -> Result<()> {
-    if let Err(e) = writeln!(io::stdout(), "{}", value) {
-        match e.kind() {
-            ErrorKind::BrokenPipe => Ok(()),
-            _ => Err(e.into()),
-        }
-    } else {
         Ok(())
     }
 }

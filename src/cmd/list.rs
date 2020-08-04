@@ -4,7 +4,7 @@ use ansi_term::{Color, Style};
 use anyhow::{Context, Result};
 use globset::GlobBuilder;
 
-use crate::cmd::{DATE_FORMAT, print_err};
+use crate::cmd::{DATE_FORMAT, eprintln};
 use crate::cmd::opts::*;
 use crate::cmd::opts::{List, RocflArgs};
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
@@ -45,7 +45,7 @@ impl<'a> ListCmd<'a> {
             match result {
                 Ok(_) => true,
                 Err(e) => {
-                    print_err(e, self.args.quiet);
+                    eprintln(e, self.args.quiet);
                     false
                 }
             }
