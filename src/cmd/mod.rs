@@ -5,12 +5,14 @@ use ansi_term::Color;
 use anyhow::{Error, Result};
 use rusoto_core::Region;
 
+use crate::cmd::cat::cat_command;
 use crate::cmd::diff::{diff_command, log_command, show_command};
 use crate::cmd::list::list_command;
 use crate::cmd::opts::*;
 use crate::ocfl::OcflRepo;
 
 pub mod opts;
+mod cat;
 mod diff;
 mod list;
 mod style;
@@ -25,6 +27,7 @@ pub fn exec_command(args: &RocflArgs) -> Result<()> {
         Command::Log(log) => log_command(&repo, &log, args),
         Command::Show(show) => show_command(&repo, &show, args),
         Command::Diff(diff) => diff_command(&repo, &diff, args),
+        Command::Cat(cat) => cat_command(&repo, &cat, args),
     }
 }
 

@@ -52,6 +52,8 @@ pub enum Command {
     Show(Show),
     #[structopt(name = "diff")]
     Diff(Diff),
+    #[structopt(name = "cat")]
+    Cat(Cat),
 }
 
 /// Lists objects or files within objects.
@@ -172,6 +174,23 @@ pub struct Diff {
     /// Right-hand side version
     #[structopt(name = "RIGHT_VERSION")]
     pub right: VersionNum,
+}
+
+/// Cats the specified file
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+pub struct Cat {
+    /// Specifies the version of the object to retrieve the file from
+    #[structopt(short, long, value_name = "VERSION")]
+    pub version: Option<VersionNum>,
+
+    /// ID of the object
+    #[structopt(name = "OBJECT")]
+    pub object_id: String,
+
+    /// Logical path of the file
+    #[structopt(name = "PATH")]
+    pub path: String,
 }
 
 #[derive(Debug)]
