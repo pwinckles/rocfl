@@ -2,7 +2,7 @@
 
 use std::cell::RefCell;
 use std::fs::{self, File, ReadDir};
-use std::io::Read;
+use std::io::{self, Read, Write};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
@@ -13,6 +13,8 @@ use grep_regex::RegexMatcher;
 use grep_searcher::Searcher;
 use grep_searcher::sinks::UTF8;
 use lazy_static::lazy_static;
+
+use crate::ocfl::VersionNum;
 
 use super::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_MARKER, OcflStore, ROOT_INVENTORY_FILE};
 
@@ -77,6 +79,26 @@ impl OcflStore for FsOcflStore {
             Some(glob) => InventoryIter::new_glob_matching(&self.storage_root, glob)?,
             None => InventoryIter::new(&self.storage_root, None)?
         }))
+    }
+
+    /// Writes the specified file to the sink.
+    ///
+    /// If the file cannot be found, then a `RocflError::NotFound` error is returned.
+    fn get_object_file(&self,
+                       object_id: &str,
+                       path: &str,
+                       version_num: Option<&VersionNum>,
+                       sink: Box<&mut dyn Write>) -> Result<()> {
+        let inventory = self.get_inventory(object_id)?;
+
+        let content_path = inventory.lookup_content_path_for_logical_path(path, version_num)?;
+        let storage_path = self.storage_root.join(&inventory.object_root).join(content_path);
+
+        let mut file = File::open(storage_path)?;
+
+        io::copy(&mut file, *sink)?;
+
+        Ok(())
     }
 }
 

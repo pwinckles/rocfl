@@ -1,6 +1,7 @@
 //! S3 OCFL storage implementation.
 
 use std::cell::RefCell;
+use std::io::Write;
 use std::ops::Deref;
 use std::vec::IntoIter;
 
@@ -10,6 +11,8 @@ use rusoto_core::{Region, RusotoError};
 use rusoto_s3::{GetObjectError, GetObjectRequest, ListObjectsV2Output, ListObjectsV2Request, S3, S3Client as RusotoS3Client};
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
+
+use crate::ocfl::VersionNum;
 
 use super::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_MARKER, OcflStore, ROOT_INVENTORY_FILE};
 
@@ -57,6 +60,22 @@ impl OcflStore for S3OcflStore {
             Some(glob) => InventoryIter::new_glob_matching(&self.s3_client, glob)?,
             None => InventoryIter::new(&self.s3_client, None)
         }))
+    }
+
+    /// Writes the specified file to the sink.
+    ///
+    /// If the file cannot be found, then a `RocflError::NotFound` error is returned.
+    fn get_object_file(&self,
+                       object_id: &str,
+                       path: &str,
+                       version_num: Option<&VersionNum>,
+                       sink: Box<&mut dyn Write>) -> Result<()> {
+        let inventory = self.get_inventory(object_id)?;
+
+        let content_path = inventory.lookup_content_path_for_logical_path(path, version_num)?;
+        let storage_path = join(&inventory.object_root, content_path);
+
+        self.s3_client.stream_object(&storage_path, sink)
     }
 }
 
@@ -157,6 +176,35 @@ impl S3Client {
                 })
             }
             Err(RusotoError::Service(GetObjectError::NoSuchKey(_e))) => Ok(None),
+            Err(e) => Err(e.into())
+        }
+    }
+
+    fn stream_object(&self, path: &str, sink: Box<&mut dyn Write>) -> Result<()> {
+        let key = join(&self.prefix, &path);
+
+        let result = self.runtime.borrow_mut().block_on(self.s3_client.get_object(GetObjectRequest {
+            bucket: self.bucket.clone(),
+            key,
+            ..Default::default()
+        }));
+
+        match result {
+            Ok(result) => {
+                self.runtime.borrow_mut().block_on(async move {
+                    let mut reader = result.body.unwrap().into_async_read();
+                    let mut buf = [0; 8192];
+                    loop {
+                        let read = reader.read(&mut buf).await?;
+                        if read == 0 {
+                            break;
+                        }
+                        (*sink).write(&buf)?;
+                    }
+                    (*sink).write("\n".as_bytes())?;
+                    Ok(())
+                })
+            }
             Err(e) => Err(e.into())
         }
     }

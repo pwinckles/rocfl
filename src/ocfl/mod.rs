@@ -14,6 +14,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
+use std::io::Write;
 use std::ops::Deref;
 use std::path::{self, Path};
 use std::rc::Rc;
@@ -199,7 +200,9 @@ impl OcflRepo {
     ///
     /// If the object or version of the object cannot be found, then a `RocflError::NotFound`
     /// error is returned.
-    pub fn get_object_details(&self, object_id: &str, version_num: Option<&VersionNum>) -> Result<ObjectVersionDetails> {
+    pub fn get_object_details(&self,
+                              object_id: &str,
+                              version_num: Option<&VersionNum>) -> Result<ObjectVersionDetails> {
         let inventory = self.store.get_inventory(object_id)?;
         Ok(ObjectVersionDetails::from_inventory(inventory, version_num)?)
     }
@@ -217,6 +220,17 @@ impl OcflRepo {
         }
 
         Ok(versions)
+    }
+
+    /// Writes the specified file to the sink.
+    ///
+    /// If the file cannot be found, then a `RocflError::NotFound` error is returned.
+    pub fn get_object_file(&self,
+                           object_id: &str,
+                           path: &str,
+                           version_num: Option<&VersionNum>,
+                           sink: Box<&mut dyn Write>) -> Result<()> {
+        self.store.get_object_file(object_id, path, version_num, sink)
     }
 
     /// Returns a vector contain the version metadata for every version of an object that
@@ -481,7 +495,7 @@ impl ObjectVersion {
             // No versions left to compare to; any remaining files were last updated here
             if version_details.version_num.number == 1 {
                 for (target_path, target_digest) in target_path_map.into_iter() {
-                    let content_path = inventory.lookup_content_path(&target_digest)?.to_string();
+                    let content_path = inventory.lookup_content_path_by_digest(&target_digest)?.to_string();
                     state.insert(target_path, FileDetails::new(content_path,
                                                                target_digest,
                                                                Rc::clone(&digest_algorithm),
@@ -501,7 +515,7 @@ impl ObjectVersion {
                 let entry = previous_path_map.remove_entry(&target_path);
 
                 if entry.is_none() || entry.unwrap().1 != target_digest {
-                    let content_path = inventory.lookup_content_path(&target_digest)?.to_string();
+                    let content_path = inventory.lookup_content_path_by_digest(&target_digest)?.to_string();
                     state.insert(target_path, FileDetails::new(content_path,
                                                                target_digest,
                                                                Rc::clone(&digest_algorithm),
@@ -626,6 +640,15 @@ trait OcflStore {
     /// the most recent inventory of each. Optionally, a glob pattern may be provided that filters
     /// the objects that are returned by OCFL ID.
     fn iter_inventories<'a>(&'a self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<Inventory>> + 'a>>;
+
+    /// Writes the specified file to the sink.
+    ///
+    /// If the file cannot be found, then a `RocflError::NotFound` error is returned.
+    fn get_object_file(&self,
+                       object_id: &str,
+                       path: &str,
+                       version_num: Option<&VersionNum>,
+                       sink: Box<&mut dyn Write>) -> Result<()>;
 }
 
 /// OCFL inventory serialization object
@@ -706,7 +729,7 @@ impl Inventory {
 
     /// Returns the first content path associated with the specified digest, or an error if it does
     /// not exist.
-    fn lookup_content_path(&self, digest: &str) -> Result<&str> {
+    fn lookup_content_path_by_digest(&self, digest: &str) -> Result<&str> {
         match self.manifest.get(digest) {
             Some(paths) => {
                 match paths.first() {
@@ -722,6 +745,22 @@ impl Inventory {
                 message: format!("Digest {} not found in manifest", digest)
             }.into())
         }
+    }
+
+    fn lookup_content_path_for_logical_path(&self,
+                                            logical_path: &str,
+                                            version_num: Option<&VersionNum>) -> Result<&str> {
+        let version_num = version_num.unwrap_or_else(|| &self.head);
+        let version = self.get_version(&version_num)?;
+
+        let digest = match version.lookup_digest(&logical_path) {
+            Some(digest) => digest,
+            None => return Err(RocflError::NotFound(
+                format!("Path {} not found in object {} version {}",
+                        logical_path, self.id, version_num)).into())
+        };
+
+        self.lookup_content_path_by_digest(digest)
     }
 }
 
