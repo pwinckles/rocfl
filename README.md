@@ -177,6 +177,23 @@ Show the changes between the second and fourth versions:
 rocfl diff v2 v4
 ```
 
+### Cat
+
+The `cat` operation writes the contents of a file to `stdout`.
+
+#### Examples
+
+Display the contents of the head version of a file:
+
+```console
+rocfl cat foobar file1.txt
+```
+
+Display the contents of a file from a specific version of the object:
+
+```console
+rocfl cat -v1 foobar file1.txt
+```
 
 ## S3
 
