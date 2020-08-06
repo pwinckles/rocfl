@@ -69,7 +69,7 @@ impl OcflStore for S3OcflStore {
                        object_id: &str,
                        path: &str,
                        version_num: Option<&VersionNum>,
-                       sink: Box<&mut dyn Write>) -> Result<()> {
+                       sink: &mut dyn Write) -> Result<()> {
         let inventory = self.get_inventory(object_id)?;
 
         let content_path = inventory.lookup_content_path_for_logical_path(path, version_num)?;
@@ -180,7 +180,7 @@ impl S3Client {
         }
     }
 
-    fn stream_object(&self, path: &str, sink: Box<&mut dyn Write>) -> Result<()> {
+    fn stream_object(&self, path: &str, sink: &mut dyn Write) -> Result<()> {
         let key = join(&self.prefix, &path);
 
         let result = self.runtime.borrow_mut().block_on(self.s3_client.get_object(GetObjectRequest {
@@ -199,9 +199,8 @@ impl S3Client {
                         if read == 0 {
                             break;
                         }
-                        (*sink).write(&buf)?;
+                        sink.write_all(&buf[..read])?;
                     }
-                    (*sink).write("\n".as_bytes())?;
                     Ok(())
                 })
             }

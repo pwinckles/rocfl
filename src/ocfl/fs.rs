@@ -88,7 +88,7 @@ impl OcflStore for FsOcflStore {
                        object_id: &str,
                        path: &str,
                        version_num: Option<&VersionNum>,
-                       sink: Box<&mut dyn Write>) -> Result<()> {
+                       sink: &mut dyn Write) -> Result<()> {
         let inventory = self.get_inventory(object_id)?;
 
         let content_path = inventory.lookup_content_path_for_logical_path(path, version_num)?;
@@ -96,7 +96,7 @@ impl OcflStore for FsOcflStore {
 
         let mut file = File::open(storage_path)?;
 
-        io::copy(&mut file, *sink)?;
+        io::copy(&mut file, sink)?;
 
         Ok(())
     }

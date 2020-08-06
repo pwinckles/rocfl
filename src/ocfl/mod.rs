@@ -229,7 +229,7 @@ impl OcflRepo {
                            object_id: &str,
                            path: &str,
                            version_num: Option<&VersionNum>,
-                           sink: Box<&mut dyn Write>) -> Result<()> {
+                           sink: &mut dyn Write) -> Result<()> {
         self.store.get_object_file(object_id, path, version_num, sink)
     }
 
@@ -648,7 +648,7 @@ trait OcflStore {
                        object_id: &str,
                        path: &str,
                        version_num: Option<&VersionNum>,
-                       sink: Box<&mut dyn Write>) -> Result<()>;
+                       sink: &mut dyn Write) -> Result<()>;
 }
 
 /// OCFL inventory serialization object

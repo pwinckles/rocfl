@@ -28,6 +28,6 @@ impl<'a> CatCmd<'a> {
         self.repo.get_object_file(&self.command.object_id,
                                   &self.command.path,
                                   self.command.version.as_ref(),
-                                  Box::new(&mut io::stdout()))
+                                  &mut io::stdout())
     }
 }
