@@ -256,7 +256,7 @@ impl<'a> InventoryIter<'a> {
         // TODO should validate hash
         let mut inventory = self.parse_inventory_bytes(&inventory_bytes)
             .with_context(|| format!("Failed to parse inventory in object at {}", object_root))?;
-        inventory.object_root = strip_trailing_slash(object_root);
+        inventory.object_root = strip_leading_slash(strip_trailing_slash(object_root).as_str());
         Ok(inventory)
     }
 
@@ -362,6 +362,14 @@ fn join_with_trailing_slash(part1: &str, part2: &str) -> String {
 fn strip_trailing_slash(path: &str) -> String {
     if path.ends_with('/') {
         path[..path.len() - 1].to_owned()
+    } else {
+        path.to_owned()
+    }
+}
+
+fn strip_leading_slash(path: &str) -> String {
+    if path.starts_with('/') {
+        path[1..path.len()].to_owned()
     } else {
         path.to_owned()
     }
