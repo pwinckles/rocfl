@@ -13,7 +13,12 @@ script:
     if [ $TRAVIS_TAG == "" ]; then
       cargo build --verbose; cargo test --verbose;
     else
-      cargo build --verbose --release; cargo test --verbose;
+      if [[ $TRAVIS_OS_NAME == 'linux' ]]; then
+        rustup target add x86_64-unknown-linux-musl
+        cargo build --target x86_64-unknown-linux-musl --verbose --release; cargo test --verbose;
+      else
+        cargo build --verbose --release; cargo test --verbose;
+      fi
     fi
 before_deploy:
 - if [[ -f target/release/rocfl ]]; then mv target/release/rocfl target/release/rocfl-$TRAVIS_TAG-$TRAVIS_OS_NAME; fi
