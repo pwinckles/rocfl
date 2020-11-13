@@ -9,7 +9,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  release_linux:
+  linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -22,17 +22,14 @@ jobs:
         with:
           command: build
           args: --target x86_64-unknown-linux-musl --release
+          use-cross: true
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: rocfl-${{ runner.os }}
+          name: rocfl-linux-x86_64
           path: target/x86_64-unknown-linux-musl/release/rocfl
-  release:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ macos-latest, windows-latest ]
+  windows:
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -46,5 +43,22 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: rocfl-${{ runner.os }}
+          name: rocfl-windows-x86_64.exe
+          path: target/release/rocfl.exe
+  osx:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --verbose
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: rocfl-macos-x86_64
           path: target/release/rocfl
