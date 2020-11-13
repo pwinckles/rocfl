@@ -1,22 +1,31 @@
-on: [push]
-
 name: build
+
+on: [push]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+      strategy:
+        matrix:
+          os: [ macos-latest, ubuntu-latest, windows-latest ]
     steps:
       - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+          with:
+            toolchain: stable
       - run: rustup component add clippy
       - name: Build
-        run: cargo build --verbose
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
       - name: Run tests
-        run: cargo test --verbose
+        uses: actions-rs/cargo@v1
+          with:
+            command: test
       - name: Clippy
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features
