@@ -37,7 +37,7 @@ mod s3;
 
 const OBJECT_MARKER: &str = "0=ocfl_object_1.0";
 const ROOT_INVENTORY_FILE: &str = "inventory.json";
-const MUTABLE_HEAD_INVENTORY_FILE: &str = "extensions/0004-mutable-head/head/inventory.json";
+const MUTABLE_HEAD_INVENTORY_FILE: &str = "extensions/0005-mutable-head/head/inventory.json";
 
 lazy_static! {
     static ref VERSION_REGEX: Regex = Regex::new(r#"^v\d+$"#).unwrap();
