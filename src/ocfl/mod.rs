@@ -13,6 +13,7 @@ use core::fmt;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
+use std::fmt::Formatter;
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::ops::Deref;
@@ -26,7 +27,6 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use rusoto_core::Region;
 use serde::Deserialize;
-use serde::export::Formatter;
 use thiserror::Error;
 
 use self::fs::FsOcflStore;
