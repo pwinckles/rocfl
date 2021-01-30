@@ -750,7 +750,7 @@ impl Inventory {
     fn lookup_content_path_for_logical_path(&self,
                                             logical_path: &str,
                                             version_num: Option<&VersionNum>) -> Result<&str> {
-        let version_num = version_num.unwrap_or_else(|| &self.head);
+        let version_num = version_num.unwrap_or(&self.head);
         let version = self.get_version(&version_num)?;
 
         let digest = match version.lookup_digest(&logical_path) {

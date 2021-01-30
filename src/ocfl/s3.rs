@@ -360,8 +360,8 @@ fn join_with_trailing_slash(part1: &str, part2: &str) -> String {
 }
 
 fn strip_trailing_slash(path: &str) -> String {
-    if path.ends_with('/') {
-        path[..path.len() - 1].to_owned()
+    if let Some(stripped) = path.strip_suffix(path) {
+        stripped.to_owned()
     } else {
         path.to_owned()
     }
