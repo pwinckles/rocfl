@@ -15,27 +15,51 @@ name = "rocfl"
 path = "src/bin/rocfl.rs"
 
 [dependencies]
-ansi_term = "0.12"
-anyhow = "1.0"
+# General
+anyhow = "1"
+thiserror = "1"
 chrono = { version = "0.4", features = ["serde"] }
+enum_dispatch = "0.3"
+lazy_static = "1"
+natord = "1"
+percent-encoding="2"
+regex = "1"
+strum = "0.20"
+strum_macros = "0.20"
+unicode-width = "0.1"
+
+# CLI
+structopt = "0.3"
 clap = "2"
+ansi_term = "0.12"
+
+# Logging
+log = "0.4"
+env_logger = "0.8"
+
+# Digests
+digest = { version = "0.9", features = ["alloc"] }
+blake2 = "0.9"
+hex = "0.4"
+md-5 = "0.9"
+sha-1 = "0.9"
+sha2 = "0.9"
+
+# Search
 globset = "0.4"
 grep-matcher = "0.1"
 grep-searcher = "0.1"
 grep-regex = "0.1"
-lazy_static = "1.4"
-natord = "1"
-regex = "1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# AWS
 rusoto_core = { version = "0.46", default_features = false, features =["rustls"] }
 rusoto_credential = "0.46"
 rusoto_s3 = { version = "0.46", default_features = false, features = ["rustls"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-structopt = "0.3"
-thiserror = "1.0"
 tokio = "1"
-unicode-width = "0.1"
-urlencoding = "1.1"
 
 [dev-dependencies]
 maplit = "1"

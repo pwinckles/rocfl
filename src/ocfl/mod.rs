@@ -30,13 +30,19 @@ use serde::Deserialize;
 use thiserror::Error;
 
 use self::fs::FsOcflStore;
+use self::layout::LayoutExtensionName;
 use self::s3::S3OcflStore;
 
 mod fs;
 mod s3;
+mod layout;
 
 const OBJECT_MARKER: &str = "0=ocfl_object_1.0";
 const ROOT_INVENTORY_FILE: &str = "inventory.json";
+const OCFL_LAYOUT_FILE: &str = "ocfl_layout.json";
+const EXTENSIONS_DIR: &str = "extensions";
+const EXTENSIONS_CONFIG_FILE: &str = "config.json";
+
 const MUTABLE_HEAD_INVENTORY_FILE: &str = "extensions/0005-mutable-head/head/inventory.json";
 
 lazy_static! {
@@ -49,6 +55,8 @@ lazy_static! {
 
 /// Interface for interacting with an OCFL repository
 pub struct OcflRepo {
+    // TODO change to enum dispatch
+    // TODO other places to change?
     store: Box<dyn OcflStore>
 }
 
@@ -146,7 +154,13 @@ pub enum RocflError {
     #[error("Not found: {0}")]
     NotFound(String),
     #[error("Illegal argument: {0}")]
-    IllegalArgument(String)
+    IllegalArgument(String),
+    #[error("Invalid configuration: {0}")]
+    InvalidConfiguration(String),
+}
+
+pub trait Validate {
+    fn validate(&self) -> Result<()>;
 }
 
 // ================================================== //
@@ -686,6 +700,13 @@ struct User {
     address: Option<String>
 }
 
+/// ocfl_layout.json serialization object
+#[derive(Deserialize, Debug)]
+struct OcflLayout {
+    extension: LayoutExtensionName,
+    description: String
+}
+
 /// An iterator that adapts the output of a delegate `Inventory` iterator into another type.
 struct InventoryAdapterIter<'a, T> {
     iter: Box<dyn Iterator<Item=Result<Inventory>> + 'a>,
@@ -697,20 +718,6 @@ struct InventoryAdapterIter<'a, T> {
 // ================================================== //
 
 impl Inventory {
-    // TODO fill in more validations
-    // TODO have a shallow and a deep validation
-    /// Performs a spot check on the inventory to see if it appears valid. This is not an
-    /// exhaustive check, and does not guarantee that the inventory is valid.
-    pub fn validate(&self) -> Result<()> {
-        if !self.versions.contains_key(&self.head) {
-            return Err(RocflError::CorruptObject {
-                object_id: self.id.clone(),
-                message: format!("HEAD version {} was not found", self.head),
-            }.into())
-        }
-        Ok(())
-    }
-
     /// Returns a reference to the specified version or an error if it does not exist.
     fn get_version(&self, version_num: &VersionNum) -> Result<&Version> {
         match self.versions.get(version_num) {
@@ -761,6 +768,22 @@ impl Inventory {
         };
 
         self.lookup_content_path_by_digest(digest)
+    }
+}
+
+impl Validate for Inventory {
+    // TODO fill in more validations
+    // TODO have a shallow and a deep validation
+    /// Performs a spot check on the inventory to see if it appears valid. This is not an
+    /// exhaustive check, and does not guarantee that the inventory is valid.
+    fn validate(&self) -> Result<()> {
+        if !self.versions.contains_key(&self.head) {
+            return Err(RocflError::CorruptObject {
+                object_id: self.id.clone(),
+                message: format!("HEAD version {} was not found", self.head),
+            }.into())
+        }
+        Ok(())
     }
 }
 

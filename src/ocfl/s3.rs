@@ -2,17 +2,18 @@
 
 use std::cell::RefCell;
 use std::io::Write;
-use std::ops::Deref;
 use std::vec::IntoIter;
 
 use anyhow::{anyhow, Context, Result};
 use globset::GlobBuilder;
+use log::{error, info};
 use rusoto_core::{Region, RusotoError};
 use rusoto_s3::{GetObjectError, GetObjectRequest, ListObjectsV2Output, ListObjectsV2Request, S3, S3Client as RusotoS3Client};
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
 
-use crate::ocfl::VersionNum;
+use crate::ocfl::{EXTENSIONS_CONFIG_FILE, EXTENSIONS_DIR, OCFL_LAYOUT_FILE, OcflLayout, Validate, VersionNum};
+use crate::ocfl::layout::StorageLayout;
 
 use super::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_MARKER, OcflStore, ROOT_INVENTORY_FILE};
 
@@ -22,6 +23,8 @@ use super::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_MARKER, Oc
 
 pub struct S3OcflStore {
     s3_client: S3Client,
+    /// Maps object IDs to paths within the storage root
+    storage_layout: Option<StorageLayout>,
 }
 
 // ================================================== //
@@ -31,9 +34,56 @@ pub struct S3OcflStore {
 impl S3OcflStore {
     /// Creates a new S3OcflStore
     pub fn new(region: Region, bucket: &str, prefix: Option<&str>) -> Result<Self> {
+        let s3_client = S3Client::new(region, bucket, prefix)?;
+        let storage_layout = load_storage_layout(&s3_client);
+
         Ok(Self {
-            s3_client: S3Client::new(region, bucket, prefix)?
+            s3_client,
+            storage_layout
         })
+    }
+
+    /// Parses the HEAD inventory of the OCFL object that's rooted in the specified directory.
+    /// This is normally the `inventory.json` file in the object's root, but it could also be
+    /// the inventory file in an extension directory, such as the mutable HEAD extension.
+    fn parse_inventory(&self, object_root: &str) -> Result<Option<Inventory>> {
+        let bytes = self.get_inventory_bytes(&object_root)?;
+        // TODO should validate hash
+
+        if let Some(bytes) = bytes {
+            let mut inventory = self.parse_inventory_bytes(&bytes)
+                .with_context(|| format!("Failed to parse inventory in object at {}", object_root))?;
+            inventory.object_root = strip_leading_slash(strip_trailing_slash(object_root).as_str());
+            Ok(Some(inventory))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn parse_inventory_bytes(&self, bytes: &[u8]) -> Result<Inventory> {
+        let inventory: Inventory = serde_json::from_slice(bytes)?;
+        inventory.validate()?;
+        Ok(inventory)
+    }
+
+    fn get_inventory_bytes(&self, object_root: &str) -> Result<Option<Vec<u8>>> {
+        let mutable_head_inv = join(object_root, MUTABLE_HEAD_INVENTORY_FILE);
+
+        match self.s3_client.get_object(&mutable_head_inv)? {
+            Some(bytes) => Ok(Some(bytes)),
+            None => {
+                let inv_path = join(object_root, ROOT_INVENTORY_FILE);
+                match self.s3_client.get_object(&inv_path)? {
+                    Some(bytes) => Ok(Some(bytes)),
+                    None => Ok(None)
+                }
+            }
+        }
+    }
+
+    /// Pass through to S3 to list the contents of a path in S3
+    fn list_dir(&self, path: &str) -> Result<ListResult> {
+        self.s3_client.list_dir(path)
     }
 }
 
@@ -41,7 +91,16 @@ impl OcflStore for S3OcflStore {
     /// Returns the most recent inventory version for the specified object, or an a
     /// `RocflError::NotFound` if it does not exist.
     fn get_inventory(&self, object_id: &str) -> Result<Inventory> {
-        let mut iter = InventoryIter::new_id_matching(&self.s3_client, &object_id);
+        if let Some(storage_layout) = &self.storage_layout {
+            let object_root = storage_layout.map_object_id(object_id);
+
+            return match self.parse_inventory(&object_root)? {
+                Some(inventory) => Ok(inventory),
+                None => Err(not_found(&object_id, None).into())
+            };
+        }
+
+        let mut iter = InventoryIter::new_id_matching(&self, &object_id);
 
         loop {
             match iter.next() {
@@ -55,10 +114,11 @@ impl OcflStore for S3OcflStore {
     /// Returns an iterator that iterates over every object in an OCFL repository, returning
     /// the most recent inventory of each. Optionally, a glob pattern may be provided that filters
     /// the objects that are returned by OCFL ID.
-    fn iter_inventories<'a>(&'a self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<Inventory>> + 'a>> {
+    fn iter_inventories<'a>(&'a self, filter_glob: Option<&str>)
+        -> Result<Box<dyn Iterator<Item=Result<Inventory>> + 'a>> {
         Ok(Box::new(match filter_glob {
-            Some(glob) => InventoryIter::new_glob_matching(&self.s3_client, glob)?,
-            None => InventoryIter::new(&self.s3_client, None)
+            Some(glob) => InventoryIter::new_glob_matching(&self, glob)?,
+            None => InventoryIter::new(&self, None)
         }))
     }
 
@@ -96,7 +156,7 @@ struct ListResult {
 }
 
 struct InventoryIter<'a> {
-    s3_client: &'a S3Client,
+    store: &'a S3OcflStore,
     dir_iters: Vec<IntoIter<String>>,
     current: RefCell<Option<IntoIter<String>>>,
     id_matcher: Option<Box<dyn Fn(&str) -> bool>>,
@@ -211,73 +271,43 @@ impl S3Client {
 
 impl<'a> InventoryIter<'a> {
     /// Creates a new iterator that only returns objects that match the given object ID.
-    fn new_id_matching(s3_client: &'a S3Client, object_id: &str) -> Self {
+    fn new_id_matching(store: &'a S3OcflStore, object_id: &str) -> Self {
         let o = object_id.to_string();
-        InventoryIter::new(s3_client, Some(Box::new(move |id| id == o)))
+        InventoryIter::new(store, Some(Box::new(move |id| id == o)))
     }
 
     /// Creates a new iterator that only returns objects with IDs that match the specified glob
     /// pattern.
-    fn new_glob_matching(s3_client: &'a S3Client, glob: &str) -> Result<Self> {
+    fn new_glob_matching(store: &'a S3OcflStore, glob: &str) -> Result<Self> {
         let matcher = GlobBuilder::new(glob).backslash_escape(true).build()?.compile_matcher();
-        Ok(InventoryIter::new(s3_client, Some(Box::new(move |id| matcher.is_match(id)))))
+        Ok(InventoryIter::new(store, Some(Box::new(move |id| matcher.is_match(id)))))
     }
 
     /// Creates a new iterator that returns all objects if no `id_matcher` is provided, or only
     /// the objects the `id_matcher` returns `true` for if one is provided.
-    fn new(s3_client: &'a S3Client, id_matcher: Option<Box<dyn Fn(&str) -> bool>>) -> Self {
+    fn new(store: &'a S3OcflStore, id_matcher: Option<Box<dyn Fn(&str) -> bool>>) -> Self {
         Self {
-            s3_client,
+            store,
             dir_iters: Vec::new(),
-            current: RefCell::new(Some(vec!["".to_owned()].into_iter())),
+            current: RefCell::new(Some(vec!["".to_string()].into_iter())),
             id_matcher,
         }
     }
 
     fn create_if_matches(&self, object_root: &str) -> Result<Option<Inventory>> {
-        let inventory = self.parse_inventory(object_root)?;
-
-        if self.id_matcher.is_some() {
-            if self.id_matcher.as_ref().unwrap().deref()(&inventory.id) {
-                return Ok(Some(inventory));
-            }
-        } else {
-            return Ok(Some(inventory));
-        }
-
-        Ok(None)
-    }
-
-    /// Parses the HEAD inventory of the OCFL object that's rooted in the specified directory.
-    /// This is normally the `inventory.json` file in the object's root, but it could also be
-    /// the inventory file in an extension directory, such as the mutable HEAD extension.
-    fn parse_inventory(&self, object_root: &str) -> Result<Inventory> {
-        let inventory_bytes = self.get_inventory_bytes(&object_root)?;
-        // TODO should validate hash
-        let mut inventory = self.parse_inventory_bytes(&inventory_bytes)
-            .with_context(|| format!("Failed to parse inventory in object at {}", object_root))?;
-        inventory.object_root = strip_leading_slash(strip_trailing_slash(object_root).as_str());
-        Ok(inventory)
-    }
-
-    fn parse_inventory_bytes(&self, bytes: &[u8]) -> Result<Inventory> {
-        let inventory: Inventory = serde_json::from_slice(bytes)?;
-        inventory.validate()?;
-        Ok(inventory)
-    }
-
-    fn get_inventory_bytes(&self, object_root: &str) -> Result<Vec<u8>> {
-        let mutable_head_inv = join(object_root, MUTABLE_HEAD_INVENTORY_FILE);
-
-        match self.s3_client.get_object(&mutable_head_inv)? {
-            Some(bytes) => Ok(bytes),
-            None => {
-                let inv_path = join(object_root, ROOT_INVENTORY_FILE);
-                match self.s3_client.get_object(&inv_path)? {
-                    Some(bytes) => Ok(bytes),
-                    None => Err(anyhow!("Expected inventory at {} not found", inv_path))
+        match self.store.parse_inventory(object_root)? {
+            Some(inventory) => {
+                if let Some(id_matcher) = &self.id_matcher {
+                    if id_matcher(&inventory.id) {
+                        Ok(Some(inventory))
+                    } else {
+                        Ok(None)
+                    }
+                } else {
+                    Ok(Some(inventory))
                 }
             }
+            None => Err(anyhow!("Expected object to exist at {}, but none found.", object_root))
         }
     }
 }
@@ -300,7 +330,7 @@ impl<'a> Iterator for InventoryIter<'a> {
                     self.current.replace(None);
                 }
                 Some(entry) => {
-                    match self.s3_client.list_dir(&entry) {
+                    match self.store.list_dir(&entry) {
                         Ok(listing) => {
                             if is_object_dir(&listing.objects) {
                                 match self.create_if_matches(&entry) {
@@ -317,6 +347,58 @@ impl<'a> Iterator for InventoryIter<'a> {
                     }
                 }
             }
+        }
+    }
+}
+
+/// Reads `ocfl_layout.json` and attempts to load the specified storage layout extension
+fn load_storage_layout(s3_client: &S3Client) -> Option<StorageLayout> {
+    match s3_client.get_object(OCFL_LAYOUT_FILE) {
+        Ok(Some(layout)) => {
+            match serde_json::from_slice::<OcflLayout>(layout.as_slice()) {
+                Ok(layout) => load_layout_extension(layout, s3_client),
+                Err(e) => {
+                    error!("Failed to load OCFL layout: {}", e);
+                    None
+                }
+            }
+        },
+        Ok(None) => {
+            info!("The OCFL repository at {}/{} does not contain an ocfl_layout.json file.",
+                  s3_client.bucket, s3_client.prefix);
+            None
+        },
+        Err(e) => {
+            error!("Failed to load OCFL layout: {}", e);
+            None
+        }
+    }
+}
+
+/// Attempts to read a storage layout extension config and return configured `StorageLayout`
+fn load_layout_extension(layout: OcflLayout, s3_client: &S3Client) -> Option<StorageLayout> {
+    let config_path = join(&join(EXTENSIONS_DIR, &layout.extension.to_string()),
+                           EXTENSIONS_CONFIG_FILE);
+
+    match s3_client.get_object(&config_path) {
+        Ok(config) => {
+            match StorageLayout::new(&layout.extension, config.as_deref()) {
+                Ok(storage_layout) => {
+                    info!("Loaded storage layout extension {}",
+                          layout.extension.to_string());
+                    Some(storage_layout)
+                },
+                Err(e) => {
+                    error!("Failed to load storage layout extension {}: {}",
+                           layout.extension.to_string(), e);
+                    None
+                }
+            }
+        },
+        Err(e) => {
+            error!("Failed to load storage layout extension {}: {}",
+                   layout.extension.to_string(), e);
+            None
         }
     }
 }

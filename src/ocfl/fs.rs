@@ -13,8 +13,10 @@ use grep_regex::RegexMatcher;
 use grep_searcher::Searcher;
 use grep_searcher::sinks::UTF8;
 use lazy_static::lazy_static;
+use log::{error, info};
 
-use crate::ocfl::VersionNum;
+use crate::ocfl::{EXTENSIONS_CONFIG_FILE, EXTENSIONS_DIR, OCFL_LAYOUT_FILE, OcflLayout, Validate, VersionNum};
+use crate::ocfl::layout::StorageLayout;
 
 use super::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_MARKER, OcflStore, ROOT_INVENTORY_FILE};
 
@@ -29,7 +31,9 @@ lazy_static! {
 /// Local filesystem OCFL repository
 pub struct FsOcflStore {
     /// The path to the OCFL storage root
-    storage_root: PathBuf
+    storage_root: PathBuf,
+    /// Maps object IDs to paths within the storage root
+    storage_layout: Option<StorageLayout>,
 }
 
 // ================================================== //
@@ -41,17 +45,18 @@ impl FsOcflStore {
     pub fn new<P: AsRef<Path>>(storage_root: P) -> Result<Self> {
         let storage_root = storage_root.as_ref().to_path_buf();
 
+        // TODO remove anyhow!
         if !storage_root.exists() {
             return Err(anyhow!("Storage root {} does not exist", storage_root.to_string_lossy()));
         } else if !storage_root.is_dir() {
             return Err(anyhow!("Storage root {} is not a directory", storage_root.to_string_lossy()))
         }
 
-        // TODO verify is an OCFL repository
-        // TODO load storage layout
+        let storage_layout = load_storage_layout(&storage_root);
 
         Ok(Self {
-            storage_root
+            storage_root,
+            storage_layout
         })
     }
 }
@@ -60,6 +65,16 @@ impl OcflStore for FsOcflStore {
     /// Returns the most recent inventory version for the specified object, or an a
     /// `RocflError::NotFound` if it does not exist.
     fn get_inventory(&self, object_id: &str) -> Result<Inventory> {
+        if let Some(storage_layout) = &self.storage_layout {
+            let object_root = self.storage_root.join(storage_layout.map_object_id(object_id));
+
+            if object_root.exists() {
+                return parse_inventory(object_root);
+            }
+
+            return Err(not_found(&object_id, None).into());
+        }
+
         let mut iter = InventoryIter::new_id_matching(&self.storage_root, &object_id)?;
 
         loop {
@@ -253,8 +268,7 @@ fn parse_inventory<P: AsRef<Path>>(object_root: P) -> Result<Inventory> {
 }
 
 fn parse_inventory_file<P: AsRef<Path>>(inventory_file: P) -> Result<Inventory> {
-    let mut bytes = Vec::new();
-    File::open(&inventory_file)?.read_to_end(&mut bytes)?;
+    let bytes = file_to_bytes(inventory_file)?;
     let inventory: Inventory = serde_json::from_slice(&bytes)?;
     inventory.validate()?;
     Ok(inventory)
@@ -266,4 +280,79 @@ fn resolve_inventory_path<P: AsRef<Path>>(object_root: P) -> PathBuf {
         return mutable_head_inv;
     }
     object_root.as_ref().join(ROOT_INVENTORY_FILE)
+}
+
+fn load_storage_layout<P: AsRef<Path>>(storage_root: P) -> Option<StorageLayout> {
+    let layout = parse_layout(&storage_root);
+
+    match layout {
+        Some(layout) => {
+            let config_bytes = read_layout_config(&storage_root, &layout);
+            let storage_layout = StorageLayout::new(&layout.extension, config_bytes.as_deref());
+
+            match storage_layout {
+                Ok(storage_layout) => {
+                    info!("Loaded storage layout extension {}", layout.extension.to_string());
+                    Some(storage_layout)
+                },
+                Err(e) => {
+                    error!("Failed to load storage layout extension {}: {}",
+                           layout.extension.to_string(), e);
+                    None
+                }
+            }
+        },
+        None => None
+    }
+}
+
+/// Parses the `ocfl_layout.json` file if it exists
+fn parse_layout<P: AsRef<Path>>(storage_root: P) -> Option<OcflLayout> {
+    let layout_file = storage_root.as_ref().join(OCFL_LAYOUT_FILE);
+    if layout_file.exists() {
+        match parse_layout_file(&layout_file) {
+            Ok(layout) => Some(layout),
+            Err(e) => {
+                error!("Failed to parse OCFL layout file at {}: {}",
+                      layout_file.to_string_lossy(), e);
+                None
+            }
+        }
+    } else {
+        info!("The OCFL repository at {} does not contain an ocfl_layout.json file.",
+              storage_root.as_ref().to_string_lossy());
+        None
+    }
+}
+
+fn parse_layout_file<P: AsRef<Path>>(layout_file: P) -> Result<OcflLayout> {
+    let bytes = file_to_bytes(layout_file)?;
+    Ok(serde_json::from_slice(&bytes)?)
+}
+
+fn read_layout_config<P: AsRef<Path>>(storage_root: P, layout: &OcflLayout) -> Option<Vec<u8>> {
+    let config_file = storage_root.as_ref()
+        .join(EXTENSIONS_DIR)
+        .join(layout.extension.to_string())
+        .join(EXTENSIONS_CONFIG_FILE);
+
+    if config_file.exists() {
+        return match file_to_bytes(&config_file) {
+            Ok(bytes) => Some(bytes),
+            Err(e) => {
+                error!("Failed to parse OCFL storage layout extension config at {}: {}",
+                      config_file.to_string_lossy(), e);
+                None
+            }
+        }
+    }
+
+    info!("Storage layout configuration not found at {}", config_file.to_string_lossy());
+    None
+}
+
+fn file_to_bytes<P: AsRef<Path>>(file: P) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    File::open(&file)?.read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
