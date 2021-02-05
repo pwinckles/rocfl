@@ -288,7 +288,7 @@ fn load_storage_layout<P: AsRef<Path>>(storage_root: P) -> Option<StorageLayout>
     match layout {
         Some(layout) => {
             let config_bytes = read_layout_config(&storage_root, &layout);
-            let storage_layout = StorageLayout::new(&layout.extension, config_bytes.as_deref());
+            let storage_layout = StorageLayout::new(layout.extension, config_bytes.as_deref());
 
             match storage_layout {
                 Ok(storage_layout) => {

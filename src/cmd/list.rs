@@ -192,7 +192,7 @@ impl<'a> AsRow<'a> for ContentListing {
                     .with_style(&*style::BOLD),
                 ColumnId::PhysicalPath => TextCell::new_ref(&self.details.storage_path),
                 ColumnId::Digest => TextCell::new_owned(&format!("{}:{}",
-                                                                 self.details.digest_algorithm,
+                                                                 self.details.digest_algorithm.to_string(),
                                                                  self.details.digest)),
                 _ => TextCell::blank()
             };

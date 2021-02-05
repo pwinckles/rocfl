@@ -3,20 +3,14 @@
 use std::borrow::Cow;
 
 use anyhow::Result;
-use blake2::Blake2b;
-use digest::{Digest, DynDigest};
 use enum_dispatch::enum_dispatch;
 use lazy_static::lazy_static;
-use md5::Md5;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
-use sha1::Sha1;
-use sha2::{Sha256, Sha512, Sha512Trunc256};
 use strum_macros::{Display as EnumDisplay, EnumString};
 
-use crate::ocfl::{RocflError, Validate};
+use crate::ocfl::{DigestAlgorithm, RocflError, Validate};
 
-const DEFAULT_DIGEST_ALGORITHM: &str = "sha256";
 const MAX_0003_ENCAPSULATION_LENGTH: usize = 100;
 
 lazy_static! {
@@ -34,7 +28,7 @@ pub struct StorageLayout {
 }
 
 /// Enum of known storage layout extensions
-#[derive(Deserialize, Debug, PartialEq, EnumString, EnumDisplay)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, EnumString, EnumDisplay)]
 pub enum LayoutExtensionName {
     #[strum(serialize = "0002-flat-direct-storage-layout")]
     #[serde(rename = "0002-flat-direct-storage-layout")]
@@ -52,7 +46,7 @@ pub enum LayoutExtensionName {
 // ================================================== //
 
 impl StorageLayout {
-    pub fn new(name: &LayoutExtensionName, config_bytes: Option<&[u8]>) -> Result<Self> {
+    pub fn new(name: LayoutExtensionName, config_bytes: Option<&[u8]>) -> Result<Self> {
         let extension = match name {
             LayoutExtensionName::FlatDirectLayout => FlatDirectLayoutExtension::new(config_bytes)?.into(),
             LayoutExtensionName::HashedNTupleLayout => HashedNTupleLayoutExtension::new(config_bytes)?.into(),
@@ -104,7 +98,7 @@ struct FlatDirectLayoutConfig {
 #[serde(rename_all = "camelCase", default)]
 struct HashedNTupleLayoutConfig {
     extension_name: LayoutExtensionName,
-    digest_algorithm: String,
+    digest_algorithm: DigestAlgorithm,
     tuple_size: usize,
     number_of_tuples: usize,
     short_object_root: bool,
@@ -115,7 +109,7 @@ struct HashedNTupleLayoutConfig {
 #[serde(rename_all = "camelCase", default)]
 struct HashedNTupleObjectIdLayoutConfig {
     extension_name: LayoutExtensionName,
-    digest_algorithm: String,
+    digest_algorithm: DigestAlgorithm,
     tuple_size: usize,
     number_of_tuples: usize,
 }
@@ -149,7 +143,7 @@ impl Default for HashedNTupleLayoutConfig {
     fn default() -> Self {
         Self {
             extension_name: LayoutExtensionName::HashedNTupleLayout,
-            digest_algorithm: DEFAULT_DIGEST_ALGORITHM.to_string(),
+            digest_algorithm: DigestAlgorithm::Sha256,
             tuple_size: 3,
             number_of_tuples: 3,
             short_object_root: false,
@@ -161,7 +155,7 @@ impl Default for HashedNTupleObjectIdLayoutConfig {
     fn default() -> Self {
         Self {
             extension_name: LayoutExtensionName::HashedNTupleObjectIdLayout,
-            digest_algorithm: DEFAULT_DIGEST_ALGORITHM.to_string(),
+            digest_algorithm: DigestAlgorithm::Sha256,
             tuple_size: 3,
             number_of_tuples: 3,
         }
@@ -178,7 +172,7 @@ impl Validate for HashedNTupleLayoutConfig {
     fn validate(&self) -> Result<()> {
         validate_extension_name(&LayoutExtensionName::HashedNTupleLayout, &self.extension_name)?;
         validate_tuple_config(self.tuple_size, self.number_of_tuples)?;
-        validate_digest_algorithm(&self.digest_algorithm, self.tuple_size, self.number_of_tuples)
+        validate_digest_algorithm(self.digest_algorithm, self.tuple_size, self.number_of_tuples)
     }
 }
 
@@ -186,7 +180,7 @@ impl Validate for HashedNTupleObjectIdLayoutConfig {
     fn validate(&self) -> Result<()> {
         validate_extension_name(&LayoutExtensionName::HashedNTupleObjectIdLayout, &self.extension_name)?;
         validate_tuple_config(self.tuple_size, self.number_of_tuples)?;
-        validate_digest_algorithm(&self.digest_algorithm, self.tuple_size, self.number_of_tuples)
+        validate_digest_algorithm(self.digest_algorithm, self.tuple_size, self.number_of_tuples)
     }
 }
 
@@ -236,9 +230,7 @@ impl HashedNTupleLayoutExtension {
 /// Object IDs are hashed and then divided into tuples to create a pair-tree like layout
 impl MapObjectId for HashedNTupleLayoutExtension {
     fn map_object_id(&self, object_id: &str) -> String {
-        let mut hasher = algorithm_to_hasher(&self.config.digest_algorithm).unwrap();
-        hasher.update(object_id.as_bytes());
-        let digest = hex::encode(hasher.finalize());
+        let digest = self.config.digest_algorithm.hash_hex(&object_id.as_bytes());
 
         if self.config.tuple_size == 0 {
             return digest
@@ -278,9 +270,7 @@ impl HashedNTupleObjectIdLayoutExtension {
 /// difference here is that the object encapsulation directory is the url-encoded object ID
 impl MapObjectId for HashedNTupleObjectIdLayoutExtension {
     fn map_object_id(&self, object_id: &str) -> String {
-        let mut hasher = algorithm_to_hasher(&self.config.digest_algorithm).unwrap();
-        hasher.update(&object_id.as_bytes());
-        let digest = hex::encode(hasher.finalize());
+        let digest = self.config.digest_algorithm.hash_hex(&object_id.as_bytes());
 
         if self.config.tuple_size == 0 {
             return digest
@@ -301,21 +291,6 @@ impl MapObjectId for HashedNTupleObjectIdLayoutExtension {
         }
 
         path
-    }
-}
-
-/// Maps the digest algorithm names defined in the OCFL spec to implementations
-fn algorithm_to_hasher(algorithm: &str) -> Result<Box<dyn DynDigest>> {
-    match algorithm {
-        "md5" => Ok(Box::new(Md5::new())),
-        "sha1" => Ok(Box::new(Sha1::new())),
-        "sha256" => Ok(Box::new(Sha256::new())),
-        "sha512" => Ok(Box::new(Sha512::new())),
-        "blake2b-512" => Ok(Box::new(Blake2b::new())),
-        // TODO the other blake2b formats are not currently supported because of annoying Rust trait issues
-        "sha512/256" => Ok(Box::new(Sha512Trunc256::new())),
-        _ => Err(RocflError::InvalidConfiguration(
-            format!("Unsupported digest algorithm: {}", algorithm)).into())
     }
 }
 
@@ -392,11 +367,8 @@ fn validate_tuple_config(tuple_size: usize, number_of_tuples: usize) -> Result<(
     }
 }
 
-fn validate_digest_algorithm(algorithm: &str, tuple_size: usize, number_of_tuples: usize) -> Result<()>{
-    let mut hasher = algorithm_to_hasher(&algorithm)?;
-    hasher.update("test".as_bytes());
-    let digest = hex::encode(hasher.finalize());
-
+fn validate_digest_algorithm(algorithm: DigestAlgorithm, tuple_size: usize, number_of_tuples: usize) -> Result<()>{
+    let digest = algorithm.hash_hex("test".as_bytes());
     let total_tuples_length = tuple_size * number_of_tuples;
 
     if digest.len() < total_tuples_length {
@@ -404,7 +376,7 @@ fn validate_digest_algorithm(algorithm: &str, tuple_size: usize, number_of_tuple
             format!("tupleSize={} and numberOfTuples={} requires a minimum of {} characters. \
              The digest algorithm {} only produces {}.",
                     tuple_size, number_of_tuples,
-                    total_tuples_length, algorithm, digest.len())).into())
+                    total_tuples_length, algorithm.to_string(), digest.len())).into())
     } else {
         Ok(())
     }
@@ -412,8 +384,6 @@ fn validate_digest_algorithm(algorithm: &str, tuple_size: usize, number_of_tuple
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
-
     use anyhow::Result;
     use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 
@@ -484,24 +454,27 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "unknown variant `md6`")]
     fn fail_0003_init_when_invalid_digest() {
-        let ext = hashed_ntuple_id_ext("md6", 3, 3);
-        expected_err(ext.err().unwrap().into(), "Unsupported digest algorithm: md6");
+        let _ = hashed_ntuple_id_ext("md6", 3, 3).unwrap();
     }
 
     #[test]
-    fn fail_0003_init_when_invalid_tuple() {
-        let ext = hashed_ntuple_id_ext("sha256", 0, 3);
-        expected_err(ext.err().unwrap().into(), "then both must be 0");
-
-        let ext = hashed_ntuple_id_ext("sha256", 3, 0);
-        expected_err(ext.err().unwrap().into(), "then both must be 0");
+    #[should_panic(expected = "then both must be 0")]
+    fn fail_0003_init_when_invalid_tuple_1() {
+        let _ = hashed_ntuple_id_ext("sha256", 0, 3).unwrap();
     }
 
     #[test]
+    #[should_panic(expected = "then both must be 0")]
+    fn fail_0003_init_when_invalid_tuple_2() {
+        let _ = hashed_ntuple_id_ext("sha256", 3, 0).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "minimum of 100 characters")]
     fn fail_0003_init_when_digest_not_long_enough() {
-        let ext = hashed_ntuple_id_ext("sha256", 10, 10);
-        expected_err(ext.err().unwrap().into(), "minimum of 100 characters");
+        let _ = hashed_ntuple_id_ext("sha256", 10, 10).unwrap();
     }
 
     #[test]
@@ -609,27 +582,63 @@ mod tests {
         assert_eq!("39d/20e/f35/39d20ef3533754b580d4097a7a72f7b133b9c3216a35e91f82dd2f8c264a18606ed\
         e2c68d54055311a68f467be6e915cff1e66934a5a61c9d2e2bb66a30a5652",
                    ext.map_object_id(ID_3));
+
+        // blake2b-160
+        let ext = hashed_ntuple_ext("blake2b-160", 3, 3, false).unwrap();
+
+        assert_eq!("10b/ab8/f38/10bab8f38bb05add59ea3756b23054dea173471f",
+                   ext.map_object_id(ID_1));
+        assert_eq!("43a/194/e5a/43a194e5ad637fb4827930e34b4df5b59d701348",
+                   ext.map_object_id(ID_2));
+        assert_eq!("264/555/ae9/264555ae9b36b1570d4cf33f14fac596bf300a72",
+                   ext.map_object_id(ID_3));
+
+        // blake2b-256
+        let ext = hashed_ntuple_ext("blake2b-256", 3, 3, false).unwrap();
+
+        assert_eq!("5a6/43a/8ce/5a643a8ce4b75bcf6c13257abe115a0c8c47e62b73c87074710223a196a38983",
+                   ext.map_object_id(ID_1));
+        assert_eq!("a22/cb2/5f8/a22cb25f8b16b8221e325763cdc99c5a32c86ee03269a146b3c21bf4a216387a",
+                   ext.map_object_id(ID_2));
+        assert_eq!("be5/df0/609/be5df060977b13927193acd17a0342e6b8f76353a85da14fef684ce5aba9bf25",
+                   ext.map_object_id(ID_3));
+
+        // blake2b-384
+        let ext = hashed_ntuple_ext("blake2b-384", 3, 3, false).unwrap();
+
+        assert_eq!("ed1/3e8/068/ed13e80681eb1553d5feb01a77ec399cafc295791717adc3936eb9a59cf6894d8a3\
+        99df0ce0a8f120dfac230ecff367d",
+                   ext.map_object_id(ID_1));
+        assert_eq!("4c0/47c/bec/4c047cbec0eba530142ac2d93ff11ea6564016b577e21a1a5862f19c942a57b9e92\
+        f77fd72b702cb8cd28d12210f63e4",
+                   ext.map_object_id(ID_2));
+        assert_eq!("52e/e8e/9e0/52ee8e9e08eb49586e241e6f665d62e287389fae4e4cd8f958ac1a010ae6566c359\
+        d845249ae6475688c8e3f08a6397b",
+                   ext.map_object_id(ID_3));
     }
 
     #[test]
+    #[should_panic(expected = "unknown variant `md6`")]
     fn fail_0004_init_when_invalid_digest() {
-        let ext = hashed_ntuple_ext("md6", 3, 3, false);
-        expected_err(ext.err().unwrap().into(), "Unsupported digest algorithm: md6");
+        let _ = hashed_ntuple_ext("md6", 3, 3, false).unwrap();
     }
 
     #[test]
-    fn fail_0004_init_when_invalid_tuple() {
-        let ext = hashed_ntuple_ext("sha256", 0, 3, false);
-        expected_err(ext.err().unwrap().into(), "then both must be 0");
-
-        let ext = hashed_ntuple_ext("sha256", 3, 0, false);
-        expected_err(ext.err().unwrap().into(), "then both must be 0");
+    #[should_panic(expected = "then both must be 0")]
+    fn fail_0004_init_when_invalid_tuple_1() {
+        let _ = hashed_ntuple_ext("sha256", 0, 3, false).unwrap();
     }
 
     #[test]
+    #[should_panic(expected = "then both must be 0")]
+    fn fail_0004_init_when_invalid_tuple_2() {
+        let _ = hashed_ntuple_ext("sha256", 3, 0, false).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "minimum of 100 characters")]
     fn fail_0004_init_when_digest_not_long_enough() {
-        let ext = hashed_ntuple_ext("sha256", 10, 10, false);
-        expected_err(ext.err().unwrap().into(), "minimum of 100 characters");
+        let _ = hashed_ntuple_ext("sha256", 10, 10, false).unwrap();
     }
 
     fn hashed_ntuple_ext(algorithm: &str, tuple_size: usize, number_of_tuples: usize, short: bool)
@@ -651,11 +660,6 @@ mod tests {
             \"tupleSize\": {},
             \"numberOfTuples\": {}
         }}", algorithm, tuple_size, number_of_tuples).as_bytes()))
-    }
-
-    fn expected_err(err: Box<dyn Error>, expected: &str) -> () {
-        let msg = err.to_string();
-        assert!(msg.contains(expected), "actual error message: {}", msg);
     }
 
 }

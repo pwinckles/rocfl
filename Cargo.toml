@@ -38,7 +38,7 @@ log = "0.4"
 env_logger = "0.8"
 
 # Digests
-digest = { version = "0.9", features = ["alloc"] }
+digest = "0.9"
 blake2 = "0.9"
 hex = "0.4"
 md-5 = "0.9"

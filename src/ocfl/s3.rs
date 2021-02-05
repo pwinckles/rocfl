@@ -382,7 +382,7 @@ fn load_layout_extension(layout: OcflLayout, s3_client: &S3Client) -> Option<Sto
 
     match s3_client.get_object(&config_path) {
         Ok(config) => {
-            match StorageLayout::new(&layout.extension, config.as_deref()) {
+            match StorageLayout::new(layout.extension, config.as_deref()) {
                 Ok(storage_layout) => {
                     info!("Loaded storage layout extension {}",
                           layout.extension.to_string());

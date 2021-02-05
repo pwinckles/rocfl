@@ -22,11 +22,17 @@ use std::rc::Rc;
 use std::str::FromStr;
 
 use anyhow::{anyhow, Error, Result};
+use blake2::{Blake2b, VarBlake2b};
 use chrono::{DateTime, Local};
+use digest::{Digest, Update, VariableOutput};
 use lazy_static::lazy_static;
+use md5::Md5;
 use regex::Regex;
 use rusoto_core::Region;
 use serde::Deserialize;
+use sha1::Sha1;
+use sha2::{Sha256, Sha512, Sha512Trunc256};
+use strum_macros::{Display as EnumDisplay, EnumString};
 use thiserror::Error;
 
 use self::fs::FsOcflStore;
@@ -76,7 +82,7 @@ pub struct ObjectVersion {
     /// The path from the storage root to the object root
     pub object_root: String,
     /// The algorithm used to calculate digests (sha512 or sha256)
-    pub digest_algorithm: String,
+    pub digest_algorithm: DigestAlgorithm,
     /// Metadata about the version
     pub version_details: VersionDetails,
     /// A map of files (logical paths) in the version to details about the files.
@@ -89,7 +95,7 @@ pub struct FileDetails {
     /// The file's digest
     pub digest: Rc<String>,
     /// The digest algorithm
-    pub digest_algorithm: Rc<String>,
+    pub digest_algorithm: DigestAlgorithm,
     /// The path to the file relative the object root
     pub content_path: String,
     /// The path to the file relative the storage root
@@ -121,9 +127,40 @@ pub struct ObjectVersionDetails {
     /// The path from the storage root to the object root
     pub object_root: String,
     /// The algorithm used to calculate digests (sha512 or sha256)
-    pub digest_algorithm: String,
+    pub digest_algorithm: DigestAlgorithm,
     /// Metadata about the version
     pub version_details: VersionDetails,
+}
+
+#[derive(Deserialize, Debug, Eq, PartialEq, Copy, Clone, EnumString, EnumDisplay)]
+pub enum DigestAlgorithm {
+    #[serde(rename = "md5")]
+    #[strum(serialize = "md5")]
+    Md5,
+    #[serde(rename = "sha1")]
+    #[strum(serialize = "sha1")]
+    Sha1,
+    #[serde(rename = "sha256")]
+    #[strum(serialize = "sha256")]
+    Sha256,
+    #[serde(rename = "sha512")]
+    #[strum(serialize = "sha512")]
+    Sha512,
+    #[serde(rename = "sha512/256")]
+    #[strum(serialize = "sha512/256")]
+    Sha512_256,
+    #[serde(rename = "blake2b-512")]
+    #[strum(serialize = "blake2b-512")]
+    Blake2b512,
+    #[serde(rename = "blake2b-160")]
+    #[strum(serialize = "blake2b-160")]
+    Blake2b160,
+    #[serde(rename = "blake2b-256")]
+    #[strum(serialize = "blake2b-256")]
+    Blake2b256,
+    #[serde(rename = "blake2b-384")]
+    #[strum(serialize = "blake2b-384")]
+    Blake2b384,
 }
 
 /// Represents a change to a file
@@ -496,7 +533,6 @@ impl ObjectVersion {
     fn construct_state(target: &VersionNum, inventory: &mut Inventory) -> Result<HashMap<String, FileDetails>> {
         let mut state = HashMap::new();
 
-        let digest_algorithm = Rc::new(inventory.digest_algorithm.clone());
         let mut current_version_num = (*target).clone();
         let mut current_version = inventory.remove_version(target)?;
         let mut target_path_map = invert_path_map(current_version.state);
@@ -512,7 +548,7 @@ impl ObjectVersion {
                     let content_path = inventory.lookup_content_path_by_digest(&target_digest)?.to_string();
                     state.insert(target_path, FileDetails::new(content_path,
                                                                target_digest,
-                                                               Rc::clone(&digest_algorithm),
+                                                               inventory.digest_algorithm,
                                                                &inventory.object_root,
                                                                Rc::clone(&version_details)));
                 }
@@ -532,7 +568,7 @@ impl ObjectVersion {
                     let content_path = inventory.lookup_content_path_by_digest(&target_digest)?.to_string();
                     state.insert(target_path, FileDetails::new(content_path,
                                                                target_digest,
-                                                               Rc::clone(&digest_algorithm),
+                                                               inventory.digest_algorithm,
                                                                &inventory.object_root,
                                                                Rc::clone(&version_details)));
                 } else {
@@ -551,7 +587,7 @@ impl ObjectVersion {
 }
 
 impl FileDetails {
-    fn new(content_path: String, digest: Rc<String>, digest_algorithm: Rc<String>,
+    fn new(content_path: String, digest: Rc<String>, digest_algorithm: DigestAlgorithm,
            object_root: &str, version_details: Rc<VersionDetails>) -> Self {
         Self {
             content_path: content_path.clone(),
@@ -618,6 +654,62 @@ impl ObjectVersionDetails {
     }
 }
 
+impl DigestAlgorithm {
+    /// Hashes the input and returns its hex encoded digest
+    fn hash_hex(&self, data: impl AsRef<[u8]>) -> String {
+        // This ugliness is because the variable length blake2b algorithms don't work with DynDigest
+        let bytes = match self {
+            DigestAlgorithm::Md5 => {
+                let mut hasher = Md5::new();
+                Digest::update(&mut hasher, data);
+                hasher.finalize().to_vec()
+            }
+            DigestAlgorithm::Sha1 => {
+                let mut hasher = Sha1::new();
+                Digest::update(&mut hasher, data);
+                hasher.finalize().to_vec()
+            }
+            DigestAlgorithm::Sha256 => {
+                let mut hasher = Sha256::new();
+                Digest::update(&mut hasher, data);
+                hasher.finalize().to_vec()
+            }
+            DigestAlgorithm::Sha512 => {
+                let mut hasher = Sha512::new();
+                Digest::update(&mut hasher, data);
+                hasher.finalize().to_vec()
+            }
+            DigestAlgorithm::Sha512_256 => {
+                let mut hasher = Sha512Trunc256::new();
+                Digest::update(&mut hasher, data);
+                hasher.finalize().to_vec()
+            }
+            DigestAlgorithm::Blake2b512 => {
+                let mut hasher = Blake2b::new();
+                Digest::update(&mut hasher, data);
+                hasher.finalize().to_vec()
+            }
+            DigestAlgorithm::Blake2b160 => {
+                let mut hasher = VarBlake2b::new(20).unwrap();
+                hasher.update(data);
+                hasher.finalize_boxed().to_vec()
+            }
+            DigestAlgorithm::Blake2b256 => {
+                let mut hasher = VarBlake2b::new(32).unwrap();
+                hasher.update(data);
+                hasher.finalize_boxed().to_vec()
+            }
+            DigestAlgorithm::Blake2b384 => {
+                let mut hasher = VarBlake2b::new(48).unwrap();
+                hasher.update(data);
+                hasher.finalize_boxed().to_vec()
+            }
+        };
+
+        hex::encode(bytes)
+    }
+}
+
 impl Diff {
     fn added(path: String) -> Self {
         Self {
@@ -672,7 +764,7 @@ struct Inventory {
     id: String,
     #[serde(rename = "type")]
     type_declaration: String,
-    digest_algorithm: String,
+    digest_algorithm: DigestAlgorithm,
     head: VersionNum,
     content_directory: Option<String>,
     manifest: HashMap<String, Vec<String>>,
@@ -857,5 +949,19 @@ fn not_found(object_id: &str, version_num: Option<&VersionNum>) -> RocflError {
     match version_num {
         Some(version) => RocflError::NotFound(format!("Object {} version {}", object_id, version)),
         None => RocflError::NotFound(format!("Object {}", object_id))
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use std::mem::{size_of, size_of_val};
+    use crate::ocfl::DigestAlgorithm;
+
+    #[test]
+    fn size() {
+        dbg!(size_of::<DigestAlgorithm>());
+        let d = "sha512".to_string();
+        dbg!(size_of_val(&d) + d.capacity());
     }
 }
