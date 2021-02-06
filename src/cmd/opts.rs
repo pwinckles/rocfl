@@ -32,6 +32,10 @@ pub struct RocflArgs {
     #[structopt(short, long)]
     pub quiet: bool,
 
+    /// Increases log level
+    #[structopt(short = "V", long)]
+    pub verbose: bool,
+
     /// Disables all output styling
     #[structopt(short = "S", long)]
     pub no_styles: bool,

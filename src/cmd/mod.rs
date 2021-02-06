@@ -1,8 +1,7 @@
 use std::fmt::Display;
 use std::io::{self, ErrorKind, Write};
 
-use ansi_term::Color;
-use anyhow::{Error, Result};
+use anyhow::Result;
 use rusoto_core::Region;
 
 use crate::cmd::cat::cat_command;
@@ -28,12 +27,6 @@ pub fn exec_command(args: &RocflArgs) -> Result<()> {
         Command::Show(show) => show_command(&repo, &show, args),
         Command::Diff(diff) => diff_command(&repo, &diff, args),
         Command::Cat(cat) => cat_command(&repo, &cat, args),
-    }
-}
-
-pub fn eprintln(error: &Error, quiet: bool) {
-    if !quiet {
-        eprintln!("{}", Color::Red.paint(format!("Error: {:#}", error)));
     }
 }
 

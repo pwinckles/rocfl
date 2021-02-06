@@ -8,6 +8,8 @@ use maplit::hashmap;
 
 use rocfl::ocfl::{Diff, DiffType, FileDetails, ObjectVersion, ObjectVersionDetails, OcflRepo, VersionDetails, VersionNum, DigestAlgorithm};
 
+// TODO add layout tests
+
 #[test]
 fn list_all_objects() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");

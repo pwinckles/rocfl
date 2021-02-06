@@ -2,8 +2,9 @@ use std::cmp::Ordering;
 
 use anyhow::{Context, Result};
 use globset::GlobBuilder;
+use log::error;
 
-use crate::cmd::{DATE_FORMAT, eprintln};
+use crate::cmd::DATE_FORMAT;
 use crate::cmd::opts::*;
 use crate::cmd::opts::{List, RocflArgs};
 use crate::cmd::style;
@@ -45,7 +46,7 @@ impl<'a> ListCmd<'a> {
             match result {
                 Ok(_) => true,
                 Err(e) => {
-                    eprintln(e, self.args.quiet);
+                    error!("{}", e);
                     false
                 }
             }
