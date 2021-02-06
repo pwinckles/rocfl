@@ -2,32 +2,15 @@ use std::io;
 
 use anyhow::Result;
 
+use crate::cmd::Cmd;
 use crate::cmd::opts::{Cat, RocflArgs};
 use crate::ocfl::OcflRepo;
 
-pub fn cat_command(repo: &OcflRepo, command: &Cat, args: &RocflArgs) -> Result<()> {
-    CatCmd::new(repo, command, args).execute()
-}
-
-struct CatCmd<'a> {
-    repo: &'a OcflRepo,
-    command: &'a Cat,
-    _args: &'a RocflArgs,
-}
-
-impl<'a> CatCmd<'a> {
-    fn new(repo: &'a OcflRepo, command: &'a Cat, _args: &'a RocflArgs) -> Self {
-        Self {
-            repo,
-            command,
-            _args,
-        }
-    }
-
-    fn execute(&self) -> Result<()> {
-        self.repo.get_object_file(&self.command.object_id,
-                                  &self.command.path,
-                                  self.command.version.as_ref(),
-                                  &mut io::stdout())
+impl Cmd for Cat {
+    fn exec(&self, repo: &OcflRepo, _args: &RocflArgs) -> Result<()> {
+        repo.get_object_file(&self.object_id,
+                              &self.path,
+                              self.version.as_ref(),
+                              &mut io::stdout())
     }
 }

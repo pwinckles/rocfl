@@ -5,7 +5,7 @@ use std::fmt::Formatter;
 use anyhow::Result;
 use lazy_static::lazy_static;
 
-use crate::cmd::{DATE_FORMAT, println};
+use crate::cmd::{Cmd, DATE_FORMAT, println};
 use crate::cmd::opts::{Diff, Log, RocflArgs, Show};
 use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
@@ -18,74 +18,38 @@ lazy_static! {
     static ref DELETED: String = "D".to_owned();
 }
 
-pub fn log_command(repo: &OcflRepo, command: &Log, args: &RocflArgs) -> Result<()> {
-    LogCmd::new(repo, command, args).execute()
-}
-
-pub fn show_command(repo: &OcflRepo, command: &Show, args: &RocflArgs) -> Result<()> {
-    ShowCmd::new(repo, command, args).execute()
-}
-
-pub fn diff_command(repo: &OcflRepo, command: &Diff, args: &RocflArgs) -> Result<()> {
-    DiffCmd::new(repo, command, args).execute()
-}
-
-struct LogCmd<'a> {
-    repo: &'a OcflRepo,
-    command: &'a Log,
-    args: &'a RocflArgs,
-}
-
-struct ShowCmd<'a> {
-    repo: &'a OcflRepo,
-    command: &'a Show,
-    args: &'a RocflArgs,
-}
-
-struct DiffCmd<'a> {
-    repo: &'a OcflRepo,
-    command: &'a Diff,
-    args: &'a RocflArgs,
-}
-
-impl<'a> LogCmd<'a> {
-    fn new(repo: &'a OcflRepo, command: &'a Log, args: &'a RocflArgs) -> Self {
-        Self {
-            repo,
-            command,
-            args,
-        }
-    }
-
-    fn execute(&self) -> Result<()> {
-        let mut versions = match &self.command.path {
-            Some(path) => self.repo.list_file_versions(&self.command.object_id, path)?,
-            None => self.repo.list_object_versions(&self.command.object_id)?,
+impl Cmd for Log {
+    fn exec(&self, repo: &OcflRepo, args: &RocflArgs) -> Result<()> {
+        let mut versions = match &self.path {
+            Some(path) => repo.list_file_versions(&self.object_id, path)?,
+            None => repo.list_object_versions(&self.object_id)?,
         };
 
-        if self.command.reverse {
+        if self.reverse {
             versions.reverse();
         }
 
-        versions.truncate(self.command.num.0);
+        versions.truncate(self.num.0);
 
-        self.print_versions(&versions)
+        self.print_versions(&versions, args)
     }
+}
 
-    fn print_versions(&self, versions: &[VersionDetails]) -> Result<()> {
-        if self.command.compact {
-            let mut table = self.version_table();
+impl Log {
+    fn print_versions(&self, versions: &[VersionDetails], args: &RocflArgs) -> Result<()> {
+        if self.compact {
+            let mut table = self.version_table(args);
             versions.iter().for_each(|version| table.add_row(version));
             Ok(table.write_stdio()?)
         } else {
             for version in versions {
-                println(FormatVersion::new(version, !self.args.no_styles))?
+                println(FormatVersion::new(version, !args.no_styles))?
             }
             Ok(())
         }
     }
 
-    fn version_table(&self) -> TableView {
+    fn version_table(&self, args: &RocflArgs) -> TableView {
         let mut columns = Vec::new();
 
         columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
@@ -94,11 +58,11 @@ impl<'a> LogCmd<'a> {
         columns.push(Column::new(ColumnId::Created, "Created", Alignment::Left));
         columns.push(Column::new(ColumnId::Message, "Message", Alignment::Left));
 
-        TableView::new(columns, &self.separator(), self.command.header, !self.args.no_styles)
+        TableView::new(columns, &self.separator(), self.header, !args.no_styles)
     }
 
     fn separator(&self) -> String {
-        if self.command.tsv {
+        if self.tsv {
             "\t".to_string()
         } else {
             " ".to_string()
@@ -106,28 +70,20 @@ impl<'a> LogCmd<'a> {
     }
 }
 
-impl<'a> ShowCmd<'a> {
-    fn new(repo: &'a OcflRepo, command: &'a Show, args: &'a RocflArgs) -> Self {
-        Self {
-            repo,
-            command,
-            args,
-        }
-    }
+impl Cmd for Show {
+    fn exec(&self, repo: &OcflRepo, args: &RocflArgs) -> Result<()> {
+        let object = repo.get_object_details(&self.object_id,
+                                             self.version.as_ref())?;
 
-    fn execute(&self) -> Result<()> {
-        let object = self.repo.get_object_details(&self.command.object_id,
-                                                  self.command.version.as_ref())?;
-
-        if !self.command.minimal {
-            println(FormatVersion::new(&object.version_details, !self.args.no_styles))?;
+        if !self.minimal {
+            println(FormatVersion::new(&object.version_details, !args.no_styles))?;
         }
 
         let right = &object.version_details.version_num;
 
-        let mut diffs: Vec<DiffLine> = self.repo.diff(&self.command.object_id, None, right)?
+        let mut diffs: Vec<DiffLine> = repo.diff(&self.object_id, None, right)?
             .into_iter()
-            .map(|diff| DiffLine::new(diff, !self.args.no_styles))
+            .map(|diff| DiffLine::new(diff, !args.no_styles))
             .collect();
 
         diffs.sort_unstable();
@@ -140,26 +96,18 @@ impl<'a> ShowCmd<'a> {
     }
 }
 
-impl<'a> DiffCmd<'a> {
-    fn new(repo: &'a OcflRepo, command: &'a Diff, args: &'a RocflArgs) -> Self {
-        Self {
-            repo,
-            command,
-            args,
-        }
-    }
-
-    fn execute(&self) -> Result<()> {
-        if self.command.left == self.command.right {
+impl Cmd for Diff {
+    fn exec(&self, repo: &OcflRepo, args: &RocflArgs) -> Result<()> {
+        if self.left == self.right {
             return Ok(());
         }
 
-        let raw_diffs = self.repo.diff(&self.command.object_id,
-                                          Some(&self.command.left),
-                                          &self.command.right)?;
+        let raw_diffs = repo.diff(&self.object_id,
+                                  Some(&self.left),
+                                  &self.right)?;
 
         let mut diffs: Vec<DiffLine> = raw_diffs.into_iter()
-            .map(|diff| DiffLine::new(diff, !self.args.no_styles))
+            .map(|diff| DiffLine::new(diff, !args.no_styles))
             .collect();
 
         diffs.sort_unstable();

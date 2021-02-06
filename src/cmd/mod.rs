@@ -2,11 +2,9 @@ use std::fmt::Display;
 use std::io::{self, ErrorKind, Write};
 
 use anyhow::Result;
+use enum_dispatch::enum_dispatch;
 use rusoto_core::Region;
 
-use crate::cmd::cat::cat_command;
-use crate::cmd::diff::{diff_command, log_command, show_command};
-use crate::cmd::list::list_command;
 use crate::cmd::opts::*;
 use crate::ocfl::OcflRepo;
 
@@ -21,16 +19,16 @@ const DATE_FORMAT: &str = "%Y-%m-%d %H:%M";
 
 pub fn exec_command(args: &RocflArgs) -> Result<()> {
     let repo = create_repo(&args)?;
-    match &args.command {
-        Command::List(list) => list_command(&repo, &list, args),
-        Command::Log(log) => log_command(&repo, &log, args),
-        Command::Show(show) => show_command(&repo, &show, args),
-        Command::Diff(diff) => diff_command(&repo, &diff, args),
-        Command::Cat(cat) => cat_command(&repo, &cat, args),
-    }
+    args.command.exec(&repo, args)
 }
 
-pub fn println(value: impl Display) -> Result<()> {
+/// Trait executing a CLI command
+#[enum_dispatch]
+trait Cmd {
+    fn exec(&self, repo: &OcflRepo, args: &RocflArgs) -> Result<()>;
+}
+
+fn println(value: impl Display) -> Result<()> {
     if let Err(e) = writeln!(io::stdout(), "{}", value) {
         match e.kind() {
             ErrorKind::BrokenPipe => Ok(()),

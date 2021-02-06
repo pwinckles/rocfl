@@ -3,6 +3,7 @@ use std::num::ParseIntError;
 use std::str::FromStr;
 
 use clap::arg_enum;
+use enum_dispatch::enum_dispatch;
 use structopt::clap::AppSettings::{ColorAuto, ColoredHelp, DisableVersion};
 use structopt::StructOpt;
 
@@ -46,6 +47,7 @@ pub struct RocflArgs {
 }
 
 /// A CLI for OCFL repositories.
+#[enum_dispatch(Cmd)]
 #[derive(Debug, StructOpt)]
 pub enum Command {
     #[structopt(name = "ls")]
