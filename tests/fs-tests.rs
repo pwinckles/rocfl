@@ -6,7 +6,7 @@ use anyhow::Result;
 use chrono::DateTime;
 use maplit::hashmap;
 
-use rocfl::ocfl::{Diff, DiffType, FileDetails, ObjectVersion, ObjectVersionDetails, OcflRepo, VersionDetails, VersionNum, DigestAlgorithm};
+use rocfl::ocfl::{Diff, DiffType, DigestAlgorithm, FileDetails, ObjectVersion, ObjectVersionDetails, OcflRepo, VersionDetails, VersionNum};
 
 // TODO add layout tests
 
@@ -15,7 +15,7 @@ fn list_all_objects() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::new_fs_repo(&repo_root)?;
 
-    let mut objects: Vec<ObjectVersionDetails> = repo.list_objects(None)?.map(|o| o.unwrap()).collect();
+    let mut objects: Vec<ObjectVersionDetails> = repo.list_objects(None)?.collect();
 
     sort_obj_details(&mut objects);
 
@@ -65,7 +65,7 @@ fn list_single_object_from_glob() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::new_fs_repo(&repo_root)?;
 
-    let mut objects: Vec<ObjectVersionDetails> = repo.list_objects(Some("*1"))?.map(|o| o.unwrap()).collect();
+    let mut objects: Vec<ObjectVersionDetails> = repo.list_objects(Some("*1"))?.collect();
 
     assert_eq!(1, objects.len());
 
@@ -91,7 +91,7 @@ fn list_empty_repo() -> Result<()> {
     let repo_root = create_repo_root("empty");
     let repo = OcflRepo::new_fs_repo(&repo_root)?;
 
-    let objects: Vec<ObjectVersionDetails> = repo.list_objects(None)?.map(|o| o.unwrap()).collect();
+    let objects: Vec<ObjectVersionDetails> = repo.list_objects(None)?.collect();
 
     assert_eq!(0, objects.len());
 
@@ -108,21 +108,13 @@ fn list_repo_with_invalid_objects() -> Result<()> {
 
     let iter = repo.list_objects(None)?;
 
-    for result in iter {
-        match result {
-            Ok(object) => {
-                assert_eq!(object, ObjectVersionDetails {
-                    id: "o2".to_string(),
-                    object_root: object_root.to_string_lossy().to_string(),
-                    digest_algorithm: DigestAlgorithm::Sha512,
-                    version_details: o2_v3_details()
-                });
-            }
-            Err(e) => {
-                let message = format!("{}", e);
-                assert!(message.contains("Failed to parse inventory"));
-            }
-        }
+    for object in iter {
+        assert_eq!(object, ObjectVersionDetails {
+            id: "o2".to_string(),
+            object_root: object_root.to_string_lossy().to_string(),
+            digest_algorithm: DigestAlgorithm::Sha512,
+            version_details: o2_v3_details()
+        });
     }
 
     Ok(())

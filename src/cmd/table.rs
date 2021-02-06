@@ -11,7 +11,7 @@ pub trait AsRow<'a> {
     fn as_row(&'a self, columns: &[Column]) -> Row<'a>;
 }
 
-#[derive(Debug, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
 pub enum ColumnId {
     Version,
     Created,
@@ -165,7 +165,8 @@ impl<'a> Row<'a> {
         }
     }
 
-    fn write(&self, writer: &mut impl Write,
+    fn write(&self,
+             writer: &mut impl Write,
              columns: &[Column],
              separator: &str,
              enable_styling: bool) -> Result<()> {
@@ -232,7 +233,8 @@ impl<'a> TextCell<'a> {
         }
     }
 
-    fn write(&self, writer: &mut impl Write,
+    fn write(&self,
+             writer: &mut impl Write,
              width: usize,
              alignment: Alignment,
              enable_style: bool) -> Result<()> {

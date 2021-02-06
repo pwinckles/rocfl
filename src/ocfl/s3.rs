@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::io::Write;
 use std::vec::IntoIter;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use globset::GlobBuilder;
 use log::{error, info};
 use rusoto_core::{Region, RusotoError};
@@ -41,6 +41,16 @@ impl S3OcflStore {
             s3_client,
             storage_layout
         })
+    }
+
+    fn parse_inventory_optional(&self, object_root: &str) -> Option<Inventory> {
+        match self.parse_inventory(object_root) {
+            Ok(inventory) => inventory,
+            Err(e) => {
+                error!("{}", e);
+                None
+            }
+        }
     }
 
     /// Parses the HEAD inventory of the OCFL object that's rooted in the specified directory.
@@ -102,12 +112,9 @@ impl OcflStore for S3OcflStore {
 
         let mut iter = InventoryIter::new_id_matching(&self, &object_id);
 
-        loop {
-            match iter.next() {
-                Some(Ok(inventory)) => return Ok(inventory),
-                Some(Err(_)) => (),  // Errors are ignored because we don't know what object they're for
-                None => return Err(not_found(&object_id, None).into())
-            }
+        match iter.next() {
+            Some(inventory) => Ok(inventory),
+            None => Err(not_found(&object_id, None).into())
         }
     }
 
@@ -115,7 +122,7 @@ impl OcflStore for S3OcflStore {
     /// the most recent inventory of each. Optionally, a glob pattern may be provided that filters
     /// the objects that are returned by OCFL ID.
     fn iter_inventories<'a>(&'a self, filter_glob: Option<&str>)
-        -> Result<Box<dyn Iterator<Item=Result<Inventory>> + 'a>> {
+        -> Result<Box<dyn Iterator<Item=Inventory> + 'a>> {
         Ok(Box::new(match filter_glob {
             Some(glob) => InventoryIter::new_glob_matching(&self, glob)?,
             None => InventoryIter::new(&self, None)
@@ -294,26 +301,29 @@ impl<'a> InventoryIter<'a> {
         }
     }
 
-    fn create_if_matches(&self, object_root: &str) -> Result<Option<Inventory>> {
-        match self.store.parse_inventory(object_root)? {
+    fn create_if_matches(&self, object_root: &str) -> Option<Inventory> {
+        match self.store.parse_inventory_optional(object_root) {
             Some(inventory) => {
                 if let Some(id_matcher) = &self.id_matcher {
                     if id_matcher(&inventory.id) {
-                        Ok(Some(inventory))
+                        Some(inventory)
                     } else {
-                        Ok(None)
+                        None
                     }
                 } else {
-                    Ok(Some(inventory))
+                    Some(inventory)
                 }
             }
-            None => Err(anyhow!("Expected object to exist at {}, but none found.", object_root))
+            None => {
+                error!("Expected object to exist at {}, but none found.", object_root);
+                None
+            }
         }
     }
 }
 
 impl<'a> Iterator for InventoryIter<'a> {
-    type Item = Result<Inventory>;
+    type Item = Inventory;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -333,17 +343,15 @@ impl<'a> Iterator for InventoryIter<'a> {
                     match self.store.list_dir(&entry) {
                         Ok(listing) => {
                             if is_object_dir(&listing.objects) {
-                                match self.create_if_matches(&entry) {
-                                    Ok(Some(inventory)) => return Some(Ok(inventory)),
-                                    Ok(None) => (),
-                                    Err(e) => return Some(Err(e))
+                                if let Some(inventory) =  self.create_if_matches(&entry) {
+                                    return Some(inventory);
                                 }
                             } else {
                                 self.dir_iters.push(self.current.replace(None).unwrap());
                                 self.current.replace(Some(listing.directories.into_iter()));
                             }
                         }
-                        Err(e) => return Some(Err(e))
+                        Err(e) => error!("{}", e)
                     }
                 }
             }

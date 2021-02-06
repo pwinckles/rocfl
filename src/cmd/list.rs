@@ -2,17 +2,16 @@ use std::cmp::Ordering;
 
 use anyhow::{Context, Result};
 use globset::GlobBuilder;
-use log::error;
 
-use crate::cmd::{Cmd, DATE_FORMAT};
+use crate::cmd::{Cmd, DATE_FORMAT, GlobalArgs};
 use crate::cmd::opts::*;
-use crate::cmd::opts::{List, RocflArgs};
+use crate::cmd::opts::List;
 use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
 use crate::ocfl::{FileDetails, ObjectVersionDetails, OcflRepo};
 
 impl Cmd for List {
-    fn exec(&self, repo: &OcflRepo, args: &RocflArgs) -> Result<()> {
+    fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         if self.objects || self.object_id.is_none() {
             self.list_objects(repo, args)
         } else {
@@ -22,19 +21,11 @@ impl Cmd for List {
 }
 
 impl List {
-    fn list_objects(&self, repo: &OcflRepo, args: &RocflArgs) -> Result<()> {
+    fn list_objects(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         let iter = repo.list_objects(self.object_id.as_deref())
             .with_context(|| "Failed to list objects")?;
 
-        let mut objects: Vec<ObjectVersionDetails> = iter.filter(|result| {
-            match result {
-                Ok(_) => true,
-                Err(e) => {
-                    error!("{}", e);
-                    false
-                }
-            }
-        }).map(Result::unwrap).collect();
+        let mut objects: Vec<ObjectVersionDetails> = iter.collect();
 
         objects.sort_unstable_by(|a, b| {
             if self.reverse {
@@ -49,7 +40,7 @@ impl List {
         Ok(table.write_stdio()?)
     }
 
-    fn list_object_contents(&self, repo: &OcflRepo, args: &RocflArgs) -> Result<()> {
+    fn list_object_contents(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         let object_id = self.object_id.as_ref().unwrap();
         let object = repo.get_object(object_id, self.version.as_ref())
             .with_context(|| "Failed to list object")?;
@@ -87,7 +78,7 @@ impl List {
         Ok(table.write_stdio()?)
     }
 
-    fn object_table(&self, args: &RocflArgs) -> TableView {
+    fn object_table(&self, args: GlobalArgs) -> TableView {
         let mut columns = Vec::new();
 
         if self.long {
@@ -104,7 +95,7 @@ impl List {
         TableView::new(columns, &self.separator(), self.header, !args.no_styles)
     }
 
-    fn object_content_table(&self, args: &RocflArgs) -> TableView {
+    fn object_content_table(&self, args: GlobalArgs) -> TableView {
         let mut columns = Vec::new();
 
         if self.long {

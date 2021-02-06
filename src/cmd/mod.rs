@@ -17,20 +17,38 @@ mod table;
 
 const DATE_FORMAT: &str = "%Y-%m-%d %H:%M";
 
+/// Executes a `rocfl` command
 pub fn exec_command(args: &RocflArgs) -> Result<()> {
     let repo = create_repo(&args)?;
-    args.command.exec(&repo, args)
+    args.command.exec(&repo, GlobalArgs::new(args.quiet, args.verbose, args.no_styles))
 }
 
 /// Trait executing a CLI command
 #[enum_dispatch]
 trait Cmd {
-    fn exec(&self, repo: &OcflRepo, args: &RocflArgs) -> Result<()>;
+    fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()>;
+}
+
+struct GlobalArgs {
+    _quiet: bool,
+    _verbose: bool,
+    no_styles: bool,
+}
+
+impl GlobalArgs {
+    fn new(quiet: bool, verbose: bool, no_styles: bool) -> Self {
+        Self {
+            _quiet: quiet,
+            _verbose: verbose,
+            no_styles,
+        }
+    }
 }
 
 fn println(value: impl Display) -> Result<()> {
     if let Err(e) = writeln!(io::stdout(), "{}", value) {
         match e.kind() {
+            // This happens if the app is killed while writing
             ErrorKind::BrokenPipe => Ok(()),
             _ => Err(e.into()),
         }

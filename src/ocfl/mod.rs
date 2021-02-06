@@ -21,11 +21,12 @@ use std::path::{self, Path};
 use std::rc::Rc;
 use std::str::FromStr;
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{Error, Result};
 use blake2::{Blake2b, VarBlake2b};
 use chrono::{DateTime, Local};
 use digest::{Digest, Update, VariableOutput};
 use lazy_static::lazy_static;
+use log::error;
 use md5::Md5;
 use regex::Regex;
 use rusoto_core::Region;
@@ -61,8 +62,6 @@ lazy_static! {
 
 /// Interface for interacting with an OCFL repository
 pub struct OcflRepo {
-    // TODO change to enum dispatch
-    // TODO other places to change?
     store: Box<dyn OcflStore>
 }
 
@@ -132,6 +131,7 @@ pub struct ObjectVersionDetails {
     pub version_details: VersionDetails,
 }
 
+/// Enum of all valid digest algorithms
 #[derive(Deserialize, Debug, Eq, PartialEq, Copy, Clone, EnumString, EnumDisplay)]
 pub enum DigestAlgorithm {
     #[serde(rename = "md5")]
@@ -173,7 +173,7 @@ pub struct Diff {
 }
 
 /// Represents a type of change
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum DiffType {
     Added,
     Modified,
@@ -194,6 +194,8 @@ pub enum RocflError {
     IllegalArgument(String),
     #[error("Invalid configuration: {0}")]
     InvalidConfiguration(String),
+    #[error("Illegal state: {0}")]
+    IllegalState(String),
 }
 
 pub trait Validate {
@@ -227,7 +229,8 @@ impl OcflRepo {
     ///
     /// The iterator return an error if it encounters a problem accessing an object. This does
     /// terminate the iterator; there are still more objects until it returns `None`.
-    pub fn list_objects<'a>(&'a self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<ObjectVersionDetails>> + 'a>> {
+    pub fn list_objects<'a>(&'a self, filter_glob: Option<&str>)
+        -> Result<Box<dyn Iterator<Item=ObjectVersionDetails> + 'a>> {
         let inv_iter = self.store.iter_inventories(filter_glob)?;
 
         Ok(Box::new(InventoryAdapterIter::new(inv_iter, |inventory| {
@@ -240,7 +243,9 @@ impl OcflRepo {
     ///
     /// If the object or version of the object cannot be found, then a `RocflError::NotFound`
     /// error is returned.
-    pub fn get_object(&self, object_id: &str, version_num: Option<&VersionNum>) -> Result<ObjectVersion> {
+    pub fn get_object(&self,
+                      object_id: &str,
+                      version_num: Option<&VersionNum>) -> Result<ObjectVersion> {
         let inventory = self.store.get_inventory(object_id)?;
         Ok(ObjectVersion::from_inventory(inventory, version_num)?)
     }
@@ -314,7 +319,8 @@ impl OcflRepo {
         }
 
         if versions.is_empty() {
-            return Err(RocflError::NotFound(format!("Path {} not found in object {}", path, object_id)).into());
+            return Err(RocflError::NotFound(format!("Path {} not found in object {}",
+                                                    path, object_id)).into());
         }
 
         Ok(versions)
@@ -324,7 +330,10 @@ impl OcflRepo {
     /// is between the specified version and the version before it.
     ///
     /// If the object cannot be found, then a `RocflError::NotFound` error is returned.
-    pub fn diff(&self, object_id: &str, left_version: Option<&VersionNum>, right_version: &VersionNum) -> Result<Vec<Diff>> {
+    pub fn diff(&self,
+                object_id: &str,
+                left_version: Option<&VersionNum>,
+                right_version: &VersionNum) -> Result<Vec<Diff>> {
         if left_version.is_some() && right_version.eq(left_version.unwrap()) {
             return Ok(vec![])
         }
@@ -379,7 +388,7 @@ impl VersionNum {
     /// Returns the previous version, or an Error if the previous version is invalid (less than 1).
     pub fn previous(&self) -> Result<VersionNum> {
         if self.number - 1 < 1 {
-            return Err(anyhow!("Versions cannot be less than 1"));
+            return Err(RocflError::IllegalState("Versions cannot be less than 1".to_string()).into());
         }
 
         Ok(Self {
@@ -397,7 +406,7 @@ impl VersionNum {
         };
 
         if self.number + 1 > max as u32 {
-            return Err(anyhow!("Version cannot be greater than {}", max));
+            return Err(RocflError::IllegalState(format!("Version cannot be greater than {}", max)).into());
         }
 
         Ok(Self {
@@ -530,7 +539,8 @@ impl ObjectVersion {
         })
     }
 
-    fn construct_state(target: &VersionNum, inventory: &mut Inventory) -> Result<HashMap<String, FileDetails>> {
+    fn construct_state(target: &VersionNum,
+                       inventory: &mut Inventory) -> Result<HashMap<String, FileDetails>> {
         let mut state = HashMap::new();
 
         let mut current_version_num = (*target).clone();
@@ -587,11 +597,14 @@ impl ObjectVersion {
 }
 
 impl FileDetails {
-    fn new(content_path: String, digest: Rc<String>, digest_algorithm: DigestAlgorithm,
-           object_root: &str, version_details: Rc<VersionDetails>) -> Self {
+    fn new(content_path: String,
+           digest: Rc<String>,
+           digest_algorithm: DigestAlgorithm,
+           object_root: &str,
+           version_details: Rc<VersionDetails>) -> Self {
         Self {
             content_path: content_path.clone(),
-            // TODO this is not correct for s3
+            // TODO this is not correct for s3 -- missing prefix
             storage_path: join(object_root, &convert_path_separator(content_path)),
             digest,
             digest_algorithm,
@@ -745,7 +758,8 @@ trait OcflStore {
     /// Returns an iterator that iterates over every object in an OCFL repository, returning
     /// the most recent inventory of each. Optionally, a glob pattern may be provided that filters
     /// the objects that are returned by OCFL ID.
-    fn iter_inventories<'a>(&'a self, filter_glob: Option<&str>) -> Result<Box<dyn Iterator<Item=Result<Inventory>> + 'a>>;
+    fn iter_inventories<'a>(&'a self, filter_glob: Option<&str>)
+        -> Result<Box<dyn Iterator<Item=Inventory> + 'a>>;
 
     /// Writes the specified file to the sink.
     ///
@@ -801,7 +815,7 @@ struct OcflLayout {
 
 /// An iterator that adapts the output of a delegate `Inventory` iterator into another type.
 struct InventoryAdapterIter<'a, T> {
-    iter: Box<dyn Iterator<Item=Result<Inventory>> + 'a>,
+    iter: Box<dyn Iterator<Item=Inventory> + 'a>,
     adapter: Box<dyn Fn(Inventory) -> Result<T>>
 }
 
@@ -864,8 +878,6 @@ impl Inventory {
 }
 
 impl Validate for Inventory {
-    // TODO fill in more validations
-    // TODO have a shallow and a deep validation
     /// Performs a spot check on the inventory to see if it appears valid. This is not an
     /// exhaustive check, and does not guarantee that the inventory is valid.
     fn validate(&self) -> Result<()> {
@@ -896,7 +908,8 @@ impl Version {
 impl<'a, T> InventoryAdapterIter<'a, T> {
     /// Creates a new `InventoryAdapterIter` that applies the `adapter` closure to the output
     /// of every `next()` call.
-    fn new(iter: Box<dyn Iterator<Item=Result<Inventory>> + 'a>, adapter: impl Fn(Inventory) -> Result<T> + 'a + 'static) -> Self {
+    fn new(iter: Box<dyn Iterator<Item=Inventory> + 'a>,
+           adapter: impl Fn(Inventory) -> Result<T> + 'a + 'static) -> Self {
         Self {
             iter,
             adapter: Box::new(adapter)
@@ -905,14 +918,19 @@ impl<'a, T> InventoryAdapterIter<'a, T> {
 }
 
 impl<'a, T> Iterator for InventoryAdapterIter<'a, T> {
-    type Item = Result<T>;
+    type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next() {
             None => None,
-            Some(Err(e)) => Some(Err(e)),
-            Some(Ok(inventory)) => {
-                Some(self.adapter.deref()(inventory))
+            Some(inventory) => {
+                match self.adapter.deref()(inventory) {
+                    Ok(adapted) => Some(adapted),
+                    Err(e) => {
+                        error!("{}", e);
+                        self.next()
+                    }
+                }
             }
         }
     }
@@ -949,19 +967,5 @@ fn not_found(object_id: &str, version_num: Option<&VersionNum>) -> RocflError {
     match version_num {
         Some(version) => RocflError::NotFound(format!("Object {} version {}", object_id, version)),
         None => RocflError::NotFound(format!("Object {}", object_id))
-    }
-}
-
-
-#[cfg(test)]
-mod tests {
-    use std::mem::{size_of, size_of_val};
-    use crate::ocfl::DigestAlgorithm;
-
-    #[test]
-    fn size() {
-        dbg!(size_of::<DigestAlgorithm>());
-        let d = "sha512".to_string();
-        dbg!(size_of_val(&d) + d.capacity());
     }
 }

@@ -5,8 +5,8 @@ use std::fmt::Formatter;
 use anyhow::Result;
 use lazy_static::lazy_static;
 
-use crate::cmd::{Cmd, DATE_FORMAT, println};
-use crate::cmd::opts::{Diff, Log, RocflArgs, Show};
+use crate::cmd::{Cmd, DATE_FORMAT, GlobalArgs, println};
+use crate::cmd::opts::{Diff, Log, Show};
 use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
 use crate::ocfl::{Diff as VersionDiff, DiffType, OcflRepo, VersionDetails};
@@ -19,7 +19,7 @@ lazy_static! {
 }
 
 impl Cmd for Log {
-    fn exec(&self, repo: &OcflRepo, args: &RocflArgs) -> Result<()> {
+    fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         let mut versions = match &self.path {
             Some(path) => repo.list_file_versions(&self.object_id, path)?,
             None => repo.list_object_versions(&self.object_id)?,
@@ -36,7 +36,7 @@ impl Cmd for Log {
 }
 
 impl Log {
-    fn print_versions(&self, versions: &[VersionDetails], args: &RocflArgs) -> Result<()> {
+    fn print_versions(&self, versions: &[VersionDetails], args: GlobalArgs) -> Result<()> {
         if self.compact {
             let mut table = self.version_table(args);
             versions.iter().for_each(|version| table.add_row(version));
@@ -49,7 +49,7 @@ impl Log {
         }
     }
 
-    fn version_table(&self, args: &RocflArgs) -> TableView {
+    fn version_table(&self, args: GlobalArgs) -> TableView {
         let mut columns = Vec::new();
 
         columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
@@ -71,7 +71,7 @@ impl Log {
 }
 
 impl Cmd for Show {
-    fn exec(&self, repo: &OcflRepo, args: &RocflArgs) -> Result<()> {
+    fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         let object = repo.get_object_details(&self.object_id,
                                              self.version.as_ref())?;
 
@@ -97,7 +97,7 @@ impl Cmd for Show {
 }
 
 impl Cmd for Diff {
-    fn exec(&self, repo: &OcflRepo, args: &RocflArgs) -> Result<()> {
+    fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         if self.left == self.right {
             return Ok(());
         }
