@@ -104,7 +104,7 @@ rocfl ls -l foobar
 ```
 
 The `-p` flag can also be used here to display the paths to the
-physical files on disk:
+physical files on disk relative the storage root:
 
 ```console
 rocfl ls -p foobar
