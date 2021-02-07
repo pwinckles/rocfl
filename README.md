@@ -39,7 +39,9 @@ supports the following layout extensions:
 
 If a repository does not define a storage layout, or it uses an
 unimplemented layout, then `rocfl` must scan the repository to locate
-a request object, which will take significantly longer.
+a request object. While the scan does take significantly longer than
+accessing the object directly, it is still fairly fast in small to
+medium sized repositories.
 
 The following is an overview of the features that `rocfl` supports.
 For a detailed description of all of the options available, consult
