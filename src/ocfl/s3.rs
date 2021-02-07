@@ -2,6 +2,7 @@
 
 use std::borrow::Cow;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::io::Write;
 use std::vec::IntoIter;
 
@@ -26,6 +27,10 @@ pub struct S3OcflStore {
     s3_client: S3Client,
     /// Maps object IDs to paths within the storage root
     storage_layout: Option<StorageLayout>,
+    // FIXME This "cache" is only intended to support the simple CLI use case.
+    //       It is not thread safe and it never evicts.
+    /// Caches object ID to path mappings
+    id_path_cache: RefCell<HashMap<String, String>>,
 }
 
 // ================================================== //
@@ -40,8 +45,25 @@ impl S3OcflStore {
 
         Ok(Self {
             s3_client,
-            storage_layout
+            storage_layout,
+            id_path_cache: RefCell::new(HashMap::new()),
         })
+    }
+
+    fn get_inventory_inner(&self, object_id: &str) -> Result<Inventory> {
+        if let Some(storage_layout) = &self.storage_layout {
+            let object_root = storage_layout.map_object_id(object_id);
+            self.parse_inventory_required(object_id, &object_root)
+        } else {
+            info!("Storage layout not configured, scanning repository to locate object {}", &object_id);
+
+            let mut iter = InventoryIter::new_id_matching(&self, &object_id);
+
+            match iter.next() {
+                Some(inventory) => Ok(inventory),
+                None => Err(not_found(&object_id, None).into())
+            }
+        }
     }
 
     fn parse_inventory_optional(&self, object_root: &str) -> Option<Inventory> {
@@ -51,6 +73,13 @@ impl S3OcflStore {
                 error!("{:#}", e);
                 None
             }
+        }
+    }
+
+    fn parse_inventory_required(&self, object_id: &str, object_root: &str) -> Result<Inventory> {
+        match self.parse_inventory(object_root)? {
+            Some(inventory) => Ok(inventory),
+            None => Err(not_found(object_id, None).into())
         }
     }
 
@@ -105,22 +134,21 @@ impl OcflStore for S3OcflStore {
     /// Returns the most recent inventory version for the specified object, or an a
     /// `RocflError::NotFound` if it does not exist.
     fn get_inventory(&self, object_id: &str) -> Result<Inventory> {
-        if let Some(storage_layout) = &self.storage_layout {
-            let object_root = storage_layout.map_object_id(object_id);
+        let object_root = match self.id_path_cache.borrow().get(object_id) {
+            Some(object_root) => Some(object_root.clone()),
+            None => None
+        };
 
-            return match self.parse_inventory(&object_root)? {
-                Some(inventory) => Ok(inventory),
-                None => Err(not_found(&object_id, None).into())
-            };
-        }
-
-        info!("Storage layout not configured, scanning repository to locate object {}", &object_id);
-
-        let mut iter = InventoryIter::new_id_matching(&self, &object_id);
-
-        match iter.next() {
-            Some(inventory) => Ok(inventory),
-            None => Err(not_found(&object_id, None).into())
+        match object_root {
+            Some(object_root) => {
+                self.parse_inventory_required(object_id, &object_root)
+            }
+            None => {
+                let inventory = self.get_inventory_inner(&object_id)?;
+                self.id_path_cache.borrow_mut().insert(object_id.to_string(),
+                                                       inventory.object_root.clone());
+                Ok(inventory)
+            }
         }
     }
 

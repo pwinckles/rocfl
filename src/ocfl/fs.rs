@@ -1,6 +1,7 @@
 //! Local filesystem OCFL storage implementation.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fs::{self, File, ReadDir};
 use std::io::{self, Read, Write};
 use std::ops::Deref;
@@ -34,6 +35,10 @@ pub struct FsOcflStore {
     storage_root: PathBuf,
     /// Maps object IDs to paths within the storage root
     storage_layout: Option<StorageLayout>,
+    // FIXME This "cache" is only intended to support the simple CLI use case.
+    //       It is not thread safe and it never evicts.
+    /// Caches object ID to path mappings
+    id_path_cache: RefCell<HashMap<String, String>>,
 }
 
 // ================================================== //
@@ -57,7 +62,8 @@ impl FsOcflStore {
 
         Ok(Self {
             storage_root,
-            storage_layout
+            storage_layout,
+            id_path_cache: RefCell::new(HashMap::new()),
         })
     }
 }
@@ -66,23 +72,21 @@ impl OcflStore for FsOcflStore {
     /// Returns the most recent inventory version for the specified object, or an a
     /// `RocflError::NotFound` if it does not exist.
     fn get_inventory(&self, object_id: &str) -> Result<Inventory> {
-        if let Some(storage_layout) = &self.storage_layout {
-            let object_root = self.storage_root.join(storage_layout.map_object_id(object_id));
+        let object_root = match self.id_path_cache.borrow().get(object_id) {
+            Some(object_root) => Some(object_root.clone()),
+            None => None
+        };
 
-            if object_root.exists() {
-                return parse_inventory(&object_root, &self.storage_root);
+        match object_root {
+            Some(object_root) => {
+                self.get_inventory_by_path(object_id, &object_root)
             }
-
-            return Err(not_found(&object_id, None).into());
-        }
-
-        info!("Storage layout not configured, scanning repository to locate object {}", &object_id);
-
-        let mut iter = InventoryIter::new_id_matching(&self.storage_root, &object_id)?;
-
-        match iter.next() {
-            Some(inventory) => Ok(inventory),
-            None => Err(not_found(&object_id, None).into())
+            None => {
+                let inventory = self.get_inventory_inner(&object_id)?;
+                self.id_path_cache.borrow_mut().insert(object_id.to_string(),
+                                                       inventory.object_root.clone());
+                Ok(inventory)
+            }
         }
     }
 
@@ -115,6 +119,34 @@ impl OcflStore for FsOcflStore {
         io::copy(&mut file, sink)?;
 
         Ok(())
+    }
+}
+
+impl FsOcflStore {
+    fn get_inventory_inner(&self, object_id: &str) -> Result<Inventory> {
+        if let Some(storage_layout) = &self.storage_layout {
+            let object_root = storage_layout.map_object_id(object_id);
+            self.get_inventory_by_path(object_id, &object_root)
+        } else {
+            info!("Storage layout not configured, scanning repository to locate object {}", &object_id);
+
+            let mut iter = InventoryIter::new_id_matching(&self.storage_root, &object_id)?;
+
+            match iter.next() {
+                Some(inventory) => Ok(inventory),
+                None => Err(not_found(&object_id, None).into())
+            }
+        }
+    }
+
+    fn get_inventory_by_path(&self, object_id: &str, object_root: &str) -> Result<Inventory> {
+        let object_root = self.storage_root.join(object_root);
+
+        if object_root.exists() {
+            parse_inventory(&object_root, &self.storage_root)
+        } else {
+            Err(not_found(&object_id, None).into())
+        }
     }
 }
 
