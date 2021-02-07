@@ -1,5 +1,5 @@
 use std::convert::TryFrom;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use anyhow::Result;
@@ -21,7 +21,8 @@ fn list_all_objects() -> Result<()> {
 
     assert_eq!(objects.remove(0), ObjectVersionDetails {
         id: "o1".to_string(),
-        object_root: repo_root.join("235").join("2da").join("728").join("2352da7280f1decc3acf1ba84eb945c9fc2b7b541094e1d0992dbffd1b6664cc")
+        object_root: Path::new("235").join("2da").join("728")
+            .join("2352da7280f1decc3acf1ba84eb945c9fc2b7b541094e1d0992dbffd1b6664cc")
             .to_string_lossy().to_string(),
         digest_algorithm: DigestAlgorithm::Sha512,
         version_details: VersionDetails {
@@ -35,7 +36,8 @@ fn list_all_objects() -> Result<()> {
 
     assert_eq!(objects.remove(0), ObjectVersionDetails {
         id: "o2".to_string(),
-        object_root: repo_root.join("925").join("0b9").join("912").join("9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04")
+        object_root: Path::new("925").join("0b9").join("912")
+            .join("9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04")
             .to_string_lossy().to_string(),
         digest_algorithm: DigestAlgorithm::Sha512,
         version_details: o2_v3_details()
@@ -43,7 +45,8 @@ fn list_all_objects() -> Result<()> {
 
     assert_eq!(objects.remove(0), ObjectVersionDetails {
         id: "o3".to_string(),
-        object_root: repo_root.join("de2").join("d91").join("dc0").join("de2d91dc0a2580414e9a70f7dfc76af727b69cac0838f2cbe0a88d12642efcbf")
+        object_root: Path::new("de2").join("d91").join("dc0")
+            .join("de2d91dc0a2580414e9a70f7dfc76af727b69cac0838f2cbe0a88d12642efcbf")
             .to_string_lossy().to_string(),
         digest_algorithm: DigestAlgorithm::Sha512,
         version_details: VersionDetails {
@@ -69,7 +72,7 @@ fn list_single_object_from_glob() -> Result<()> {
 
     assert_eq!(objects.remove(0), ObjectVersionDetails {
         id: "o1".to_string(),
-        object_root: repo_root.join("235").join("2da").join("728")
+        object_root: Path::new("235").join("2da").join("728")
             .join("2352da7280f1decc3acf1ba84eb945c9fc2b7b541094e1d0992dbffd1b6664cc")
             .to_string_lossy().to_string(),
         digest_algorithm: DigestAlgorithm::Sha512,
@@ -102,7 +105,7 @@ fn list_repo_with_invalid_objects() -> Result<()> {
     let repo_root = create_repo_root("invalid");
     let repo = OcflRepo::new_fs_repo(&repo_root)?;
 
-    let object_root = repo_root.join("925").join("0b9").join("912")
+    let object_root = Path::new("925").join("0b9").join("912")
         .join("9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04");
 
     let iter = repo.list_objects(None)?;
@@ -126,7 +129,7 @@ fn get_object_when_exists() -> Result<()> {
 
     let object = repo.get_object("o2", None)?;
 
-    let object_root = repo_root.join("925").join("0b9").join("912")
+    let object_root = Path::new("925").join("0b9").join("912")
         .join("9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04");
 
     assert_eq!(object, ObjectVersion {
@@ -166,7 +169,7 @@ fn get_object_version_when_exists() -> Result<()> {
 
     let object = repo.get_object("o2", Some(&VersionNum::try_from(2)?))?;
 
-    let object_root = repo_root.join("925").join("0b9").join("912")
+    let object_root = Path::new("925").join("0b9").join("912")
         .join("9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04");
 
     assert_eq!(object, ObjectVersion {
@@ -223,7 +226,7 @@ fn get_object_when_exists_using_layout() -> Result<()> {
 
     let object = repo.get_object("o2", None)?;
 
-    let object_root = repo_root.join("925/0b9/912\
+    let object_root = Path::new("925/0b9/912\
     /9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04");
 
     assert_eq!(object, ObjectVersion {
@@ -424,6 +427,35 @@ fn diff_version_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::new_fs_repo(&repo_root).unwrap();
     repo.diff("o1", None, &VersionNum::try_from(2).unwrap()).unwrap();
+}
+
+#[test]
+fn get_object_file_when_exists() -> Result<()> {
+    let repo_root = create_repo_root("multiple-objects");
+    let repo = OcflRepo::new_fs_repo(&repo_root)?;
+
+    let id = "o2";
+    let version = VersionNum::try_from(2)?;
+    let mut out: Vec<u8> = Vec::new();
+
+    repo.get_object_file(id, "dir1/file3", Some(&version), &mut out)?;
+
+    assert_eq!("file 3", String::from_utf8(out)?);
+
+    Ok(())
+}
+
+#[test]
+#[should_panic(expected = "Path dir1/bogus not found in object o2 version v2")]
+fn fail_get_object_file_when_does_not_exist() {
+    let repo_root = create_repo_root("multiple-objects");
+    let repo = OcflRepo::new_fs_repo(&repo_root).unwrap();
+
+    let id = "o2";
+    let version = VersionNum::try_from(2).unwrap();
+    let mut out: Vec<u8> = Vec::new();
+
+    repo.get_object_file(id, "dir1/bogus", Some(&version), &mut out).unwrap();
 }
 
 fn o2_v1_details() -> VersionDetails {

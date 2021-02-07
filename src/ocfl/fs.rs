@@ -70,7 +70,7 @@ impl OcflStore for FsOcflStore {
             let object_root = self.storage_root.join(storage_layout.map_object_id(object_id));
 
             if object_root.exists() {
-                return parse_inventory(object_root);
+                return parse_inventory(&object_root, &self.storage_root);
             }
 
             return Err(not_found(&object_id, None).into());
@@ -124,6 +124,7 @@ impl OcflStore for FsOcflStore {
 
 /// Iterates over ever object in an OCFL repository by walking the file tree.
 struct InventoryIter {
+    root: PathBuf,
     dir_iters: Vec<ReadDir>,
     current: RefCell<Option<ReadDir>>,
     id_matcher: Option<Box<dyn Fn(&str) -> bool>>,
@@ -152,6 +153,7 @@ impl InventoryIter {
     fn new<P: AsRef<Path>>(root: P, id_matcher: Option<Box<dyn Fn(&str) -> bool>>) -> Result<Self> {
         Ok(InventoryIter {
             dir_iters: vec![fs::read_dir(&root)?],
+            root: root.as_ref().to_path_buf(),
             current: RefCell::new(None),
             id_matcher,
         })
@@ -163,11 +165,11 @@ impl InventoryIter {
         if self.id_matcher.is_some() {
             if let Some(object_id) = self.extract_object_id(&inventory_path) {
                 if self.id_matcher.as_ref().unwrap().deref()(&object_id) {
-                    return parse_inventory_optional(&object_root);
+                    return parse_inventory_optional(&object_root, &self.root);
                 }
             }
         } else {
-            return parse_inventory_optional(&object_root);
+            return parse_inventory_optional(&object_root, &self.root);
         }
 
         None
@@ -263,8 +265,12 @@ fn is_object_root<P: AsRef<Path>>(path: P) -> Result<bool> {
     Ok(false)
 }
 
-fn parse_inventory_optional<P: AsRef<Path>>(object_root: P) -> Option<Inventory> {
-    match parse_inventory(object_root) {
+fn parse_inventory_optional<A, B>(object_root: A, storage_root: B) -> Option<Inventory>
+    where
+        A: AsRef<Path>,
+        B: AsRef<Path>,
+{
+    match parse_inventory(object_root, storage_root) {
         Ok(inventory) => Some(inventory),
         Err(e) => {
             error!("{:#}", e);
@@ -276,13 +282,23 @@ fn parse_inventory_optional<P: AsRef<Path>>(object_root: P) -> Option<Inventory>
 /// Parses the HEAD inventory of the OCFL object that's rooted in the specified directory.
 /// This is normally the `inventory.json` file in the object's root, but it could also be
 /// the inventory file in an extension directory, such as the mutable HEAD extension.
-fn parse_inventory<P: AsRef<Path>>(object_root: P) -> Result<Inventory> {
+fn parse_inventory<A, B>(object_root: A, storage_root: B) -> Result<Inventory>
+    where
+        A: AsRef<Path>,
+        B: AsRef<Path>,
+{
     let inventory_path = resolve_inventory_path(&object_root);
     // TODO should validate hash
     let mut inventory = parse_inventory_file(&inventory_path)
         .with_context(|| format!("Failed to parse inventory at {}",
                              inventory_path.to_str().unwrap_or_default()))?;
-    inventory.object_root = object_root.as_ref().to_string_lossy().to_string();
+
+    let relative = match pathdiff::diff_paths(&object_root, &storage_root) {
+        Some(relative) => relative.to_string_lossy().into(),
+        None => object_root.as_ref().to_string_lossy().into(),
+    };
+
+    inventory.object_root = relative;
     Ok(inventory)
 }
 

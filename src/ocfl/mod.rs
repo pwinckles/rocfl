@@ -604,7 +604,6 @@ impl FileDetails {
            version_details: Rc<VersionDetails>) -> Self {
         Self {
             content_path: content_path.clone(),
-            // TODO this is not correct for s3 -- missing prefix
             storage_path: join(object_root, &convert_path_separator(content_path)),
             digest,
             digest_algorithm,
