@@ -1,5 +1,6 @@
 //! S3 OCFL storage implementation.
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::io::Write;
 use std::vec::IntoIter;
@@ -63,7 +64,7 @@ impl S3OcflStore {
         if let Some(bytes) = bytes {
             let mut inventory = self.parse_inventory_bytes(&bytes)
                 .with_context(|| format!("Failed to parse inventory in object at {}", object_root))?;
-            inventory.object_root = strip_leading_slash(strip_trailing_slash(object_root).as_str());
+            inventory.object_root = strip_leading_slash(strip_trailing_slash(object_root).as_ref()).into();
             Ok(Some(inventory))
         } else {
             Ok(None)
@@ -458,19 +459,19 @@ fn join_with_trailing_slash(part1: &str, part2: &str) -> String {
     joined
 }
 
-fn strip_trailing_slash(path: &str) -> String {
+fn strip_trailing_slash(path: &str) -> Cow<str> {
     if let Some(stripped) = path.strip_suffix('/') {
-        stripped.to_owned()
+        Cow::Owned(stripped.to_string())
     } else {
-        path.to_owned()
+        path.into()
     }
 }
 
-fn strip_leading_slash(path: &str) -> String {
+fn strip_leading_slash(path: &str) -> Cow<str> {
     if path.starts_with('/') {
-        path[1..path.len()].to_owned()
+        Cow::Owned(path[1..path.len()].to_string())
     } else {
-        path.to_owned()
+        path.into()
     }
 }
 

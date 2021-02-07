@@ -345,7 +345,8 @@ fn lower_percent_escape(original: &str) -> Cow<str> {
     }
 }
 
-fn validate_extension_name(expected: &LayoutExtensionName, actual: &LayoutExtensionName) -> Result<()> {
+fn validate_extension_name(expected: &LayoutExtensionName,
+                           actual: &LayoutExtensionName) -> Result<()> {
     if actual != expected {
         Err(RocflError::InvalidConfiguration(
             format!("Expected layout extension name {}; Found: {}",
