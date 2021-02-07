@@ -70,7 +70,7 @@ pub struct List {
     #[structopt(short, long)]
     pub long: bool,
 
-    /// Displays the physical path to the item
+    /// Displays the physical path to the item relative the storage root
     #[structopt(short, long)]
     pub physical: bool,
 

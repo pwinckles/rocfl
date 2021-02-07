@@ -226,8 +226,8 @@ fn get_object_when_exists_using_layout() -> Result<()> {
 
     let object = repo.get_object("o2", None)?;
 
-    let object_root = Path::new("925/0b9/912\
-    /9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04");
+    let object_root = Path::new("925").join("0b9").join("912")
+        .join("9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04");
 
     assert_eq!(object, ObjectVersion {
         id: "o2".to_string(),
