@@ -1,0 +1,37 @@
+{
+  "id" : "o3",
+  "type" : "https://ocfl.io/1.0/spec/#inventory",
+  "digestAlgorithm" : "sha512",
+  "head" : "v2",
+  "contentDirectory" : "content",
+  "fixity" : { },
+  "manifest" : {
+    "70ffe50550ae07cd0fc154cc1cd3a47b71499b5f67921b52219750441791981fb36476cd478440601bc26da16b28c8a2be4478b36091f2615ac94a575581902c" : [ "v2/content/dir2/file3" ],
+    "9c614ba0d58c976d0b39f8f5536eb8af89fae745cbe3783ac2ca3e3055bb0b1e3687417a1d1104288d2883a4368d3dacb9931460c6e523117ff3eaa28810481a" : [ "v1/content/file1" ]
+  },
+  "versions" : {
+    "v1" : {
+      "created" : "2019-08-05T15:57:53Z",
+      "message" : "commit message",
+      "user" : {
+        "name" : "Peter",
+        "address" : "peter@example.com"
+      },
+      "state" : {
+        "9c614ba0d58c976d0b39f8f5536eb8af89fae745cbe3783ac2ca3e3055bb0b1e3687417a1d1104288d2883a4368d3dacb9931460c6e523117ff3eaa28810481a" : [ "file1" ]
+      }
+    },
+    "v2" : {
+      "created" : "2019-08-05T15:57:53Z",
+      "message" : "2",
+      "user" : {
+        "name" : "Peter",
+        "address" : "peter@example.com"
+      },
+      "state" : {
+        "70ffe50550ae07cd0fc154cc1cd3a47b71499b5f67921b52219750441791981fb36476cd478440601bc26da16b28c8a2be4478b36091f2615ac94a575581902c" : [ "dir2/file3" ],
+        "9c614ba0d58c976d0b39f8f5536eb8af89fae745cbe3783ac2ca3e3055bb0b1e3687417a1d1104288d2883a4368d3dacb9931460c6e523117ff3eaa28810481a" : [ "file1" ]
+      }
+    }
+  }
+}

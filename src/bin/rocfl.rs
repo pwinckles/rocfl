@@ -25,7 +25,7 @@ fn main() {
         .init();
 
     if let Err(e) = cmd::exec_command(&args) {
-        error!("{}", e);
+        error!("{:#}", e);
         process::exit(1);
     }
 }

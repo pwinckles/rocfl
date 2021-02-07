@@ -76,6 +76,8 @@ impl OcflStore for FsOcflStore {
             return Err(not_found(&object_id, None).into());
         }
 
+        info!("Storage layout not configured, scanning repository to locate object {}", &object_id);
+
         let mut iter = InventoryIter::new_id_matching(&self.storage_root, &object_id)?;
 
         match iter.next() {
@@ -182,7 +184,7 @@ impl InventoryIter {
         }));
 
         if let Err(e) = result {
-            error!("Failed to locate object ID in inventory at {}: {}",
+            error!("Failed to locate object ID in inventory at {}: {:#}",
                   path.as_ref().to_string_lossy(), e);
             None
         } else {
@@ -215,10 +217,10 @@ impl Iterator for InventoryIter {
                 None =>  {
                     self.current.replace(None);
                 },
-                Some(Err(e)) => error!("{}", e),
+                Some(Err(e)) => error!("{:#}", e),
                 Some(Ok(entry)) => {
                     match entry.file_type() {
-                        Err(e) => error!("{}", e),
+                        Err(e) => error!("{:#}", e),
                         Ok(ftype) if ftype.is_dir() => {
                             let path = entry.path();
 
@@ -234,10 +236,10 @@ impl Iterator for InventoryIter {
                                         Ok(next) => {
                                             self.current.replace(Some(next));
                                         }
-                                        Err(e) => error!("{}", e)
+                                        Err(e) => error!("{:#}", e)
                                     }
                                 }
-                                Err(e) => error!("{}", e),
+                                Err(e) => error!("{:#}", e),
                                 _ => panic!("This code is unreachable")
                             }
                         }
@@ -265,7 +267,7 @@ fn parse_inventory_optional<P: AsRef<Path>>(object_root: P) -> Option<Inventory>
     match parse_inventory(object_root) {
         Ok(inventory) => Some(inventory),
         Err(e) => {
-            error!("{}", e);
+            error!("{:#}", e);
             None
         }
     }
@@ -294,6 +296,7 @@ fn parse_inventory_file<P: AsRef<Path>>(inventory_file: P) -> Result<Inventory> 
 fn resolve_inventory_path<P: AsRef<Path>>(object_root: P) -> PathBuf {
     let mutable_head_inv = object_root.as_ref().join(MUTABLE_HEAD_INVENTORY_FILE);
     if mutable_head_inv.exists() {
+        info!("Found mutable HEAD at {}", mutable_head_inv.to_string_lossy());
         return mutable_head_inv;
     }
     object_root.as_ref().join(ROOT_INVENTORY_FILE)
@@ -313,7 +316,7 @@ fn load_storage_layout<P: AsRef<Path>>(storage_root: P) -> Option<StorageLayout>
                     Some(storage_layout)
                 },
                 Err(e) => {
-                    error!("Failed to load storage layout extension {}: {}",
+                    error!("Failed to load storage layout extension {}: {:#}",
                            layout.extension.to_string(), e);
                     None
                 }
@@ -330,7 +333,7 @@ fn parse_layout<P: AsRef<Path>>(storage_root: P) -> Option<OcflLayout> {
         match parse_layout_file(&layout_file) {
             Ok(layout) => Some(layout),
             Err(e) => {
-                error!("Failed to parse OCFL layout file at {}: {}",
+                error!("Failed to parse OCFL layout file at {}: {:#}",
                       layout_file.to_string_lossy(), e);
                 None
             }
@@ -357,7 +360,7 @@ fn read_layout_config<P: AsRef<Path>>(storage_root: P, layout: &OcflLayout) -> O
         return match file_to_bytes(&config_file) {
             Ok(bytes) => Some(bytes),
             Err(e) => {
-                error!("Failed to parse OCFL storage layout extension config at {}: {}",
+                error!("Failed to parse OCFL storage layout extension config at {}: {:#}",
                       config_file.to_string_lossy(), e);
                 None
             }

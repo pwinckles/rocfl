@@ -367,7 +367,9 @@ fn validate_tuple_config(tuple_size: usize, number_of_tuples: usize) -> Result<(
     }
 }
 
-fn validate_digest_algorithm(algorithm: DigestAlgorithm, tuple_size: usize, number_of_tuples: usize) -> Result<()>{
+fn validate_digest_algorithm(algorithm: DigestAlgorithm,
+                             tuple_size: usize,
+                             number_of_tuples: usize) -> Result<()>{
     let digest = algorithm.hash_hex("test".as_bytes());
     let total_tuples_length = tuple_size * number_of_tuples;
 

@@ -927,7 +927,7 @@ impl<'a, T> Iterator for InventoryAdapterIter<'a, T> {
                 match self.adapter.deref()(inventory) {
                     Ok(adapted) => Some(adapted),
                     Err(e) => {
-                        error!("{}", e);
+                        error!("{:#}", e);
                         self.next()
                     }
                 }

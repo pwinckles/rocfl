@@ -47,7 +47,7 @@ impl S3OcflStore {
         match self.parse_inventory(object_root) {
             Ok(inventory) => inventory,
             Err(e) => {
-                error!("{}", e);
+                error!("{:#}", e);
                 None
             }
         }
@@ -80,7 +80,10 @@ impl S3OcflStore {
         let mutable_head_inv = join(object_root, MUTABLE_HEAD_INVENTORY_FILE);
 
         match self.s3_client.get_object(&mutable_head_inv)? {
-            Some(bytes) => Ok(Some(bytes)),
+            Some(bytes) => {
+                info!("Found mutable HEAD at {}", &mutable_head_inv);
+                Ok(Some(bytes))
+            },
             None => {
                 let inv_path = join(object_root, ROOT_INVENTORY_FILE);
                 match self.s3_client.get_object(&inv_path)? {
@@ -109,6 +112,8 @@ impl OcflStore for S3OcflStore {
                 None => Err(not_found(&object_id, None).into())
             };
         }
+
+        info!("Storage layout not configured, scanning repository to locate object {}", &object_id);
 
         let mut iter = InventoryIter::new_id_matching(&self, &object_id);
 
@@ -228,6 +233,8 @@ impl S3Client {
     fn get_object(&self, path: &str) -> Result<Option<Vec<u8>>> {
         let key = join(&self.prefix, &path);
 
+        info!("Getting object from S3: {}", &key);
+
         let result = self.runtime.borrow_mut().block_on(self.s3_client.get_object(GetObjectRequest {
             bucket: self.bucket.clone(),
             key,
@@ -249,6 +256,8 @@ impl S3Client {
 
     fn stream_object(&self, path: &str, sink: &mut dyn Write) -> Result<()> {
         let key = join(&self.prefix, &path);
+
+        info!("Streaming object from S3: {}", &key);
 
         let result = self.runtime.borrow_mut().block_on(self.s3_client.get_object(GetObjectRequest {
             bucket: self.bucket.clone(),
@@ -351,7 +360,7 @@ impl<'a> Iterator for InventoryIter<'a> {
                                 self.current.replace(Some(listing.directories.into_iter()));
                             }
                         }
-                        Err(e) => error!("{}", e)
+                        Err(e) => error!("{:#}", e)
                     }
                 }
             }
@@ -366,7 +375,7 @@ fn load_storage_layout(s3_client: &S3Client) -> Option<StorageLayout> {
             match serde_json::from_slice::<OcflLayout>(layout.as_slice()) {
                 Ok(layout) => load_layout_extension(layout, s3_client),
                 Err(e) => {
-                    error!("Failed to load OCFL layout: {}", e);
+                    error!("Failed to load OCFL layout: {:#}", e);
                     None
                 }
             }
@@ -377,7 +386,7 @@ fn load_storage_layout(s3_client: &S3Client) -> Option<StorageLayout> {
             None
         },
         Err(e) => {
-            error!("Failed to load OCFL layout: {}", e);
+            error!("Failed to load OCFL layout: {:#}", e);
             None
         }
     }
@@ -397,14 +406,14 @@ fn load_layout_extension(layout: OcflLayout, s3_client: &S3Client) -> Option<Sto
                     Some(storage_layout)
                 },
                 Err(e) => {
-                    error!("Failed to load storage layout extension {}: {}",
+                    error!("Failed to load storage layout extension {}: {:#}",
                            layout.extension.to_string(), e);
                     None
                 }
             }
         },
         Err(e) => {
-            error!("Failed to load storage layout extension {}: {}",
+            error!("Failed to load storage layout extension {}: {:#}",
                    layout.extension.to_string(), e);
             None
         }
