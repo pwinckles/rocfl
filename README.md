@@ -18,6 +18,10 @@ copy locally.
 1. Execute: `cargo install rocfl`
 1. Verify the install: `rocfl help`
 
+If you want to build a binary that does not include the code for
+integrating with S3, which adds a large number of dependencies, then
+you can do so by running: `cargo install rocfl --no-default-features`.
+
 ## Usage
 
 `rocfl` is intended to be run from within an OCFL repository's storage
