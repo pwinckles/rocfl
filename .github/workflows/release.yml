@@ -17,7 +17,7 @@ jobs:
         with:
           toolchain: stable
           target: x86_64-unknown-linux-musl
-      - name: Build
+      - name: Build default
         uses: actions-rs/cargo@v1
         with:
           command: build
@@ -28,6 +28,17 @@ jobs:
         with:
           name: rocfl-linux-x86_64
           path: target/x86_64-unknown-linux-musl/release/rocfl
+      - name: Build no-s3
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --target x86_64-unknown-linux-musl --no-default-features --release
+          use-cross: true
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: rocfl-linux-x86_64-no-s3
+          path: target/x86_64-unknown-linux-musl/release/rocfl
   windows:
     runs-on: windows-latest
     steps:
@@ -35,7 +46,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-      - name: Build
+      - name: Build default
         uses: actions-rs/cargo@v1
         with:
           command: build
@@ -45,6 +56,16 @@ jobs:
         with:
           name: rocfl-windows-x86_64.exe
           path: target/release/rocfl.exe
+      - name: Build no-s3
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --no-default-features --release
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: rocfl-windows-x86_64-no-s3.exe
+          path: target/release/rocfl.exe
   osx:
     runs-on: macos-latest
     steps:
@@ -52,7 +73,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-      - name: Build
+      - name: Build default
         uses: actions-rs/cargo@v1
         with:
           command: build
@@ -61,4 +82,14 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: rocfl-macos-x86_64
+          path: target/release/rocfl
+      - name: Build no-s3
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --no-default-features --release
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: rocfl-macos-x86_64-no-s3
           path: target/release/rocfl

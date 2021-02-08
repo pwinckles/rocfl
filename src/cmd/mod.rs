@@ -1,7 +1,9 @@
 use std::fmt::Display;
 use std::io::{self, ErrorKind, Write};
 
-use anyhow::{anyhow, Result};
+#[cfg(not(feature = "s3"))]
+use anyhow::anyhow;
+use anyhow::Result;
 use enum_dispatch::enum_dispatch;
 #[cfg(feature = "s3")]
 use rusoto_core::Region;
