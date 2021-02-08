@@ -29,6 +29,7 @@ use lazy_static::lazy_static;
 use log::error;
 use md5::Md5;
 use regex::Regex;
+#[cfg(feature = "s3")]
 use rusoto_core::Region;
 use serde::Deserialize;
 use sha1::Sha1;
@@ -38,9 +39,11 @@ use thiserror::Error;
 
 use self::fs::FsOcflStore;
 use self::layout::LayoutExtensionName;
+#[cfg(feature = "s3")]
 use self::s3::S3OcflStore;
 
 mod fs;
+#[cfg(feature = "s3")]
 mod s3;
 mod layout;
 
@@ -217,6 +220,7 @@ impl OcflRepo {
 
     /// Creates a new `OcflRepo` instance backed by S3. `prefix` used to specify a virtual
     /// sub directory within a bucket that the OCFL repository is rooted in.
+    #[cfg(feature = "s3")]
     pub fn new_s3_repo(region: Region, bucket: &str, prefix: Option<&str>) -> Result<Self> {
         Ok(Self {
             store: Box::new(S3OcflStore::new(region, bucket, prefix)?)

@@ -10,6 +10,10 @@ repository = "https://github.com/pwinckles/rocfl"
 homepage = "https://github.com/pwinckles/rocfl"
 documentation = "https://docs.rs/rocfl/"
 
+[features]
+default = ["s3"]
+s3 = ["rusoto_core", "rusoto_credential", "rusoto_s3", "tokio"]
+
 [[bin]]
 name = "rocfl"
 path = "src/bin/rocfl.rs"
@@ -66,11 +70,11 @@ grep-regex = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# AWS
-rusoto_core = { version = "0.46", default_features = false, features =["rustls"] }
-rusoto_credential = "0.46"
-rusoto_s3 = { version = "0.46", default_features = false, features = ["rustls"] }
-tokio = "1"
+# AWS S3
+rusoto_core = { version = "0.46", default_features = false, features =["rustls"], optional = true }
+rusoto_credential = { version = "0.46", optional = true }
+rusoto_s3 = { version = "0.46", default_features = false, features = ["rustls"], optional = true }
+tokio = { version = "1", optional = true }
 
 [dev-dependencies]
 maplit = "1"

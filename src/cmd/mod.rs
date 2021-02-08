@@ -1,8 +1,9 @@
 use std::fmt::Display;
 use std::io::{self, ErrorKind, Write};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use enum_dispatch::enum_dispatch;
+#[cfg(feature = "s3")]
 use rusoto_core::Region;
 
 use crate::cmd::opts::*;
@@ -61,24 +62,33 @@ fn create_repo(args: &RocflArgs) -> Result<OcflRepo> {
     if args.bucket.is_none() {
         OcflRepo::new_fs_repo(args.root.clone())
     } else {
-        let prefix = match args.root.as_str() {
-            "." => None,
-            prefix => Some(prefix)
-        };
+        #[cfg(not(feature = "s3"))]
+        return Err(anyhow!("This binary was not compiled with S3 support."));
 
-        let region = match args.endpoint.is_some() {
-            true => {
-                Region::Custom {
-                    name: args.region.as_ref().unwrap().to_owned(),
-                    endpoint: args.endpoint.as_ref().unwrap().to_owned(),
-                }
-            }
-            false => args.region.as_ref().unwrap().parse()?
-        };
-
-        OcflRepo::new_s3_repo(
-            region,
-            args.bucket.as_ref().unwrap(),
-            prefix)
+        #[cfg(feature = "s3")]
+        create_s3_repo(args)
     }
+}
+
+#[cfg(feature = "s3")]
+fn create_s3_repo(args: &RocflArgs) -> Result<OcflRepo> {
+    let prefix = match args.root.as_str() {
+        "." => None,
+        prefix => Some(prefix)
+    };
+
+    let region = match args.endpoint.is_some() {
+        true => {
+            Region::Custom {
+                name: args.region.as_ref().unwrap().to_owned(),
+                endpoint: args.endpoint.as_ref().unwrap().to_owned(),
+            }
+        }
+        false => args.region.as_ref().unwrap().parse()?
+    };
+
+    OcflRepo::new_s3_repo(
+        region,
+        args.bucket.as_ref().unwrap(),
+        prefix)
 }
