@@ -8,12 +8,14 @@ use enum_dispatch::enum_dispatch;
 #[cfg(feature = "s3")]
 use rusoto_core::Region;
 
+use crate::cmd::init::init_repo;
 use crate::cmd::opts::*;
 use crate::ocfl::OcflRepo;
 
 pub mod opts;
 mod cat;
 mod diff;
+mod init;
 mod list;
 mod style;
 mod table;
@@ -22,8 +24,16 @@ const DATE_FORMAT: &str = "%Y-%m-%d %H:%M";
 
 /// Executes a `rocfl` command
 pub fn exec_command(args: &RocflArgs) -> Result<()> {
-    let repo = create_repo(&args)?;
-    args.command.exec(&repo, GlobalArgs::new(args.quiet, args.verbose, args.no_styles))
+    match &args.command {
+        Command::Init(command) => {
+            // init cmd needs to be handled differently because the repo does not exist yet
+            init_repo(command, args)
+        }
+        _ => {
+            let repo = create_repo(&args)?;
+            args.command.exec(&repo, GlobalArgs::new(args.quiet, args.verbose, args.no_styles))
+        }
+    }
 }
 
 /// Trait executing a CLI command
@@ -61,14 +71,15 @@ fn println(value: impl Display) -> Result<()> {
 }
 
 fn create_repo(args: &RocflArgs) -> Result<OcflRepo> {
-    if args.bucket.is_none() {
-        OcflRepo::new_fs_repo(args.root.clone())
-    } else {
-        #[cfg(not(feature = "s3"))]
-        return Err(anyhow!("This binary was not compiled with S3 support."));
+    match args.target_storage() {
+        Storage::FileSystem => OcflRepo::new_fs_repo(args.root.clone()),
+        Storage::S3 => {
+            #[cfg(not(feature = "s3"))]
+                return Err(anyhow!("This binary was not compiled with S3 support."));
 
-        #[cfg(feature = "s3")]
-        create_s3_repo(args)
+            #[cfg(feature = "s3")]
+                create_s3_repo(args)
+        }
     }
 }
 

@@ -16,10 +16,10 @@ use grep_searcher::sinks::UTF8;
 use lazy_static::lazy_static;
 use log::{error, info};
 
-use crate::ocfl::{EXTENSIONS_CONFIG_FILE, EXTENSIONS_DIR, OCFL_LAYOUT_FILE, OcflLayout, RocflError, Validate, VersionNum};
+use crate::ocfl::{EXTENSIONS_CONFIG_FILE, EXTENSIONS_DIR, OCFL_LAYOUT_FILE, OCFL_SPEC_FILE, OCFL_VERSION, OcflLayout, REPO_NAMASTE_FILE, RocflError, Validate, VersionNum};
 use crate::ocfl::layout::StorageLayout;
 
-use super::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_MARKER, OcflStore, ROOT_INVENTORY_FILE};
+use super::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_NAMASTE_FILE, OcflStore, ROOT_INVENTORY_FILE};
 
 lazy_static! {
     static ref OBJECT_ID_MATCHER: RegexMatcher = RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap();
@@ -63,6 +63,19 @@ impl FsOcflStore {
         Ok(Self {
             storage_root,
             storage_layout,
+            id_path_cache: RefCell::new(HashMap::new()),
+        })
+    }
+
+    /// Initializes a new OCFL repository at the specified location
+    pub fn init<P: AsRef<Path>>(root: P, layout: StorageLayout) -> Result<Self> {
+        let root = root.as_ref().to_path_buf();
+
+        init_new_repo(&root, &layout)?;
+
+        Ok(Self {
+            storage_root: root,
+            storage_layout: Some(layout),
             id_path_cache: RefCell::new(HashMap::new()),
         })
     }
@@ -290,7 +303,7 @@ fn is_object_root<P: AsRef<Path>>(path: P) -> Result<bool> {
     for entry in fs::read_dir(path)? {
         let entry_path = entry?.path();
         if entry_path.is_file()
-            && entry_path.file_name().unwrap_or_default() == OBJECT_MARKER {
+            && entry_path.file_name().unwrap_or_default() == OBJECT_NAMASTE_FILE {
             return Ok(true);
         }
     }
@@ -417,6 +430,46 @@ fn read_layout_config<P: AsRef<Path>>(storage_root: P, layout: &OcflLayout) -> O
 
     info!("Storage layout configuration not found at {}", config_file.to_string_lossy());
     None
+}
+
+fn init_new_repo<P: AsRef<Path>>(root: P, layout: &StorageLayout) -> Result<()> {
+    let root = root.as_ref().to_path_buf();
+
+    if root.exists() {
+        if !root.is_dir() {
+            return Err(RocflError::IllegalState(format!(
+                "Storage root {} is not a directory", canonical_str(root))).into());
+        }
+
+        if fs::read_dir(&root)?.next().is_some() {
+            return Err(RocflError::IllegalState(format!(
+                "Storage root {} must be empty", canonical_str(root))).into());
+        }
+    }
+
+    info!("Initializing OCFL storage root at {}", canonical_str(&root));
+
+    fs::create_dir_all(&root)?;
+
+    writeln!(File::create(root.join(REPO_NAMASTE_FILE))?, "{}", OCFL_VERSION)?;
+
+    let ocfl_spec = include_str!("../../resources/main/specs/ocfl_1.0.txt");
+    write!(File::create(root.join(OCFL_SPEC_FILE))?, "{}", ocfl_spec)?;
+
+    let ocfl_layout = OcflLayout {
+        extension: layout.extension_name(),
+        // TODO what to do about this?
+        description: layout.extension_name().to_string()
+    };
+
+    serde_json::to_writer_pretty(File::create(root.join(OCFL_LAYOUT_FILE))?, &ocfl_layout)?;
+
+    let layout_ext_dir = root.join(EXTENSIONS_DIR).join(layout.extension_name().to_string());
+    fs::create_dir_all(&layout_ext_dir)?;
+
+    File::create(layout_ext_dir.join(EXTENSIONS_CONFIG_FILE))?.write_all(&layout.serialize()?)?;
+
+    Ok(())
 }
 
 fn file_to_bytes<P: AsRef<Path>>(file: P) -> Result<Vec<u8>> {
