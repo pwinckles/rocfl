@@ -60,6 +60,8 @@ pub enum Command {
     Diff(Diff),
     #[structopt(name = "cat")]
     Cat(Cat),
+    #[structopt(name = "init")]
+    Init(Init),
 }
 
 /// Lists objects or files within objects.
@@ -91,7 +93,11 @@ pub struct List {
     pub version: Option<VersionNum>,
 
     /// Specifies the field to sort on.
-    #[structopt(short, long, value_name = "FIELD", possible_values = &Field::variants(), default_value = "Name", case_insensitive = true)]
+    #[structopt(short, long,
+    value_name = "FIELD",
+    possible_values = &Field::variants(),
+    default_value = "Name",
+    case_insensitive = true)]
     pub sort: Field,
 
     /// Reverses the direction of the sort
@@ -199,11 +205,26 @@ pub struct Cat {
     pub path: String,
 }
 
+/// Creates a new OCFL repository.
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+pub struct Init {
+    /// Specifies the OCFL storage layout extension to use
+    #[structopt(short, long,
+    value_name = "LAYOUT",
+    possible_values = &Layout::variants(),
+    default_value = "HashedNTuple",
+    case_insensitive = true)]
+    pub layout: Layout,
+
+    // TODO add option for passing a layout file
+}
+
 #[derive(Debug)]
 pub struct Num(pub usize);
 
 arg_enum! {
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Copy)]
     pub enum Field {
         Name,
         Version,
@@ -211,6 +232,31 @@ arg_enum! {
         Physical,
         Digest,
         None
+    }
+}
+
+arg_enum! {
+    #[derive(Debug, Clone, Copy)]
+    pub enum Layout {
+        FlatDirect,
+        HashedNTuple,
+        HashedNTupleObjectId,
+    }
+}
+
+/// The target storage location
+pub enum Storage {
+    FileSystem,
+    S3,
+}
+
+impl RocflArgs {
+    /// Returns the target storage location of the command
+    pub fn target_storage(&self) -> Storage {
+        match self.bucket {
+            Some(_) => Storage::S3,
+            _ => Storage::FileSystem,
+        }
     }
 }
 

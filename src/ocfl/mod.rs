@@ -31,7 +31,7 @@ use md5::Md5;
 use regex::Regex;
 #[cfg(feature = "s3")]
 use rusoto_core::Region;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use sha2::{Sha256, Sha512, Sha512Trunc256};
 use strum_macros::{Display as EnumDisplay, EnumString};
@@ -41,17 +41,21 @@ use self::fs::FsOcflStore;
 use self::layout::LayoutExtensionName;
 #[cfg(feature = "s3")]
 use self::s3::S3OcflStore;
+use crate::ocfl::layout::StorageLayout;
 
 mod fs;
 #[cfg(feature = "s3")]
 mod s3;
-mod layout;
+pub mod layout;
 
-const OBJECT_MARKER: &str = "0=ocfl_object_1.0";
+const REPO_NAMASTE_FILE: &str = "0=ocfl_1.0";
+const OBJECT_NAMASTE_FILE: &str = "0=ocfl_object_1.0";
 const ROOT_INVENTORY_FILE: &str = "inventory.json";
 const OCFL_LAYOUT_FILE: &str = "ocfl_layout.json";
+const OCFL_SPEC_FILE: &str = "ocfl_1.0.txt";
 const EXTENSIONS_DIR: &str = "extensions";
 const EXTENSIONS_CONFIG_FILE: &str = "config.json";
+const OCFL_VERSION: &str = "ocfl_1.0";
 
 const MUTABLE_HEAD_INVENTORY_FILE: &str = "extensions/0005-mutable-head/head/inventory.json";
 
@@ -135,7 +139,7 @@ pub struct ObjectVersionDetails {
 }
 
 /// Enum of all valid digest algorithms
-#[derive(Deserialize, Debug, Eq, PartialEq, Copy, Clone, EnumString, EnumDisplay)]
+#[derive(Deserialize, Serialize, Debug, Eq, PartialEq, Copy, Clone, EnumString, EnumDisplay)]
 pub enum DigestAlgorithm {
     #[serde(rename = "md5")]
     #[strum(serialize = "md5")]
@@ -201,6 +205,7 @@ pub enum RocflError {
     IllegalState(String),
 }
 
+// TODO remove this
 pub trait Validate {
     fn validate(&self) -> Result<()>;
 }
@@ -211,10 +216,18 @@ pub trait Validate {
 
 impl OcflRepo {
     /// Creates a new `OcflRepo` instance backed by the local filesystem. `storage_root` is the
-    /// location of the OCFL repository to open.
+    /// location of the OCFL repository to open. The OCFL repository must already exist.
     pub fn new_fs_repo<P: AsRef<Path>>(storage_root: P) -> Result<Self> {
         Ok(Self {
             store: Box::new(FsOcflStore::new(storage_root)?)
+        })
+    }
+
+    /// Initializes a new `OcflRepo` instance backed by the local filesystem. The OCFL repository
+    /// most not already exist.
+    pub fn init_fs_repo<P: AsRef<Path>>(root: P, layout: StorageLayout) -> Result<Self> {
+        Ok(Self {
+            store: Box::new(FsOcflStore::init(root, layout)?)
         })
     }
 
@@ -810,7 +823,7 @@ struct User {
 }
 
 /// ocfl_layout.json serialization object
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 struct OcflLayout {
     extension: LayoutExtensionName,
     description: String

@@ -17,7 +17,7 @@ use tokio::runtime::Runtime;
 use crate::ocfl::{EXTENSIONS_CONFIG_FILE, EXTENSIONS_DIR, OCFL_LAYOUT_FILE, OcflLayout, Validate, VersionNum};
 use crate::ocfl::layout::StorageLayout;
 
-use super::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_MARKER, OcflStore, ROOT_INVENTORY_FILE};
+use super::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_NAMASTE_FILE, OcflStore, ROOT_INVENTORY_FILE};
 
 // ================================================== //
 //             public structs+enums+traits            //
@@ -451,7 +451,7 @@ fn load_layout_extension(layout: OcflLayout, s3_client: &S3Client) -> Option<Sto
 
 fn is_object_dir(objects: &[String]) -> bool {
     for object in objects {
-        if object.ends_with(OBJECT_MARKER) {
+        if object.ends_with(OBJECT_NAMASTE_FILE) {
             return true;
         }
     }

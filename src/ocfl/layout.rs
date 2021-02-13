@@ -3,10 +3,9 @@
 use std::borrow::Cow;
 
 use anyhow::Result;
-use enum_dispatch::enum_dispatch;
 use lazy_static::lazy_static;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use strum_macros::{Display as EnumDisplay, EnumString};
 
 use crate::ocfl::{DigestAlgorithm, RocflError, Validate};
@@ -28,7 +27,7 @@ pub struct StorageLayout {
 }
 
 /// Enum of known storage layout extensions
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, EnumString, EnumDisplay)]
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, EnumString, EnumDisplay)]
 pub enum LayoutExtensionName {
     #[strum(serialize = "0002-flat-direct-storage-layout")]
     #[serde(rename = "0002-flat-direct-storage-layout")]
@@ -62,6 +61,15 @@ impl StorageLayout {
     pub fn map_object_id(&self, object_id: &str) -> String {
         self.extension.map_object_id(object_id)
     }
+
+    /// Returns the extension name of the layout extension in use
+    pub fn extension_name(&self) -> LayoutExtensionName {
+        self.extension.extension_name()
+    }
+
+    pub fn serialize(&self) -> Result<Vec<u8>> {
+        self.extension.serialize()
+    }
 }
 
 // ================================================== //
@@ -87,14 +95,14 @@ struct HashedNTupleObjectIdLayoutExtension {
 }
 
 /// [Flat Direct Storage Layout Config](https://ocfl.github.io/extensions/0002-flat-direct-storage-layout.html)
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase", default)]
 struct FlatDirectLayoutConfig {
     extension_name: LayoutExtensionName,
 }
 
 /// [Hashed N-Tuple Storage Layout Config](https://ocfl.github.io/extensions/0004-hashed-n-tuple-storage-layout.html)
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase", default)]
 struct HashedNTupleLayoutConfig {
     extension_name: LayoutExtensionName,
@@ -105,7 +113,7 @@ struct HashedNTupleLayoutConfig {
 }
 
 /// [Hashed N-Tuple with Object ID Encapsulation Storage Layout Config](https://ocfl.github.io/extensions/0003-hash-and-id-n-tuple-storage-layout.html)
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase", default)]
 struct HashedNTupleObjectIdLayoutConfig {
     extension_name: LayoutExtensionName,
@@ -114,17 +122,11 @@ struct HashedNTupleObjectIdLayoutConfig {
     number_of_tuples: usize,
 }
 
-#[enum_dispatch(MapObjectId)]
 #[derive(Debug)]
 enum LayoutExtension {
     FlatDirect(FlatDirectLayoutExtension),
     HashedNTuple(HashedNTupleLayoutExtension),
     HashedNTupleObjectId(HashedNTupleObjectIdLayoutExtension),
-}
-
-#[enum_dispatch]
-trait MapObjectId {
-    fn map_object_id(&self, object_id: &str) -> String;
 }
 
 // ================================================== //
@@ -184,6 +186,50 @@ impl Validate for HashedNTupleObjectIdLayoutConfig {
     }
 }
 
+impl LayoutExtension {
+    fn map_object_id(&self, object_id: &str) -> String {
+        match self {
+            LayoutExtension::FlatDirect(ext) => ext.map_object_id(object_id),
+            LayoutExtension::HashedNTuple(ext) => ext.map_object_id(object_id),
+            LayoutExtension::HashedNTupleObjectId(ext) => ext.map_object_id(object_id),
+        }
+    }
+
+    fn extension_name(&self) -> LayoutExtensionName {
+        match self {
+            LayoutExtension::FlatDirect(ext) => ext.config.extension_name,
+            LayoutExtension::HashedNTuple(ext) => ext.config.extension_name,
+            LayoutExtension::HashedNTupleObjectId(ext) => ext.config.extension_name,
+        }
+    }
+
+    fn serialize(&self) -> Result<Vec<u8>> {
+        match self {
+            LayoutExtension::FlatDirect(ext) => Ok(serde_json::to_vec_pretty(&ext.config)?),
+            LayoutExtension::HashedNTuple(ext) => Ok(serde_json::to_vec_pretty(&ext.config)?),
+            LayoutExtension::HashedNTupleObjectId(ext) => Ok(serde_json::to_vec_pretty(&ext.config)?),
+        }
+    }
+}
+
+impl From<FlatDirectLayoutExtension> for LayoutExtension {
+    fn from(extension: FlatDirectLayoutExtension) -> Self {
+        LayoutExtension::FlatDirect(extension)
+    }
+}
+
+impl From<HashedNTupleLayoutExtension> for LayoutExtension {
+    fn from(extension: HashedNTupleLayoutExtension) -> Self {
+        LayoutExtension::HashedNTuple(extension)
+    }
+}
+
+impl From<HashedNTupleObjectIdLayoutExtension> for LayoutExtension {
+    fn from(extension: HashedNTupleObjectIdLayoutExtension) -> Self {
+        LayoutExtension::HashedNTupleObjectId(extension)
+    }
+}
+
 impl FlatDirectLayoutExtension {
     fn new(config_bytes: Option<&[u8]>) -> Result<Self> {
         let config = match config_bytes {
@@ -199,10 +245,8 @@ impl FlatDirectLayoutExtension {
             config
         })
     }
-}
 
-/// One-to-one mapping from object ID to object root path
-impl MapObjectId for FlatDirectLayoutExtension {
+    /// One-to-one mapping from object ID to object root path
     fn map_object_id(&self, object_id: &str) -> String {
         // TODO this is not validating that the object id can be safely mapped to a path
         //      do we care as long as we aren't authoring objects?
@@ -225,10 +269,8 @@ impl HashedNTupleLayoutExtension {
             config
         })
     }
-}
 
-/// Object IDs are hashed and then divided into tuples to create a pair-tree like layout
-impl MapObjectId for HashedNTupleLayoutExtension {
+    /// Object IDs are hashed and then divided into tuples to create a pair-tree like layout
     fn map_object_id(&self, object_id: &str) -> String {
         let digest = self.config.digest_algorithm.hash_hex(&object_id.as_bytes());
 
@@ -264,11 +306,9 @@ impl HashedNTupleObjectIdLayoutExtension {
             config
         })
     }
-}
 
-/// Object IDs are hashed and then divided into tuples to create a pair-tree like layout. The
-/// difference here is that the object encapsulation directory is the url-encoded object ID
-impl MapObjectId for HashedNTupleObjectIdLayoutExtension {
+    /// Object IDs are hashed and then divided into tuples to create a pair-tree like layout. The
+    /// difference here is that the object encapsulation directory is the url-encoded object ID
     fn map_object_id(&self, object_id: &str) -> String {
         let digest = self.config.digest_algorithm.hash_hex(&object_id.as_bytes());
 
@@ -390,7 +430,7 @@ mod tests {
     use anyhow::Result;
     use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 
-    use crate::ocfl::layout::{HashedNTupleLayoutExtension, HashedNTupleObjectIdLayoutExtension, lower_percent_escape, MapObjectId};
+    use crate::ocfl::layout::{HashedNTupleLayoutExtension, HashedNTupleObjectIdLayoutExtension, lower_percent_escape};
 
     const ID_1: &str = "info:example/test-123";
     const ID_2: &str = "..Hor/rib:lè-$id";
