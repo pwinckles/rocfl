@@ -15,7 +15,7 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
-use std::fmt::{Formatter, Debug, Display};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::ops::Deref;
@@ -508,15 +508,6 @@ impl OcflRepo {
             }
         }
 
-        // TODO cleanup
-        // TODO version serialization needs cleaned up:
-        // "v1": {
-        //       "created": "2021-02-14T19:46:34.778634103-06:00",
-        //       "state": {},
-        //       "message": null,
-        //       "user": null
-        //     }
-
         let mut versions = BTreeMap::new();
 
         let version_num = VersionNum {
@@ -524,11 +515,13 @@ impl OcflRepo {
             width: padding_width,
         };
 
-        // TODO fill in better values
         let version = Version {
             created: Local::now(),
-            message: None,
-            user: None,
+            message: Some("Staging new object".to_string()),
+            user: Some(User {
+                name: Some("rocfl".to_string()),
+                address: Some("https://github.com/pwinckles/rocfl".to_string()),
+            }),
             state: HashMap::new(),
         };
 
@@ -973,7 +966,9 @@ struct Inventory {
 struct Version {
     created: DateTime<Local>,
     state: HashMap<String, Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     user: Option<User>
 }
 
