@@ -2,11 +2,10 @@ use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use anyhow::Result;
 use chrono::DateTime;
 use maplit::hashmap;
 
-use rocfl::ocfl::{Diff, DiffType, DigestAlgorithm, FileDetails, ObjectVersion, ObjectVersionDetails, OcflRepo, VersionDetails, VersionNum};
+use rocfl::ocfl::{Diff, DiffType, DigestAlgorithm, FileDetails, ObjectVersion, ObjectVersionDetails, OcflRepo, Result, VersionDetails, VersionNum};
 
 #[test]
 fn list_all_objects() -> Result<()> {
@@ -440,7 +439,7 @@ fn get_object_file_when_exists() -> Result<()> {
 
     repo.get_object_file(id, "dir1/file3", Some(version), &mut out)?;
 
-    assert_eq!("file 3", String::from_utf8(out)?);
+    assert_eq!("file 3", String::from_utf8(out).unwrap());
 
     Ok(())
 }

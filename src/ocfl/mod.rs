@@ -15,7 +15,7 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
-use std::fmt::Formatter;
+use std::fmt::{Formatter, Debug, Display};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::ops::Deref;
@@ -203,7 +203,7 @@ pub enum DiffType {
 pub type Result<T, E = RocflError> = core::result::Result<T, E>;
 
 /// Application errors
-#[derive(Error, Debug)]
+#[derive(Error)]
 pub enum RocflError {
     #[error("Object {object_id} is corrupt: {message}")]
     CorruptObject {
@@ -231,6 +231,12 @@ pub enum RocflError {
 
     #[error("{0}")]
     Wrapped(Box<dyn error::Error>),
+}
+
+impl Debug for RocflError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(self, f)
+    }
 }
 
 impl From<io::Error> for RocflError {
@@ -402,7 +408,7 @@ impl OcflRepo {
 
         if versions.is_empty() {
             return Err(RocflError::NotFound(format!("Path {} not found in object {}",
-                                                    path, object_id)).into());
+                                                    path, object_id)));
         }
 
         Ok(versions)
@@ -476,21 +482,21 @@ impl OcflRepo {
 
         let object_id = object_id.trim();
 
-        if object_id.len() == 0 {
-            return Err(RocflError::IllegalArgument("Object IDs may not be blank".to_string()).into());
+        if object_id.is_empty() {
+            return Err(RocflError::IllegalArgument("Object IDs may not be blank".to_string()));
         }
 
         if digest_algorithm != DigestAlgorithm::Sha512
             && digest_algorithm != DigestAlgorithm::Sha256 {
             return Err(RocflError::IllegalArgument(
                 format!("The inventory digest algorithm must be sha512 or sha256. Found: {}",
-                        digest_algorithm.to_string())).into())
+                        digest_algorithm.to_string())))
         }
 
         if content_dir.eq(".") || content_dir.eq("..") || content_dir.contains('/') {
             return Err(RocflError::IllegalArgument(
                 format!("The content directory cannot equal '.' or '..' and cannot contain a '/'. Found: {}",
-                        content_dir)).into());
+                        content_dir)));
         }
 
         match self.store.get_inventory(&object_id) {
@@ -498,12 +504,11 @@ impl OcflRepo {
             Err(e) => return Err(e),
             _ => {
                 return Err(RocflError::IllegalState(
-                    format!("Cannot create object {} because it already exists", object_id)).into());
+                    format!("Cannot create object {} because it already exists", object_id)));
             }
         }
 
         // TODO cleanup
-        // TODO look for un-needed error intos
         // TODO version serialization needs cleaned up:
         // "v1": {
         //       "created": "2021-02-14T19:46:34.778634103-06:00",
@@ -559,7 +564,7 @@ impl VersionNum {
     /// Returns the previous version, or an Error if the previous version is invalid (less than 1).
     pub fn previous(&self) -> Result<VersionNum> {
         if self.number - 1 < 1 {
-            return Err(RocflError::IllegalState("Versions cannot be less than 1".to_string()).into());
+            return Err(RocflError::IllegalState("Versions cannot be less than 1".to_string()));
         }
 
         Ok(Self {
@@ -577,7 +582,7 @@ impl VersionNum {
         };
 
         if self.number + 1 > max as u32 {
-            return Err(RocflError::IllegalState(format!("Version cannot be greater than {}", max)).into());
+            return Err(RocflError::IllegalState(format!("Version cannot be greater than {}", max)));
         }
 
         Ok(Self {
@@ -1001,7 +1006,7 @@ impl Inventory {
     fn get_version(&self, version_num: VersionNum) -> Result<&Version> {
         match self.versions.get(&version_num) {
             Some(v) => Ok(v),
-            None => Err(not_found(&self.id, Some(version_num)).into())
+            None => Err(not_found(&self.id, Some(version_num)))
         }
     }
 
@@ -1009,7 +1014,7 @@ impl Inventory {
     fn remove_version(&mut self, version_num: VersionNum) -> Result<Version> {
         match self.versions.remove(&version_num) {
             Some(v) => Ok(v),
-            None => Err(not_found(&self.id, Some(version_num)).into())
+            None => Err(not_found(&self.id, Some(version_num)))
         }
     }
 
@@ -1023,13 +1028,13 @@ impl Inventory {
                     None => Err(RocflError::CorruptObject {
                         object_id: self.id.clone(),
                         message: format!("Digest {} is not mapped to any content paths", digest)
-                    }.into())
+                    })
                 }
             }
             None => Err(RocflError::CorruptObject {
                 object_id: self.id.clone(),
                 message: format!("Digest {} not found in manifest", digest)
-            }.into())
+            })
         }
     }
 
@@ -1043,7 +1048,7 @@ impl Inventory {
             Some(digest) => digest,
             None => return Err(RocflError::NotFound(
                 format!("Path {} not found in object {} version {}",
-                        logical_path, self.id, version_num)).into())
+                        logical_path, self.id, version_num)))
         };
 
         self.lookup_content_path_by_digest(digest)
@@ -1058,7 +1063,7 @@ impl Validate for Inventory {
             return Err(RocflError::CorruptObject {
                 object_id: self.id.clone(),
                 message: format!("HEAD version {} was not found", self.head),
-            }.into())
+            })
         }
         Ok(())
     }

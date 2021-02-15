@@ -390,7 +390,7 @@ fn validate_extension_name(expected: &LayoutExtensionName,
         Err(RocflError::InvalidConfiguration(
             format!("Expected layout extension name {}; Found: {}",
                     expected.to_string(),
-                    actual.to_string())).into())
+                    actual.to_string())))
     } else {
         Ok(())
     }
@@ -401,7 +401,7 @@ fn validate_tuple_config(tuple_size: usize, number_of_tuples: usize) -> Result<(
         && (tuple_size != 0 || number_of_tuples != 0) {
         Err(RocflError::InvalidConfiguration(
             format!("If tupleSize (={}) or numberOfTuples (={}) is set to 0, then both must be 0.",
-                    tuple_size, number_of_tuples)).into())
+                    tuple_size, number_of_tuples)))
     } else {
         Ok(())
     }
@@ -418,7 +418,7 @@ fn validate_digest_algorithm(algorithm: DigestAlgorithm,
             format!("tupleSize={} and numberOfTuples={} requires a minimum of {} characters. \
              The digest algorithm {} only produces {}.",
                     tuple_size, number_of_tuples,
-                    total_tuples_length, algorithm.to_string(), digest.len())).into())
+                    total_tuples_length, algorithm.to_string(), digest.len())))
     } else {
         Ok(())
     }

@@ -66,7 +66,7 @@ impl S3OcflStore {
 
             match iter.next() {
                 Some(inventory) => Ok(inventory),
-                None => Err(not_found(&object_id, None).into())
+                None => Err(not_found(&object_id, None))
             }
         }
     }
@@ -84,7 +84,7 @@ impl S3OcflStore {
     fn parse_inventory_required(&self, object_id: &str, object_root: &str) -> Result<Inventory> {
         match self.parse_inventory(object_root)? {
             Some(inventory) => Ok(inventory),
-            None => Err(not_found(object_id, None).into())
+            None => Err(not_found(object_id, None))
         }
     }
 
@@ -98,8 +98,8 @@ impl S3OcflStore {
         if let Some(bytes) = bytes {
             let mut inventory = match self.parse_inventory_bytes(&bytes) {
                 Ok(inventory) => inventory,
-                Err(e) => Err(RocflError::General(
-                    format!("Failed to parse inventory in object at {}: {}", object_root, e)))?
+                Err(e) => return Err(RocflError::General(
+                    format!("Failed to parse inventory in object at {}: {}", object_root, e)))
             };
             inventory.object_root = strip_leading_slash(strip_trailing_slash(object_root).as_ref()).into();
             Ok(Some(inventory))
