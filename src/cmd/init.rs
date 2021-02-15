@@ -1,9 +1,7 @@
-use anyhow::Result;
-
 use crate::cmd::{Cmd, GlobalArgs, println};
 use crate::cmd::opts::{Init, Layout, RocflArgs, Storage};
 use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
-use crate::ocfl::OcflRepo;
+use crate::ocfl::{OcflRepo, Result};
 
 pub fn init_repo(cmd: &Init, args: &RocflArgs) -> Result<()> {
     match args.target_storage() {

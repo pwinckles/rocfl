@@ -2,14 +2,13 @@ use core::fmt;
 use std::cmp::Ordering;
 use std::fmt::Formatter;
 
-use anyhow::Result;
 use lazy_static::lazy_static;
 
 use crate::cmd::{Cmd, DATE_FORMAT, GlobalArgs, println};
 use crate::cmd::opts::{Diff, Log, Show};
 use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
-use crate::ocfl::{Diff as VersionDiff, DiffType, OcflRepo, VersionDetails};
+use crate::ocfl::{Diff as VersionDiff, DiffType, OcflRepo, Result, VersionDetails};
 
 lazy_static! {
     static ref DEFAULT_USER: String = "NA".to_owned();
@@ -72,14 +71,13 @@ impl Log {
 
 impl Cmd for Show {
     fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
-        let object = repo.get_object_details(&self.object_id,
-                                             self.version.as_ref())?;
+        let object = repo.get_object_details(&self.object_id, self.version)?;
 
         if !self.minimal {
             println(FormatVersion::new(&object.version_details, !args.no_styles))?;
         }
 
-        let right = &object.version_details.version_num;
+        let right = object.version_details.version_num;
 
         let mut diffs: Vec<DiffLine> = repo.diff(&self.object_id, None, right)?
             .into_iter()
@@ -102,9 +100,7 @@ impl Cmd for Diff {
             return Ok(());
         }
 
-        let raw_diffs = repo.diff(&self.object_id,
-                                  Some(&self.left),
-                                  &self.right)?;
+        let raw_diffs = repo.diff(&self.object_id, Some(self.left), self.right)?;
 
         let mut diffs: Vec<DiffLine> = raw_diffs.into_iter()
             .map(|diff| DiffLine::new(diff, !args.no_styles))
