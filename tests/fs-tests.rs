@@ -167,7 +167,7 @@ fn get_object_version_when_exists() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::new_fs_repo(&repo_root)?;
 
-    let object = repo.get_object("o2", Some(&VersionNum::try_from(2)?))?;
+    let object = repo.get_object("o2", Some(VersionNum::try_from(2)?))?;
 
     let object_root = Path::new("925").join("0b9").join("912")
         .join("9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04");
@@ -272,7 +272,7 @@ fn error_when_object_not_exists_with_layout() {
 fn error_when_version_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::new_fs_repo(&repo_root).unwrap();
-    repo.get_object("o2", Some(&VersionNum::try_from(4).unwrap())).unwrap();
+    repo.get_object("o2", Some(VersionNum::try_from(4).unwrap())).unwrap();
 }
 
 #[test]
@@ -335,8 +335,8 @@ fn diff_when_left_and_right_specified() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::new_fs_repo(&repo_root)?;
 
-    let mut diff = repo.diff("o2", Some(&VersionNum::try_from(1).unwrap()),
-                             &VersionNum::try_from(3).unwrap())?;
+    let mut diff = repo.diff("o2", Some(VersionNum::try_from(1).unwrap()),
+                             VersionNum::try_from(3).unwrap())?;
 
     sort_diffs(&mut diff);
 
@@ -359,7 +359,7 @@ fn diff_with_previous_when_left_not_specified() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::new_fs_repo(&repo_root)?;
 
-    let mut diff = repo.diff("o2", None, &VersionNum::try_from(3).unwrap())?;
+    let mut diff = repo.diff("o2", None, VersionNum::try_from(3).unwrap())?;
 
     sort_diffs(&mut diff);
 
@@ -382,7 +382,7 @@ fn diff_first_version_all_adds() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::new_fs_repo(&repo_root)?;
 
-    let mut diff = repo.diff("o2", None, &VersionNum::try_from(1).unwrap())?;
+    let mut diff = repo.diff("o2", None, VersionNum::try_from(1).unwrap())?;
 
     sort_diffs(&mut diff);
 
@@ -405,8 +405,8 @@ fn diff_same_version_no_diff() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::new_fs_repo(&repo_root)?;
 
-    let diff = repo.diff("o2", Some(&VersionNum::try_from(2).unwrap()),
-                         &VersionNum::try_from(2).unwrap())?;
+    let diff = repo.diff("o2", Some(VersionNum::try_from(2).unwrap()),
+                         VersionNum::try_from(2).unwrap())?;
 
     assert_eq!(0, diff.len());
 
@@ -418,7 +418,7 @@ fn diff_same_version_no_diff() -> Result<()> {
 fn diff_object_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::new_fs_repo(&repo_root).unwrap();
-    repo.diff("o6", None, &VersionNum::try_from(2).unwrap()).unwrap();
+    repo.diff("o6", None, VersionNum::try_from(2).unwrap()).unwrap();
 }
 
 #[test]
@@ -426,7 +426,7 @@ fn diff_object_not_exists() {
 fn diff_version_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::new_fs_repo(&repo_root).unwrap();
-    repo.diff("o1", None, &VersionNum::try_from(2).unwrap()).unwrap();
+    repo.diff("o1", None, VersionNum::try_from(2).unwrap()).unwrap();
 }
 
 #[test]
@@ -438,7 +438,7 @@ fn get_object_file_when_exists() -> Result<()> {
     let version = VersionNum::try_from(2)?;
     let mut out: Vec<u8> = Vec::new();
 
-    repo.get_object_file(id, "dir1/file3", Some(&version), &mut out)?;
+    repo.get_object_file(id, "dir1/file3", Some(version), &mut out)?;
 
     assert_eq!("file 3", String::from_utf8(out)?);
 
@@ -455,7 +455,7 @@ fn fail_get_object_file_when_does_not_exist() {
     let version = VersionNum::try_from(2).unwrap();
     let mut out: Vec<u8> = Vec::new();
 
-    repo.get_object_file(id, "dir1/bogus", Some(&version), &mut out).unwrap();
+    repo.get_object_file(id, "dir1/bogus", Some(version), &mut out).unwrap();
 }
 
 fn o2_v1_details() -> VersionDetails {

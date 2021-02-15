@@ -1,21 +1,21 @@
 use std::fmt::Display;
 use std::io::{self, ErrorKind, Write};
 
-#[cfg(not(feature = "s3"))]
-use anyhow::anyhow;
-use anyhow::Result;
 use enum_dispatch::enum_dispatch;
 #[cfg(feature = "s3")]
 use rusoto_core::Region;
 
 use crate::cmd::init::init_repo;
 use crate::cmd::opts::*;
-use crate::ocfl::OcflRepo;
+use crate::ocfl::{OcflRepo, Result};
+#[cfg(not(feature = "s3"))]
+use crate::ocfl::RocflError;
 
 pub mod opts;
 mod cat;
 mod diff;
 mod init;
+mod new;
 mod list;
 mod style;
 mod table;
@@ -75,7 +75,7 @@ fn create_repo(args: &RocflArgs) -> Result<OcflRepo> {
         Storage::FileSystem => OcflRepo::new_fs_repo(args.root.clone()),
         Storage::S3 => {
             #[cfg(not(feature = "s3"))]
-                return Err(anyhow!("This binary was not compiled with S3 support."));
+                return Err(RocflError::General("This binary was not compiled with S3 support."));
 
             #[cfg(feature = "s3")]
                 create_s3_repo(args)

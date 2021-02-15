@@ -62,6 +62,8 @@ pub enum Command {
     Cat(Cat),
     #[structopt(name = "init")]
     Init(Init),
+    #[structopt(name = "new")]
+    New(New),
 }
 
 /// Lists objects or files within objects.
@@ -220,6 +222,31 @@ pub struct Init {
     // TODO add option for passing a layout file
 }
 
+/// Stages a new OCFL object. The object does not exist until it is committed.
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+pub struct New {
+    /// Specifies the digest algorithm to use for the inventory digest
+    #[structopt(short, long,
+    value_name = "ALGORITHM",
+    possible_values = &DigestAlgorithm::variants(),
+    default_value = "Sha512",
+    case_insensitive = true)]
+    pub digest_algorithm: DigestAlgorithm,
+
+    /// Specifies what to name the object's content directory
+    #[structopt(short, long, value_name = "PATH", default_value = "content")]
+    pub content_directory: String,
+
+    /// Specifies the width for zero-padded versions, eg. v0001 has a width of 4
+    #[structopt(short, long, value_name = "WIDTH", default_value = "0")]
+    pub zero_padding: u32,
+
+    /// ID of the object to create.
+    #[structopt(name = "OBJECT")]
+    pub object_id: String,
+}
+
 #[derive(Debug)]
 pub struct Num(pub usize);
 
@@ -241,6 +268,14 @@ arg_enum! {
         FlatDirect,
         HashedNTuple,
         HashedNTupleObjectId,
+    }
+}
+
+arg_enum! {
+    #[derive(Debug, Clone, Copy)]
+    pub enum DigestAlgorithm {
+        Sha256,
+        Sha512,
     }
 }
 

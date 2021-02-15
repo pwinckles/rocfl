@@ -6,18 +6,23 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::vec::IntoIter;
 
-use anyhow::{Context, Result};
 use globset::GlobBuilder;
+use lazy_static::lazy_static;
 use log::{error, info};
 use rusoto_core::{Region, RusotoError};
 use rusoto_s3::{GetObjectError, GetObjectRequest, ListObjectsV2Output, ListObjectsV2Request, S3, S3Client as RusotoS3Client};
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
 
-use crate::ocfl::{EXTENSIONS_CONFIG_FILE, EXTENSIONS_DIR, OCFL_LAYOUT_FILE, OcflLayout, Validate, VersionNum};
+use crate::ocfl::{EXTENSIONS_CONFIG_FILE, EXTENSIONS_DIR, OCFL_LAYOUT_FILE, OcflLayout, Result, RocflError, Validate, VersionNum};
 use crate::ocfl::layout::StorageLayout;
 
-use super::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_NAMASTE_FILE, OcflStore, ROOT_INVENTORY_FILE};
+use super::{Inventory, INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_NAMASTE_FILE, OcflStore};
+
+lazy_static! {
+    static ref EXTENSIONS_DIR_SUFFIX: String = format!("/{}", EXTENSIONS_DIR);
+}
+
 
 // ================================================== //
 //             public structs+enums+traits            //
@@ -91,8 +96,11 @@ impl S3OcflStore {
         // TODO should validate hash
 
         if let Some(bytes) = bytes {
-            let mut inventory = self.parse_inventory_bytes(&bytes)
-                .with_context(|| format!("Failed to parse inventory in object at {}", object_root))?;
+            let mut inventory = match self.parse_inventory_bytes(&bytes) {
+                Ok(inventory) => inventory,
+                Err(e) => Err(RocflError::General(
+                    format!("Failed to parse inventory in object at {}: {}", object_root, e)))?
+            };
             inventory.object_root = strip_leading_slash(strip_trailing_slash(object_root).as_ref()).into();
             Ok(Some(inventory))
         } else {
@@ -115,7 +123,7 @@ impl S3OcflStore {
                 Ok(Some(bytes))
             },
             None => {
-                let inv_path = join(object_root, ROOT_INVENTORY_FILE);
+                let inv_path = join(object_root, INVENTORY_FILE);
                 match self.s3_client.get_object(&inv_path)? {
                     Some(bytes) => Ok(Some(bytes)),
                     None => Ok(None)
@@ -169,7 +177,7 @@ impl OcflStore for S3OcflStore {
     fn get_object_file(&self,
                        object_id: &str,
                        path: &str,
-                       version_num: Option<&VersionNum>,
+                       version_num: Option<VersionNum>,
                        sink: &mut dyn Write) -> Result<()> {
         let inventory = self.get_inventory(object_id)?;
 
@@ -378,6 +386,10 @@ impl<'a> Iterator for InventoryIter<'a> {
                     self.current.replace(None);
                 }
                 Some(entry) => {
+                    if entry.ends_with(&*EXTENSIONS_DIR_SUFFIX) {
+                        continue;
+                    }
+
                     match self.store.list_dir(&entry) {
                         Ok(listing) => {
                             if is_object_dir(&listing.objects) {

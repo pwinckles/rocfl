@@ -1,5 +1,5 @@
 //! This library is a storage agnostic abstraction over [OCFL repositories](https://ocfl.io/).
-//! Currently, it only supports read-only operations on local filesystems.
+//! It is **not** thread-safe.
 //!
 //! Create a new `OcflRepo` as follows:
 //!
@@ -10,6 +10,8 @@
 //! ```
 
 use core::fmt;
+use std::{error, io};
+use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
@@ -17,11 +19,10 @@ use std::fmt::Formatter;
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::ops::Deref;
-use std::path::{self, Path};
+use std::path::{self, Path, PathBuf};
 use std::rc::Rc;
 use std::str::FromStr;
 
-use anyhow::{Error, Result};
 use blake2::{Blake2b, VarBlake2b};
 use chrono::{DateTime, Local};
 use digest::{Digest, Update, VariableOutput};
@@ -31,17 +32,22 @@ use md5::Md5;
 use regex::Regex;
 #[cfg(feature = "s3")]
 use rusoto_core::Region;
+#[cfg(feature = "s3")]
+use rusoto_core::region::ParseRegionError;
+#[cfg(feature = "s3")]
+use rusoto_core::RusotoError;
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use sha2::{Sha256, Sha512, Sha512Trunc256};
 use strum_macros::{Display as EnumDisplay, EnumString};
 use thiserror::Error;
 
+use crate::ocfl::layout::StorageLayout;
+
 use self::fs::FsOcflStore;
 use self::layout::LayoutExtensionName;
 #[cfg(feature = "s3")]
 use self::s3::S3OcflStore;
-use crate::ocfl::layout::StorageLayout;
 
 mod fs;
 #[cfg(feature = "s3")]
@@ -50,14 +56,17 @@ pub mod layout;
 
 const REPO_NAMASTE_FILE: &str = "0=ocfl_1.0";
 const OBJECT_NAMASTE_FILE: &str = "0=ocfl_object_1.0";
-const ROOT_INVENTORY_FILE: &str = "inventory.json";
+const INVENTORY_FILE: &str = "inventory.json";
 const OCFL_LAYOUT_FILE: &str = "ocfl_layout.json";
 const OCFL_SPEC_FILE: &str = "ocfl_1.0.txt";
 const EXTENSIONS_DIR: &str = "extensions";
 const EXTENSIONS_CONFIG_FILE: &str = "config.json";
 const OCFL_VERSION: &str = "ocfl_1.0";
+const OCFL_OBJECT_VERSION: &str = "ocfl_object_1.0";
+const INVENTORY_TYPE: &str = "https://ocfl.io/1.0/spec/#inventory";
 
 const MUTABLE_HEAD_INVENTORY_FILE: &str = "extensions/0005-mutable-head/head/inventory.json";
+const ROCFL_STAGING_EXTENSION: &str = "rocfl-staging";
 
 lazy_static! {
     static ref VERSION_REGEX: Regex = Regex::new(r#"^v\d+$"#).unwrap();
@@ -69,15 +78,19 @@ lazy_static! {
 
 /// Interface for interacting with an OCFL repository
 pub struct OcflRepo {
-    store: Box<dyn OcflStore>
+    /// For local filesystem repos, this is the storage root. TBD for S3.
+    root: PathBuf,
+    store: Box<dyn OcflStore>,
+    staging: RefCell<Option<FsOcflStore>>,
 }
 
 /// Represents an [OCFL object version](https://ocfl.io/1.0/spec/#version-directories).
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize,  Debug, Copy, Clone)]
 #[serde(try_from = "&str")]
+#[serde(into = "String")]
 pub struct VersionNum {
     pub number: u32,
-    pub width: usize,
+    pub width: u32,
 }
 
 /// Represents a version of an OCFL object
@@ -187,6 +200,8 @@ pub enum DiffType {
     Deleted,
 }
 
+pub type Result<T, E = RocflError> = core::result::Result<T, E>;
+
 /// Application errors
 #[derive(Error, Debug)]
 pub enum RocflError {
@@ -195,14 +210,57 @@ pub enum RocflError {
         object_id: String,
         message: String,
     },
+
     #[error("Not found: {0}")]
     NotFound(String),
+
     #[error("Illegal argument: {0}")]
     IllegalArgument(String),
+
     #[error("Invalid configuration: {0}")]
     InvalidConfiguration(String),
+
     #[error("Illegal state: {0}")]
     IllegalState(String),
+
+    #[error("{0}")]
+    General(String),
+
+    #[error("{0}")]
+    Io(io::Error),
+
+    #[error("{0}")]
+    Wrapped(Box<dyn error::Error>),
+}
+
+impl From<io::Error> for RocflError {
+    fn from(e: io::Error) -> Self {
+        RocflError::Io(e)
+    }
+}
+
+impl From<globset::Error> for RocflError {
+    fn from(e: globset::Error) -> Self {
+        RocflError::Wrapped(Box::new(e))
+    }
+}
+
+impl From<ParseRegionError> for RocflError {
+    fn from(e: ParseRegionError) -> Self {
+        RocflError::Wrapped(Box::new(e))
+    }
+}
+
+impl From<serde_json::Error> for RocflError {
+    fn from(e: serde_json::Error) -> Self {
+        RocflError::Wrapped(Box::new(e))
+    }
+}
+
+impl<T: error::Error + 'static> From<RusotoError<T>> for RocflError {
+    fn from(e: RusotoError<T>) -> Self {
+        RocflError::Wrapped(Box::new(e))
+    }
 }
 
 // TODO remove this
@@ -219,7 +277,9 @@ impl OcflRepo {
     /// location of the OCFL repository to open. The OCFL repository must already exist.
     pub fn new_fs_repo<P: AsRef<Path>>(storage_root: P) -> Result<Self> {
         Ok(Self {
-            store: Box::new(FsOcflStore::new(storage_root)?)
+            root: PathBuf::from(storage_root.as_ref()),
+            store: Box::new(FsOcflStore::new(storage_root)?),
+            staging: RefCell::new(None),
         })
     }
 
@@ -227,7 +287,9 @@ impl OcflRepo {
     /// most not already exist.
     pub fn init_fs_repo<P: AsRef<Path>>(root: P, layout: StorageLayout) -> Result<Self> {
         Ok(Self {
-            store: Box::new(FsOcflStore::init(root, layout)?)
+            root: PathBuf::from(root.as_ref()),
+            store: Box::new(FsOcflStore::init(root, layout)?),
+            staging: RefCell::new(None),
         })
     }
 
@@ -236,7 +298,10 @@ impl OcflRepo {
     #[cfg(feature = "s3")]
     pub fn new_s3_repo(region: Region, bucket: &str, prefix: Option<&str>) -> Result<Self> {
         Ok(Self {
-            store: Box::new(S3OcflStore::new(region, bucket, prefix)?)
+            // TODO this is not correct
+            root: PathBuf::from("."),
+            store: Box::new(S3OcflStore::new(region, bucket, prefix)?),
+            staging: RefCell::new(None),
         })
     }
 
@@ -262,7 +327,7 @@ impl OcflRepo {
     /// error is returned.
     pub fn get_object(&self,
                       object_id: &str,
-                      version_num: Option<&VersionNum>) -> Result<ObjectVersion> {
+                      version_num: Option<VersionNum>) -> Result<ObjectVersion> {
         let inventory = self.store.get_inventory(object_id)?;
         Ok(ObjectVersion::from_inventory(inventory, version_num)?)
     }
@@ -275,7 +340,7 @@ impl OcflRepo {
     /// error is returned.
     pub fn get_object_details(&self,
                               object_id: &str,
-                              version_num: Option<&VersionNum>) -> Result<ObjectVersionDetails> {
+                              version_num: Option<VersionNum>) -> Result<ObjectVersionDetails> {
         let inventory = self.store.get_inventory(object_id)?;
         Ok(ObjectVersionDetails::from_inventory(inventory, version_num)?)
     }
@@ -301,7 +366,7 @@ impl OcflRepo {
     pub fn get_object_file(&self,
                            object_id: &str,
                            path: &str,
-                           version_num: Option<&VersionNum>,
+                           version_num: Option<VersionNum>,
                            sink: &mut dyn Write) -> Result<()> {
         self.store.get_object_file(object_id, path, version_num, sink)
     }
@@ -349,21 +414,21 @@ impl OcflRepo {
     /// If the object cannot be found, then a `RocflError::NotFound` error is returned.
     pub fn diff(&self,
                 object_id: &str,
-                left_version: Option<&VersionNum>,
-                right_version: &VersionNum) -> Result<Vec<Diff>> {
-        if left_version.is_some() && right_version.eq(left_version.unwrap()) {
+                left_version: Option<VersionNum>,
+                right_version: VersionNum) -> Result<Vec<Diff>> {
+        if left_version.is_some() && right_version.eq(&left_version.unwrap()) {
             return Ok(vec![])
         }
 
         let mut inventory = self.store.get_inventory(object_id)?;
 
-        let right = inventory.remove_version(&right_version)?;
+        let right = inventory.remove_version(right_version)?;
 
         let left = match left_version {
             Some(version) => Some(inventory.remove_version(version)?),
             None => {
                 if right_version.number > 1 {
-                    Some(inventory.remove_version(&right_version.previous().unwrap())?)
+                    Some(inventory.remove_version(right_version.previous().unwrap())?)
                 } else {
                     None
                 }
@@ -388,6 +453,7 @@ impl OcflRepo {
                 }
             }
 
+            // TODO Renames can be detected if the same digest has both a D and an A
             for (path, _digest) in right_state {
                 diffs.push(Diff::added(path))
             }
@@ -398,6 +464,94 @@ impl OcflRepo {
         }
 
         Ok(diffs)
+    }
+
+    /// Stages a new OCFL object if there is not an existing object with the same ID. The object
+    /// is not inserted into the repository until it is committed.
+    pub fn create_object(&self,
+                         object_id: &str,
+                         digest_algorithm: DigestAlgorithm,
+                         content_dir: &str,
+                         padding_width: u32) -> Result<()> {
+
+        let object_id = object_id.trim();
+
+        if object_id.len() == 0 {
+            return Err(RocflError::IllegalArgument("Object IDs may not be blank".to_string()).into());
+        }
+
+        if digest_algorithm != DigestAlgorithm::Sha512
+            && digest_algorithm != DigestAlgorithm::Sha256 {
+            return Err(RocflError::IllegalArgument(
+                format!("The inventory digest algorithm must be sha512 or sha256. Found: {}",
+                        digest_algorithm.to_string())).into())
+        }
+
+        if content_dir.eq(".") || content_dir.eq("..") || content_dir.contains('/') {
+            return Err(RocflError::IllegalArgument(
+                format!("The content directory cannot equal '.' or '..' and cannot contain a '/'. Found: {}",
+                        content_dir)).into());
+        }
+
+        match self.store.get_inventory(&object_id) {
+            Err(RocflError::NotFound(_)) => (),
+            Err(e) => return Err(e),
+            _ => {
+                return Err(RocflError::IllegalState(
+                    format!("Cannot create object {} because it already exists", object_id)).into());
+            }
+        }
+
+        // TODO cleanup
+        // TODO look for un-needed error intos
+        // TODO version serialization needs cleaned up:
+        // "v1": {
+        //       "created": "2021-02-14T19:46:34.778634103-06:00",
+        //       "state": {},
+        //       "message": null,
+        //       "user": null
+        //     }
+
+        let mut versions = BTreeMap::new();
+
+        let version_num = VersionNum {
+            number: 1,
+            width: padding_width,
+        };
+
+        // TODO fill in better values
+        let version = Version {
+            created: Local::now(),
+            message: None,
+            user: None,
+            state: HashMap::new(),
+        };
+
+        versions.insert(version_num, version);
+
+        let inventory = Inventory {
+            id: object_id.to_string(),
+            type_declaration: INVENTORY_TYPE.to_string(),
+            digest_algorithm,
+            content_directory: Some(content_dir.to_string()),
+            head: version_num,
+            manifest: HashMap::new(),
+            versions,
+            fixity: None,
+            object_root: "".to_string(),
+        };
+
+        self.create_staging_if_necessary()?;
+        self.staging.borrow().as_ref().unwrap().create_object(inventory)
+    }
+
+    fn create_staging_if_necessary(&self) -> Result<()> {
+        if self.staging.borrow().is_none() {
+            let staging = FsOcflStore::init_if_needed(self.root.join(EXTENSIONS_DIR).join(ROCFL_STAGING_EXTENSION),
+                                                      StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None)?)?;
+            self.staging.replace(Some(staging));
+        }
+        Ok(())
     }
 }
 
@@ -418,7 +572,7 @@ impl VersionNum {
     /// have limits if they are zero-padded.
     pub fn next(&self) -> Result<VersionNum> {
         let max = match self.width {
-            0 => usize::MAX,
+            0 => u32::MAX,
             _ => (10 * (self.width - 1)) - 1
         };
 
@@ -456,7 +610,7 @@ impl TryFrom<&str> for VersionNum {
 
                 Ok(Self {
                     number: num,
-                    width,
+                    width: width as u32,
                 })
             }
             Err(_) => Err(RocflError::IllegalArgument(format!("Invalid version {}", version)))
@@ -481,30 +635,32 @@ impl TryFrom<u32> for VersionNum {
 }
 
 impl FromStr for VersionNum {
-    type Err = Error;
+    type Err = RocflError;
 
     /// This function is used when parsing command line arguments. It attempts to interpret a string
     /// as a version if it is formatted like any of these examples: `v3`, `v00009`, or `8`.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match VersionNum::try_from(s) {
             Ok(v) => Ok(v),
-            Err(_) => Ok(VersionNum::try_from(u32::from_str(s)?)?),
-        }
-    }
-}
-
-impl Clone for VersionNum {
-    fn clone(&self) -> Self {
-        Self {
-            number: self.number,
-            width: self.width,
+            Err(_) => {
+                match u32::from_str(s) {
+                    Ok(parsed) => Ok(VersionNum::try_from(parsed)?),
+                    Err(_) => Err(RocflError::IllegalArgument(format!("Invalid version number {}", s)))
+                }
+            },
         }
     }
 }
 
 impl fmt::Display for VersionNum {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "v{:0width$}", self.number, width = self.width)
+        write!(f, "v{:0width$}", self.number, width = self.width as usize)
+    }
+}
+
+impl From<VersionNum> for String {
+    fn from(version_num: VersionNum) -> Self {
+        format!("{}", version_num)
     }
 }
 
@@ -536,16 +692,16 @@ impl Ord for VersionNum {
 
 impl ObjectVersion {
     /// Creates an `ObjectVersion` by consuming the supplied `Inventory`.
-    fn from_inventory(mut inventory: Inventory, version_num: Option<&VersionNum>) -> Result<Self> {
+    fn from_inventory(mut inventory: Inventory, version_num: Option<VersionNum>) -> Result<Self> {
         let version_num = match version_num {
-            Some(version) => version.clone(),
-            None => inventory.head.clone(),
+            Some(version) => version,
+            None => inventory.head,
         };
 
-        let version = inventory.get_version(&version_num)?;
-        let version_details = VersionDetails::new(&version_num, version);
+        let version = inventory.get_version(version_num)?;
+        let version_details = VersionDetails::new(version_num, version);
 
-        let state = ObjectVersion::construct_state(&version_num, &mut inventory)?;
+        let state = ObjectVersion::construct_state(version_num, &mut inventory)?;
 
         Ok(Self {
             id: inventory.id,
@@ -556,11 +712,11 @@ impl ObjectVersion {
         })
     }
 
-    fn construct_state(target: &VersionNum,
+    fn construct_state(target: VersionNum,
                        inventory: &mut Inventory) -> Result<HashMap<String, FileDetails>> {
         let mut state = HashMap::new();
 
-        let mut current_version_num = (*target).clone();
+        let mut current_version_num = target;
         let mut current_version = inventory.remove_version(target)?;
         let mut target_path_map = invert_path_map(current_version.state);
         current_version.state = HashMap::new();
@@ -584,7 +740,7 @@ impl ObjectVersion {
             }
 
             let previous_version_num = version_details.version_num.previous()?;
-            let mut previous_version = inventory.remove_version(&previous_version_num)?;
+            let mut previous_version = inventory.remove_version(previous_version_num)?;
             let mut previous_path_map = invert_path_map(previous_version.state);
             previous_version.state = HashMap::new();
 
@@ -631,14 +787,14 @@ impl FileDetails {
 
 impl VersionDetails {
     /// Creates `VersionDetails` by cloning the input.
-    fn new(version_num: &VersionNum, version: &Version) -> Self {
+    fn new(version_num: VersionNum, version: &Version) -> Self {
         let (user, address) = match &version.user {
             Some(user) => (user.name.clone(), user.address.clone()),
             None => (None, None)
         };
 
         Self {
-            version_num: version_num.clone(),
+            version_num,
             created: version.created,
             user_name: user,
             user_address: address,
@@ -665,13 +821,13 @@ impl VersionDetails {
 
 impl ObjectVersionDetails {
     /// Creates `ObjectVersionDetails` by consuming the `Inventory`.
-    fn from_inventory(mut inventory: Inventory, version_num: Option<&VersionNum>) -> Result<Self> {
+    fn from_inventory(mut inventory: Inventory, version_num: Option<VersionNum>) -> Result<Self> {
         let version_num = match version_num {
-            Some(version) => version.clone(),
-            None => inventory.head.clone(),
+            Some(version) => version,
+            None => inventory.head,
         };
 
-        let version = inventory.remove_version(&version_num)?;
+        let version = inventory.remove_version(version_num)?;
         let version_details = VersionDetails::from_version(version_num, version);
 
         Ok(Self {
@@ -783,12 +939,12 @@ trait OcflStore {
     fn get_object_file(&self,
                        object_id: &str,
                        path: &str,
-                       version_num: Option<&VersionNum>,
+                       version_num: Option<VersionNum>,
                        sink: &mut dyn Write) -> Result<()>;
 }
 
 /// OCFL inventory serialization object
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct Inventory {
     id: String,
@@ -799,6 +955,7 @@ struct Inventory {
     content_directory: Option<String>,
     manifest: HashMap<String, Vec<String>>,
     versions: BTreeMap<VersionNum, Version>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
 
     // This field is not in the inventory json file and must be added after deserialization
@@ -807,7 +964,7 @@ struct Inventory {
 }
 
 /// OCFL version serialization object
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 struct Version {
     created: DateTime<Local>,
     state: HashMap<String, Vec<String>>,
@@ -816,7 +973,7 @@ struct Version {
 }
 
 /// OCFL user serialization object
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 struct User {
     name: Option<String>,
     address: Option<String>
@@ -841,16 +998,16 @@ struct InventoryAdapterIter<'a, T> {
 
 impl Inventory {
     /// Returns a reference to the specified version or an error if it does not exist.
-    fn get_version(&self, version_num: &VersionNum) -> Result<&Version> {
-        match self.versions.get(version_num) {
+    fn get_version(&self, version_num: VersionNum) -> Result<&Version> {
+        match self.versions.get(&version_num) {
             Some(v) => Ok(v),
             None => Err(not_found(&self.id, Some(version_num)).into())
         }
     }
 
     /// Removes and returns the specified version from the inventory, or an error if it does not exist.
-    fn remove_version(&mut self, version_num: &VersionNum) -> Result<Version> {
-        match self.versions.remove(version_num) {
+    fn remove_version(&mut self, version_num: VersionNum) -> Result<Version> {
+        match self.versions.remove(&version_num) {
             Some(v) => Ok(v),
             None => Err(not_found(&self.id, Some(version_num)).into())
         }
@@ -878,9 +1035,9 @@ impl Inventory {
 
     fn lookup_content_path_for_logical_path(&self,
                                             logical_path: &str,
-                                            version_num: Option<&VersionNum>) -> Result<&str> {
-        let version_num = version_num.unwrap_or(&self.head);
-        let version = self.get_version(&version_num)?;
+                                            version_num: Option<VersionNum>) -> Result<&str> {
+        let version_num = version_num.unwrap_or(self.head);
+        let version = self.get_version(version_num)?;
 
         let digest = match version.lookup_digest(&logical_path) {
             Some(digest) => digest,
@@ -979,7 +1136,7 @@ fn convert_path_separator(path: String) -> String {
 }
 
 /// Constructs a `RocflError::NotFound` error
-fn not_found(object_id: &str, version_num: Option<&VersionNum>) -> RocflError {
+fn not_found(object_id: &str, version_num: Option<VersionNum>) -> RocflError {
     match version_num {
         Some(version) => RocflError::NotFound(format!("Object {} version {}", object_id, version)),
         None => RocflError::NotFound(format!("Object {}", object_id))

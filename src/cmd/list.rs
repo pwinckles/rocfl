@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 
-use anyhow::{Context, Result};
 use globset::GlobBuilder;
 
 use crate::cmd::{Cmd, DATE_FORMAT, GlobalArgs};
@@ -8,7 +7,7 @@ use crate::cmd::opts::*;
 use crate::cmd::opts::List;
 use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
-use crate::ocfl::{FileDetails, ObjectVersionDetails, OcflRepo};
+use crate::ocfl::{FileDetails, ObjectVersionDetails, OcflRepo, Result};
 
 impl Cmd for List {
     fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
@@ -22,8 +21,7 @@ impl Cmd for List {
 
 impl List {
     fn list_objects(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
-        let iter = repo.list_objects(self.object_id.as_deref())
-            .with_context(|| "Failed to list objects")?;
+        let iter = repo.list_objects(self.object_id.as_deref())?;
 
         let mut objects: Vec<ObjectVersionDetails> = iter.collect();
 
@@ -42,8 +40,7 @@ impl List {
 
     fn list_object_contents(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         let object_id = self.object_id.as_ref().unwrap();
-        let object = repo.get_object(object_id, self.version.as_ref())
-            .with_context(|| "Failed to list object")?;
+        let object = repo.get_object(object_id, self.version)?;
 
         let glob = match self.path.as_ref() {
             Some(path) => Some(GlobBuilder::new(path)

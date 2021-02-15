@@ -2,13 +2,12 @@
 
 use std::borrow::Cow;
 
-use anyhow::Result;
 use lazy_static::lazy_static;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display as EnumDisplay, EnumString};
 
-use crate::ocfl::{DigestAlgorithm, RocflError, Validate};
+use crate::ocfl::{DigestAlgorithm, Result, RocflError, Validate};
 
 const MAX_0003_ENCAPSULATION_LENGTH: usize = 100;
 
@@ -427,10 +426,10 @@ fn validate_digest_algorithm(algorithm: DigestAlgorithm,
 
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
     use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 
     use crate::ocfl::layout::{HashedNTupleLayoutExtension, HashedNTupleObjectIdLayoutExtension, lower_percent_escape};
+    use crate::ocfl::Result;
 
     const ID_1: &str = "info:example/test-123";
     const ID_2: &str = "..Hor/rib:lè-$id";

@@ -7,7 +7,6 @@ use std::io::{self, Read, Write};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
 use globset::GlobBuilder;
 use grep_matcher::{Captures, Matcher};
 use grep_regex::RegexMatcher;
@@ -16,10 +15,10 @@ use grep_searcher::sinks::UTF8;
 use lazy_static::lazy_static;
 use log::{error, info};
 
-use crate::ocfl::{EXTENSIONS_CONFIG_FILE, EXTENSIONS_DIR, OCFL_LAYOUT_FILE, OCFL_SPEC_FILE, OCFL_VERSION, OcflLayout, REPO_NAMASTE_FILE, RocflError, Validate, VersionNum};
+use crate::ocfl::{EXTENSIONS_CONFIG_FILE, EXTENSIONS_DIR, OCFL_LAYOUT_FILE, OCFL_OBJECT_VERSION, OCFL_SPEC_FILE, OCFL_VERSION, OcflLayout, REPO_NAMASTE_FILE, Result, RocflError, Validate, VersionNum};
 use crate::ocfl::layout::StorageLayout;
 
-use super::{Inventory, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_NAMASTE_FILE, OcflStore, ROOT_INVENTORY_FILE};
+use super::{Inventory, INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_NAMASTE_FILE, OcflStore};
 
 lazy_static! {
     static ref OBJECT_ID_MATCHER: RegexMatcher = RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap();
@@ -79,6 +78,54 @@ impl FsOcflStore {
             id_path_cache: RefCell::new(HashMap::new()),
         })
     }
+
+    /// Conditionally initializes a new OCFL repository at the specified location if one does
+    /// not already exist.
+    pub fn init_if_needed<P: AsRef<Path>>(root: P, layout: StorageLayout) -> Result<Self> {
+        let root = root.as_ref().to_path_buf();
+
+        if root.exists() && root.is_dir() && fs::read_dir(&root)?.next().is_some() {
+            Self::new(root)
+        } else {
+            Self::init(root, layout)
+        }
+    }
+
+    /// Stages a new OCFL object if there is not an existing object with the same ID.
+    pub(super) fn create_object(&self, inventory: Inventory) -> Result<()> {
+        match self.get_inventory(&inventory.id) {
+            Err(RocflError::NotFound(_)) => (),
+            Err(e) => return Err(e),
+            _ => {
+                return Err(RocflError::IllegalState(
+                    format!("Cannot create object {} because it already exists in staging",
+                            inventory.id)).into());
+            }
+        }
+
+        info!("Staging new OCFL object at {}", &inventory.id);
+
+        let object_root = self.require_layout()?.map_object_id(&inventory.id);
+        let storage_path = self.storage_root.join(object_root);
+
+        fs::create_dir_all(&storage_path)?;
+
+        writeln!(File::create(storage_path.join(OBJECT_NAMASTE_FILE))?, "{}", OCFL_OBJECT_VERSION)?;
+
+        serde_json::to_writer(File::create(storage_path.join(INVENTORY_FILE))?, &inventory)?;
+
+        // TODO write inventory digest?
+
+        Ok(())
+    }
+
+    fn require_layout(&self) -> Result<&StorageLayout> {
+        match &self.storage_layout {
+            Some(layout) => Ok(layout),
+            None => Err(RocflError::IllegalState(
+                "The OCFL repository must have a defined storage layout to execute this operation.".to_string()))
+        }
+    }
 }
 
 impl OcflStore for FsOcflStore {
@@ -120,7 +167,7 @@ impl OcflStore for FsOcflStore {
     fn get_object_file(&self,
                        object_id: &str,
                        path: &str,
-                       version_num: Option<&VersionNum>,
+                       version_num: Option<VersionNum>,
                        sink: &mut dyn Write) -> Result<()> {
         let inventory = self.get_inventory(object_id)?;
 
@@ -205,7 +252,7 @@ impl InventoryIter {
     }
 
     fn create_if_matches<P: AsRef<Path>>(&self, object_root: P) -> Option<Inventory> {
-        let inventory_path = object_root.as_ref().join(ROOT_INVENTORY_FILE);
+        let inventory_path = object_root.as_ref().join(INVENTORY_FILE);
 
         if self.id_matcher.is_some() {
             if let Some(object_id) = self.extract_object_id(&inventory_path) {
@@ -271,6 +318,10 @@ impl Iterator for InventoryIter {
                         Ok(ftype) if ftype.is_dir() => {
                             let path = entry.path();
 
+                            if path.file_name().unwrap_or_default() == EXTENSIONS_DIR {
+                                continue;
+                            }
+
                             match is_object_root(&path) {
                                 Ok(is_root) if is_root => {
                                     if let Some(inventory) = self.create_if_matches(&path) {
@@ -279,7 +330,7 @@ impl Iterator for InventoryIter {
                                 }
                                 Ok(is_root) if !is_root => {
                                     self.dir_iters.push(self.current.replace(None).unwrap());
-                                    match std::fs::read_dir(&path) {
+                                    match fs::read_dir(&path) {
                                         Ok(next) => {
                                             self.current.replace(Some(next));
                                         }
@@ -287,7 +338,7 @@ impl Iterator for InventoryIter {
                                     }
                                 }
                                 Err(e) => error!("{:#}", e),
-                                _ => panic!("This code is unreachable")
+                                _ => unreachable!()
                             }
                         }
                         _ => ()
@@ -334,9 +385,11 @@ fn parse_inventory<A, B>(object_root: A, storage_root: B) -> Result<Inventory>
 {
     let inventory_path = resolve_inventory_path(&object_root);
     // TODO should validate hash
-    let mut inventory = parse_inventory_file(&inventory_path)
-        .with_context(|| format!("Failed to parse inventory at {}",
-                             inventory_path.to_str().unwrap_or_default()))?;
+    let mut inventory = match parse_inventory_file(&inventory_path) {
+        Ok(inventory) => inventory,
+        Err(e) => Err(RocflError::General(
+            format!("Failed to parse inventory at {}: {}", inventory_path.to_string_lossy(), e)))?
+    };
 
     let relative = match pathdiff::diff_paths(&object_root, &storage_root) {
         Some(relative) => relative.to_string_lossy().into(),
@@ -360,7 +413,7 @@ fn resolve_inventory_path<P: AsRef<Path>>(object_root: P) -> PathBuf {
         info!("Found mutable HEAD at {}", mutable_head_inv.to_string_lossy());
         return mutable_head_inv;
     }
-    object_root.as_ref().join(ROOT_INVENTORY_FILE)
+    object_root.as_ref().join(INVENTORY_FILE)
 }
 
 fn load_storage_layout<P: AsRef<Path>>(storage_root: P) -> Option<StorageLayout> {
@@ -468,6 +521,8 @@ fn init_new_repo<P: AsRef<Path>>(root: P, layout: &StorageLayout) -> Result<()> 
     fs::create_dir_all(&layout_ext_dir)?;
 
     File::create(layout_ext_dir.join(EXTENSIONS_CONFIG_FILE))?.write_all(&layout.serialize()?)?;
+
+    // TODO write extension spec
 
     Ok(())
 }
