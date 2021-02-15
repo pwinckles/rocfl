@@ -51,10 +51,10 @@ impl FsOcflStore {
 
         if !storage_root.exists() {
             return Err(RocflError::IllegalState(format!(
-                "Storage root {} does not exist", canonical_str(storage_root))).into());
+                "Storage root {} does not exist", canonical_str(storage_root))));
         } else if !storage_root.is_dir() {
             return Err(RocflError::IllegalState(format!(
-                "Storage root {} is not a directory", canonical_str(storage_root))).into());
+                "Storage root {} is not a directory", canonical_str(storage_root))));
         }
 
         let storage_layout = load_storage_layout(&storage_root);
@@ -99,7 +99,7 @@ impl FsOcflStore {
             _ => {
                 return Err(RocflError::IllegalState(
                     format!("Cannot create object {} because it already exists in staging",
-                            inventory.id)).into());
+                            inventory.id)));
             }
         }
 
@@ -194,7 +194,7 @@ impl FsOcflStore {
 
             match iter.next() {
                 Some(inventory) => Ok(inventory),
-                None => Err(not_found(&object_id, None).into())
+                None => Err(not_found(&object_id, None))
             }
         }
     }
@@ -205,7 +205,7 @@ impl FsOcflStore {
         if object_root.exists() {
             parse_inventory(&object_root, &self.storage_root)
         } else {
-            Err(not_found(&object_id, None).into())
+            Err(not_found(&object_id, None))
         }
     }
 }
@@ -387,8 +387,8 @@ fn parse_inventory<A, B>(object_root: A, storage_root: B) -> Result<Inventory>
     // TODO should validate hash
     let mut inventory = match parse_inventory_file(&inventory_path) {
         Ok(inventory) => inventory,
-        Err(e) => Err(RocflError::General(
-            format!("Failed to parse inventory at {}: {}", inventory_path.to_string_lossy(), e)))?
+        Err(e) => return Err(RocflError::General(
+            format!("Failed to parse inventory at {}: {}", inventory_path.to_string_lossy(), e)))
     };
 
     let relative = match pathdiff::diff_paths(&object_root, &storage_root) {
@@ -491,12 +491,12 @@ fn init_new_repo<P: AsRef<Path>>(root: P, layout: &StorageLayout) -> Result<()> 
     if root.exists() {
         if !root.is_dir() {
             return Err(RocflError::IllegalState(format!(
-                "Storage root {} is not a directory", canonical_str(root))).into());
+                "Storage root {} is not a directory", canonical_str(root))));
         }
 
         if fs::read_dir(&root)?.next().is_some() {
             return Err(RocflError::IllegalState(format!(
-                "Storage root {} must be empty", canonical_str(root))).into());
+                "Storage root {} must be empty", canonical_str(root))));
         }
     }
 
