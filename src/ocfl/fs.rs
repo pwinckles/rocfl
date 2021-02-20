@@ -15,18 +15,17 @@ use grep_searcher::sinks::UTF8;
 use lazy_static::lazy_static;
 use log::{error, info};
 
-use crate::ocfl::{EXTENSIONS_CONFIG_FILE, EXTENSIONS_DIR, OCFL_LAYOUT_FILE, OCFL_OBJECT_VERSION, OCFL_SPEC_FILE, OCFL_VERSION, OcflLayout, REPO_NAMASTE_FILE, Result, RocflError, Validate, VersionNum};
+use crate::ocfl::{OcflLayout, VersionNum};
+use crate::ocfl::consts::*;
+use crate::ocfl::error::{not_found, Result, RocflError};
+use crate::ocfl::inventory::Inventory;
 use crate::ocfl::layout::StorageLayout;
 
-use super::{Inventory, INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_NAMASTE_FILE, OcflStore};
+use super::OcflStore;
 
 lazy_static! {
     static ref OBJECT_ID_MATCHER: RegexMatcher = RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap();
 }
-
-// ================================================== //
-//             public structs+enums+traits            //
-// ================================================== //
 
 /// Local filesystem OCFL repository
 pub struct FsOcflStore {
@@ -39,10 +38,6 @@ pub struct FsOcflStore {
     /// Caches object ID to path mappings
     id_path_cache: RefCell<HashMap<String, String>>,
 }
-
-// ================================================== //
-//                   public impls+fns                 //
-// ================================================== //
 
 impl FsOcflStore {
     /// Creates a new FsOcflStore
@@ -124,7 +119,6 @@ impl FsOcflStore {
                            inventory: &Inventory,
                            source: &mut R,
                            logical_path: &str) -> Result<String> {
-        info!("Adding file {} to OCFL object {}", &logical_path, &inventory.id);
 
         // TODO this should be cached -- what if I stuck it in the inventory?
         let object_root = self.require_layout()?.map_object_id(&inventory.id);
@@ -139,12 +133,11 @@ impl FsOcflStore {
 
         let storage_path = self.storage_root.join(object_root).join(&content_path);
 
-        info!("Writing file to {}", storage_path.to_string_lossy());
-
-        let mut file = File::create(&storage_path)?;
+        info!("Adding file {} to OCFL object {} at {}",
+              &logical_path, &inventory.id, &content_path.to_string_lossy());
 
         fs::create_dir_all(storage_path.parent().unwrap())?;
-        io::copy(source, &mut file)?;
+        io::copy(source, &mut File::create(&storage_path)?)?;
 
         Ok(content_path.to_string_lossy().to_string())
     }
@@ -252,10 +245,6 @@ impl FsOcflStore {
     }
 }
 
-// ================================================== //
-//            private structs+enums+traits            //
-// ================================================== //
-
 /// Iterates over ever object in an OCFL repository by walking the file tree.
 struct InventoryIter {
     root: PathBuf,
@@ -263,10 +252,6 @@ struct InventoryIter {
     current: RefCell<Option<ReadDir>>,
     id_matcher: Option<Box<dyn Fn(&str) -> bool>>,
 }
-
-// ================================================== //
-//                private impls+fns                   //
-// ================================================== //
 
 impl InventoryIter {
     /// Creates a new iterator that only returns objects that match the given object ID.
