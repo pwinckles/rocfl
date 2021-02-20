@@ -11,9 +11,10 @@
 
 use core::fmt;
 use std::{error, io};
+use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::{File, Metadata};
@@ -49,7 +50,6 @@ use self::fs::FsOcflStore;
 use self::layout::LayoutExtensionName;
 #[cfg(feature = "s3")]
 use self::s3::S3OcflStore;
-use std::borrow::BorrowMut;
 
 mod fs;
 #[cfg(feature = "s3")]
@@ -183,6 +183,12 @@ pub enum DigestAlgorithm {
     #[serde(rename = "blake2b-384")]
     #[strum(serialize = "blake2b-384")]
     Blake2b384,
+}
+
+/// Reader wrapper that calculates a digest while reading
+pub struct DigestReader<R: Read> {
+    digest: Box<dyn DynDigest>,
+    inner: R,
 }
 
 /// Represents a change to a file
@@ -545,7 +551,7 @@ impl OcflRepo {
         // TODO enforce that the dst is legal
 
         self.create_staging_if_necessary()?;
-        let staging_borrow = self.staging.borrow();
+        let staging_borrow = self.staging.borrow();  // This is necessary to keep it in scope
         let staging = staging_borrow.as_ref().unwrap();
 
         // TODO even though this is not supposed to be used concurrently, it's not a bad idea
@@ -555,8 +561,8 @@ impl OcflRepo {
             Ok(inventory) => inventory,
             Err(RocflError::NotFound(_)) => {
                 let mut inventory = self.store.get_inventory(&object_id)?;
-                let version_num = inventory.head.next()?;
-                inventory.versions.insert(version_num, Version::new_staged());
+                inventory.create_staging_head()?;
+                // TODO is this step necessary? can I wait till after copying the files?
                 staging.stage_object(&inventory)?;
                 inventory
             },
@@ -571,17 +577,11 @@ impl OcflRepo {
                 Ok(meta) => {
                     // TODO symbolic links?
                     if meta.is_file() {
+                        // TODO need to continue on error
                         let file = File::open(&path)?;
+                        let mut reader = inventory.digest_algorithm.reader(file)?;
 
-                        // TODO cleanup
-                        let mut reader = match &inventory.digest_algorithm {
-                            DigestAlgorithm::Sha512 => DigestReader::new(Box::new(Sha512::new()), file),
-                            DigestAlgorithm::Sha256 => DigestReader::new(Box::new(Sha256::new()), file),
-                            _ => return Err(RocflError::IllegalState(
-                                format!("Invalid digest algorithm: {}",
-                                        &inventory.digest_algorithm.to_string())))
-                        };
-
+                        // TODO this path is wrong -- must determine if it is a directory
                         let mut logical_path = dst.to_string();
 
                         if src.len() > 1 {
@@ -604,16 +604,9 @@ impl OcflRepo {
                                 }
                                 // TODO
                                 let version = inventory.versions.get_mut(&inventory.head).unwrap();
-                                if !version.state.contains_key(&digest) {
-                                    let mut paths = Vec::with_capacity(1);
-                                    paths.push(logical_path);
-                                    version.state.insert(digest, paths);
-                                } else {
-                                    let paths = version.state.get_mut(&digest).unwrap();
-                                    if !paths.contains(&logical_path) {
-                                        paths.push(logical_path);
-                                    }
-                                }
+                                version.state.entry(digest)
+                                    .or_insert_with(|| Vec::with_capacity(1))
+                                    .push(logical_path);
                             }
                             Err(e) => error!("Failed to copy file {} to object {}: {}",
                                    &path.to_string_lossy(), &object_id, e)
@@ -959,7 +952,7 @@ impl ObjectVersionDetails {
 
 impl DigestAlgorithm {
     /// Hashes the input and returns its hex encoded digest
-    fn hash_hex(&self, data: impl AsRef<[u8]>) -> String {
+    pub fn hash_hex(&self, data: impl AsRef<[u8]>) -> String {
         // This ugliness is because the variable length blake2b algorithms don't work with DynDigest
         let bytes = match self {
             DigestAlgorithm::Md5 => {
@@ -1010,6 +1003,46 @@ impl DigestAlgorithm {
         };
 
         hex::encode(bytes)
+    }
+
+    /// Wraps the specified reader in a `DigestReader`. Does not support blake2b because of the
+    /// DynDigest problem.
+    pub fn reader<R: Read>(&self, reader: R) -> Result<DigestReader<R>> {
+        let digest: Box<dyn DynDigest> = match self {
+            DigestAlgorithm::Md5 => Box::new(Md5::new()),
+            DigestAlgorithm::Sha1 => Box::new(Sha1::new()),
+            DigestAlgorithm::Sha256 => Box::new(Sha256::new()),
+            DigestAlgorithm::Sha512 => Box::new(Sha512::new()),
+            DigestAlgorithm::Sha512_256 => Box::new(Sha512Trunc256::new()),
+            _ => return Err(RocflError::General("Blake2b is not supported for streaming digest.".to_string())),
+        };
+
+        Ok(DigestReader::new(digest, reader))
+    }
+}
+
+impl<R: Read> DigestReader<R> {
+    pub fn new(digest: Box<dyn DynDigest>, reader: R) -> Self {
+        Self {
+            digest,
+            inner: reader,
+        }
+    }
+
+    pub fn finalize_hex(self) -> String {
+        hex::encode(self.digest.finalize().to_vec())
+    }
+}
+
+impl<R: Read> Read for DigestReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let result = self.inner.read(buf)?;
+
+        if result > 0 {
+            self.digest.update(&buf);
+        }
+
+        Ok(result)
     }
 }
 
@@ -1076,24 +1109,27 @@ struct Inventory {
     #[serde(skip_serializing_if = "Option::is_none")]
     fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
 
-    // This field is not in the inventory json file and must be added after deserialization
     #[serde(skip)]
     object_root: String,
 }
 
 /// OCFL version serialization object
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 struct Version {
     created: DateTime<Local>,
     state: HashMap<String, Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    user: Option<User>
+    user: Option<User>,
+
+    /// All of the logical path parts that should be treated as directories
+    #[serde(skip)]
+    virtual_dirs: Option<HashSet<String>>,
 }
 
 /// OCFL user serialization object
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 struct User {
     name: Option<String>,
     address: Option<String>
@@ -1112,16 +1148,27 @@ struct InventoryAdapterIter<'a, T> {
     adapter: Box<dyn Fn(Inventory) -> Result<T>>
 }
 
-struct DigestReader<R: Read> {
-    digest: Box<dyn DynDigest>,
-    inner: R,
-}
-
 // ================================================== //
 //                private impls+fns                   //
 // ================================================== //
 
 impl Inventory {
+    /// Creates a new HEAD version, copying over the state of the previous HEAD.
+    fn create_staging_head(&mut self) -> Result<()> {
+        let version_num = self.head.next()?;
+        let version = self.head_version().clone_staged();
+        self.versions.insert(version_num, version);
+        self.head = version_num;
+
+        Ok(())
+    }
+
+    /// Returns the HEAD version
+    fn head_version(&self) -> &Version {
+        // The head version must exist because we look for it when the Inventory is deserialized
+        self.versions.get(&self.head).unwrap()
+    }
+
     /// Returns a reference to the specified version or an error if it does not exist.
     fn get_version(&self, version_num: VersionNum) -> Result<&Version> {
         match self.versions.get(&version_num) {
@@ -1192,6 +1239,15 @@ impl Validate for Inventory {
 impl Version {
     /// Create a new Version initialized with values for staging
     fn new_staged() -> Self {
+        Self::staged_version(HashMap::new())
+    }
+
+    /// Creates a new Version with a cloned state and staging meta
+    fn clone_staged(&self) -> Self {
+        Self::staged_version(self.state.clone())
+    }
+
+    fn staged_version(state: HashMap<String, Vec<String>>) -> Self {
         Self {
             created: Local::now(),
             message: Some("Staging new version".to_string()),
@@ -1199,7 +1255,8 @@ impl Version {
                 name: Some("rocfl".to_string()),
                 address: Some("https://github.com/pwinckles/rocfl".to_string()),
             }),
-            state: HashMap::new(),
+            state,
+            virtual_dirs: None,
         }
     }
 
@@ -1244,31 +1301,6 @@ impl<'a, T> Iterator for InventoryAdapterIter<'a, T> {
                 }
             }
         }
-    }
-}
-
-impl<R: Read> DigestReader<R> {
-    fn new(digest: Box<dyn DynDigest>, reader: R) -> Self {
-        Self {
-            digest,
-            inner: reader,
-        }
-    }
-
-    fn finalize_hex(self) -> String {
-        hex::encode(self.digest.finalize().to_vec())
-    }
-}
-
-impl<R: Read> Read for DigestReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let result = self.inner.read(buf)?;
-
-        if result > 0 {
-            self.digest.update(&buf);
-        }
-
-        Ok(result)
     }
 }
 

@@ -124,7 +124,6 @@ impl FsOcflStore {
                            inventory: &Inventory,
                            source: &mut R,
                            logical_path: &str) -> Result<String> {
-        info!("Adding file {} to OCFL object {}", &logical_path, &inventory.id);
 
         // TODO this should be cached -- what if I stuck it in the inventory?
         let object_root = self.require_layout()?.map_object_id(&inventory.id);
@@ -139,12 +138,11 @@ impl FsOcflStore {
 
         let storage_path = self.storage_root.join(object_root).join(&content_path);
 
-        info!("Writing file to {}", storage_path.to_string_lossy());
-
-        let mut file = File::create(&storage_path)?;
+        info!("Adding file {} to OCFL object {} at {}",
+              &logical_path, &inventory.id, &content_path.to_string_lossy());
 
         fs::create_dir_all(storage_path.parent().unwrap())?;
-        io::copy(source, &mut file)?;
+        io::copy(source, &mut File::create(&storage_path)?)?;
 
         Ok(content_path.to_string_lossy().to_string())
     }
