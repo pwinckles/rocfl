@@ -7,8 +7,7 @@ use crate::cmd::opts::*;
 use crate::cmd::opts::List;
 use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
-use crate::ocfl::{FileDetails, ObjectVersionDetails, OcflRepo};
-use crate::ocfl::error::Result;
+use crate::ocfl::{FileDetails, ObjectVersionDetails, OcflRepo, Result};
 
 impl Cmd for List {
     fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {

@@ -59,7 +59,7 @@ pub struct HexDigest(String);
 
 impl DigestAlgorithm {
     /// Hashes the input and returns its hex encoded digest
-    pub fn hash_hex(&self, data: impl AsRef<[u8]>) -> String {
+    pub fn hash_hex(&self, data: impl AsRef<[u8]>) -> HexDigest {
         // This ugliness is because the variable length blake2b algorithms don't work with DynDigest
         let bytes = match self {
             DigestAlgorithm::Md5 => {
@@ -109,7 +109,7 @@ impl DigestAlgorithm {
             }
         };
 
-        hex::encode(bytes)
+        bytes.into()
     }
 
     /// Wraps the specified reader in a `DigestReader`. Does not support blake2b because of the
@@ -136,8 +136,8 @@ impl<R: Read> DigestReader<R> {
         }
     }
 
-    pub fn finalize_hex(self) -> String {
-        hex::encode(self.digest.finalize().to_vec())
+    pub fn finalize_hex(self) -> HexDigest {
+        self.digest.finalize().to_vec().into()
     }
 }
 
@@ -153,7 +153,20 @@ impl<R: Read> Read for DigestReader<R> {
     }
 }
 
+impl From<Vec<u8>> for HexDigest {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self(hex::encode(bytes))
+    }
+}
+
+impl From<HexDigest> for String {
+    fn from(digest: HexDigest) -> Self {
+        digest.0
+    }
+}
+
 impl Ord for HexDigest {
+    /// Case insensitive string comparison
     fn cmp(&self, other: &Self) -> Ordering {
         // Based on SliceOrd::compare()
         // This is slightly more efficient than converting the entire str to lower case and then

@@ -17,18 +17,15 @@ use log::{error, info};
 
 use crate::ocfl::{OcflLayout, VersionNum};
 use crate::ocfl::consts::*;
-use crate::ocfl::error::{Result, RocflError};
+use crate::ocfl::error::{not_found, Result, RocflError};
+use crate::ocfl::inventory::Inventory;
 use crate::ocfl::layout::StorageLayout;
 
-use super::{Inventory, INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_NAMASTE_FILE, OcflStore};
+use super::OcflStore;
 
 lazy_static! {
     static ref OBJECT_ID_MATCHER: RegexMatcher = RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap();
 }
-
-// ================================================== //
-//             public structs+enums+traits            //
-// ================================================== //
 
 /// Local filesystem OCFL repository
 pub struct FsOcflStore {
@@ -41,10 +38,6 @@ pub struct FsOcflStore {
     /// Caches object ID to path mappings
     id_path_cache: RefCell<HashMap<String, String>>,
 }
-
-// ================================================== //
-//                   public impls+fns                 //
-// ================================================== //
 
 impl FsOcflStore {
     /// Creates a new FsOcflStore
@@ -252,10 +245,6 @@ impl FsOcflStore {
     }
 }
 
-// ================================================== //
-//            private structs+enums+traits            //
-// ================================================== //
-
 /// Iterates over ever object in an OCFL repository by walking the file tree.
 struct InventoryIter {
     root: PathBuf,
@@ -263,10 +252,6 @@ struct InventoryIter {
     current: RefCell<Option<ReadDir>>,
     id_matcher: Option<Box<dyn Fn(&str) -> bool>>,
 }
-
-// ================================================== //
-//                private impls+fns                   //
-// ================================================== //
 
 impl InventoryIter {
     /// Creates a new iterator that only returns objects that match the given object ID.

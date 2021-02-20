@@ -16,10 +16,6 @@ lazy_static! {
     static ref NON_ALPHA_PLUS: AsciiSet = NON_ALPHANUMERIC.remove(b'-').remove(b'_');
 }
 
-// ================================================== //
-//             public structs+enums+traits            //
-// ================================================== //
-
 /// The storage layout maps object IDs to locations within the storage root
 #[derive(Debug)]
 pub struct StorageLayout {
@@ -39,10 +35,6 @@ pub enum LayoutExtensionName {
     #[serde(rename = "0003-hash-and-id-n-tuple-storage-layout")]
     HashedNTupleObjectIdLayout
 }
-
-// ================================================== //
-//                   public impls+fns                 //
-// ================================================== //
 
 impl StorageLayout {
     pub fn new(name: LayoutExtensionName, config_bytes: Option<&[u8]>) -> Result<Self> {
@@ -71,10 +63,6 @@ impl StorageLayout {
         self.extension.serialize()
     }
 }
-
-// ================================================== //
-//            private structs+enums+traits            //
-// ================================================== //
 
 /// [Flat Direct Storage Layout Extension](https://ocfl.github.io/extensions/0002-flat-direct-storage-layout.html)
 #[derive(Debug)]
@@ -128,10 +116,6 @@ enum LayoutExtension {
     HashedNTuple(HashedNTupleLayoutExtension),
     HashedNTupleObjectId(HashedNTupleObjectIdLayoutExtension),
 }
-
-// ================================================== //
-//                private impls+fns                   //
-// ================================================== //
 
 impl FlatDirectLayoutConfig {
     fn validate(&self) -> Result<()> {
@@ -272,7 +256,7 @@ impl HashedNTupleLayoutExtension {
 
     /// Object IDs are hashed and then divided into tuples to create a pair-tree like layout
     fn map_object_id(&self, object_id: &str) -> String {
-        let digest = self.config.digest_algorithm.hash_hex(&object_id.as_bytes());
+        let digest: String = self.config.digest_algorithm.hash_hex(&object_id.as_bytes()).into();
 
         if self.config.tuple_size == 0 {
             return digest
@@ -310,7 +294,7 @@ impl HashedNTupleObjectIdLayoutExtension {
     /// Object IDs are hashed and then divided into tuples to create a pair-tree like layout. The
     /// difference here is that the object encapsulation directory is the url-encoded object ID
     fn map_object_id(&self, object_id: &str) -> String {
-        let digest = self.config.digest_algorithm.hash_hex(&object_id.as_bytes());
+        let digest: String = self.config.digest_algorithm.hash_hex(&object_id.as_bytes()).into();
 
         if self.config.tuple_size == 0 {
             return digest
@@ -411,7 +395,7 @@ fn validate_tuple_config(tuple_size: usize, number_of_tuples: usize) -> Result<(
 fn validate_digest_algorithm(algorithm: DigestAlgorithm,
                              tuple_size: usize,
                              number_of_tuples: usize) -> Result<()>{
-    let digest = algorithm.hash_hex("test".as_bytes());
+    let digest: String = algorithm.hash_hex("test".as_bytes()).into();
     let total_tuples_length = tuple_size * number_of_tuples;
 
     if digest.len() < total_tuples_length {

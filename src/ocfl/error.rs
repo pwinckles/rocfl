@@ -7,6 +7,7 @@ use rusoto_core::region::ParseRegionError;
 #[cfg(feature = "s3")]
 use rusoto_core::RusotoError;
 use thiserror::Error;
+use crate::ocfl::VersionNum;
 
 pub type Result<T, E = RocflError> = core::result::Result<T, E>;
 
@@ -39,6 +40,14 @@ pub enum RocflError {
 
     #[error("{0}")]
     Wrapped(Box<dyn error::Error>),
+}
+
+/// Constructs a `RocflError::NotFound` error
+pub fn not_found(object_id: &str, version_num: Option<VersionNum>) -> RocflError {
+    match version_num {
+        Some(version) => RocflError::NotFound(format!("Object {} version {}", object_id, version)),
+        None => RocflError::NotFound(format!("Object {}", object_id))
+    }
 }
 
 impl Debug for RocflError {
