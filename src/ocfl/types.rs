@@ -6,7 +6,7 @@ use std::fmt::Formatter;
 use std::hash::{Hash, Hasher};
 use std::path;
 use std::rc::Rc;
-use std::str::FromStr;
+use std::str::{FromStr, Split};
 
 use chrono::{DateTime, Local};
 use lazy_static::lazy_static;
@@ -22,7 +22,7 @@ lazy_static! {
 }
 
 /// Represents an [OCFL object version](https://ocfl.io/1.0/spec/#version-directories).
-#[derive(Deserialize, Serialize,  Debug, Copy, Clone)]
+#[derive(Deserialize, Serialize, Debug, Copy, Clone)]
 #[serde(try_from = "&str")]
 #[serde(into = "String")]
 pub struct VersionNum {
@@ -30,6 +30,7 @@ pub struct VersionNum {
     pub width: u32,
 }
 
+#[derive(Debug, Eq, Ord, PartialOrd, PartialEq, Hash, Clone)]
 /// Represents an OCFL logical path.
 pub struct LogicalPath(String);
 
@@ -251,6 +252,40 @@ impl Ord for VersionNum {
     }
 }
 
+impl LogicalPath {
+    pub fn parts(&self) -> Split<&str> {
+        self.0.split("/")
+    }
+}
+
+impl TryFrom<&str> for LogicalPath {
+    type Error = RocflError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let trimmed = value.trim_start_matches("/").trim_end_matches("/");
+
+        if !trimmed.is_empty() {
+            let has_illegal_part = trimmed.split("/").any(|part| {
+                part == "." || part == ".." || part.is_empty()
+            });
+
+            if has_illegal_part {
+                return Err(RocflError::IllegalArgument(
+                    format!("Logical paths may not contain '.', '..', or '' parts. Found: {} ",
+                            value)));
+            }
+        }
+
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+impl From<LogicalPath> for String {
+    fn from(path: LogicalPath) -> Self {
+        path.0
+    }
+}
+
 impl ObjectVersion {
     /// Creates an `ObjectVersion` by consuming the supplied `Inventory`.
     pub fn from_inventory(mut inventory: Inventory, version_num: Option<VersionNum>) -> Result<Self> {
@@ -430,4 +465,54 @@ fn convert_path_separator(path: String) -> String {
         return path.replace("/", "\\");
     }
     path
+}
+
+#[cfg(test)]
+mod tests {
+    use std::convert::TryInto;
+
+    use crate::ocfl::LogicalPath;
+
+    #[test]
+    fn create_logical_path_when_valid() {
+        let value = "foo/.bar/baz.txt";
+        let path: LogicalPath = value.try_into().unwrap();
+        assert_eq!(value, path.0);
+    }
+
+    #[test]
+    fn create_logical_path_when_root() {
+        let path: LogicalPath = "/".try_into().unwrap();
+        assert_eq!("", path.0);
+    }
+
+    #[test]
+    fn remove_leading_and_trailing_slashes_from_logical_paths() {
+        let path: LogicalPath = "//foo/bar/baz//".try_into().unwrap();
+        assert_eq!("foo/bar/baz", path.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Logical paths may not")]
+    fn reject_logical_paths_with_empty_parts() {
+        let path: LogicalPath = "foo//bar/baz".try_into().unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Logical paths may not")]
+    fn reject_logical_paths_with_single_dot() {
+        let path: LogicalPath = "foo/bar/./baz".try_into().unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Logical paths may not")]
+    fn reject_logical_paths_with_double_dot() {
+        let path: LogicalPath = "foo/bar/../baz".try_into().unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Logical paths may not")]
+    fn reject_logical_paths_with_double_dot_leading() {
+        let path: LogicalPath = "../foo/bar/baz".try_into().unwrap();
+    }
 }
