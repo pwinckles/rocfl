@@ -5,17 +5,15 @@ use enum_dispatch::enum_dispatch;
 #[cfg(feature = "s3")]
 use rusoto_core::Region;
 
-use crate::cmd::init::init_repo;
+use crate::cmd::cmds::init_repo;
 use crate::cmd::opts::*;
 use crate::ocfl::{OcflRepo, Result};
 #[cfg(not(feature = "s3"))]
 use crate::ocfl::RocflError;
 
 pub mod opts;
-mod cat;
+mod cmds;
 mod diff;
-mod init;
-mod new;
 mod list;
 mod style;
 mod table;

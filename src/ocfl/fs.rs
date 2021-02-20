@@ -91,8 +91,8 @@ impl FsOcflStore {
         }
     }
 
-    /// Stages a new OCFL object if there is not an existing object with the same ID.
-    pub(super) fn create_object(&self, inventory: Inventory) -> Result<()> {
+    /// Stages an OCFL object if there is not an existing object with the same ID.
+    pub(super) fn stage_object(&self, inventory: &Inventory) -> Result<()> {
         match self.get_inventory(&inventory.id) {
             Err(RocflError::NotFound(_)) => (),
             Err(e) => return Err(e),
@@ -103,18 +103,60 @@ impl FsOcflStore {
             }
         }
 
-        info!("Staging new OCFL object at {}", &inventory.id);
+        info!("Staging OCFL object {} {}", &inventory.id, &inventory.head);
 
         let object_root = self.require_layout()?.map_object_id(&inventory.id);
         let storage_path = self.storage_root.join(object_root);
 
+        // TODO existence?
+
         fs::create_dir_all(&storage_path)?;
 
         writeln!(File::create(storage_path.join(OBJECT_NAMASTE_FILE))?, "{}", OCFL_OBJECT_VERSION)?;
-
         serde_json::to_writer(File::create(storage_path.join(INVENTORY_FILE))?, &inventory)?;
 
         // TODO write inventory digest?
+
+        Ok(())
+    }
+
+    pub(super) fn stage_file<R: Read>(&self,
+                           inventory: &Inventory,
+                           source: &mut R,
+                           logical_path: &str) -> Result<String> {
+        info!("Adding file {} to OCFL object {}", &logical_path, &inventory.id);
+
+        // TODO this should be cached -- what if I stuck it in the inventory?
+        let object_root = self.require_layout()?.map_object_id(&inventory.id);
+
+        // TODO make a const
+        // TODO safe content path mappings?
+        // TODO verify valid path? should that have already happened?
+
+        let content_path = Path::new(&inventory.head.to_string())
+            .join(inventory.content_directory.as_ref().unwrap_or(&"content".to_string()))
+            .join(logical_path);
+
+        let storage_path = self.storage_root.join(object_root).join(&content_path);
+
+        info!("Writing file to {}", storage_path.to_string_lossy());
+
+        let mut file = File::create(&storage_path)?;
+
+        fs::create_dir_all(storage_path.parent().unwrap())?;
+        io::copy(source, &mut file)?;
+
+        Ok(content_path.to_string_lossy().to_string())
+    }
+
+    pub(super) fn stage_inventory(&self, inventory: &Inventory) -> Result<()> {
+        // TODO cache...
+        let object_root = self.require_layout()?.map_object_id(&inventory.id);
+        let storage_path = self.storage_root.join(object_root);
+
+        serde_json::to_writer(File::create(storage_path.join(INVENTORY_FILE))?, &inventory)?;
+
+        // TODO sidecar?
 
         Ok(())
     }
