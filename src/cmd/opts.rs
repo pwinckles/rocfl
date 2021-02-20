@@ -8,6 +8,7 @@ use structopt::clap::AppSettings::{ColorAuto, ColoredHelp, DisableVersion};
 use structopt::StructOpt;
 
 use crate::ocfl::VersionNum;
+use std::path::PathBuf;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
@@ -64,6 +65,8 @@ pub enum Command {
     Init(Init),
     #[structopt(name = "new")]
     New(New),
+    #[structopt(name = "cp")]
+    Copy(Copy),
 }
 
 /// Lists objects or files within objects.
@@ -115,7 +118,7 @@ pub struct List {
     pub glob_literal_separator: bool,
 
     /// ID of the object to list. May be a glob when used with '-o'.
-    #[structopt(name = "OBJECT")]
+    #[structopt(name = "OBJ_ID")]
     pub object_id: Option<String>,
 
     /// Path glob of files to list. May only be specified if an object is also specified.
@@ -148,7 +151,7 @@ pub struct Log {
     pub num: Num,
 
     /// ID of the object
-    #[structopt(name = "OBJECT")]
+    #[structopt(name = "OBJ_ID")]
     pub object_id: String,
 
     /// Optional path to a file
@@ -165,7 +168,7 @@ pub struct Show {
     pub minimal: bool,
 
     /// ID of the object
-    #[structopt(name = "OBJECT")]
+    #[structopt(name = "OBJ_ID")]
     pub object_id: String,
 
     /// Optional version to show
@@ -178,7 +181,7 @@ pub struct Show {
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct Diff {
     /// ID of the object
-    #[structopt(name = "OBJECT")]
+    #[structopt(name = "OBJ_ID")]
     pub object_id: String,
 
     /// Left-hand side version
@@ -199,7 +202,7 @@ pub struct Cat {
     pub version: Option<VersionNum>,
 
     /// ID of the object
-    #[structopt(name = "OBJECT")]
+    #[structopt(name = "OBJ_ID")]
     pub object_id: String,
 
     /// Logical path of the file
@@ -243,8 +246,46 @@ pub struct New {
     pub zero_padding: u32,
 
     /// ID of the object to create.
-    #[structopt(name = "OBJECT")]
+    #[structopt(name = "OBJ_ID")]
     pub object_id: String,
+}
+
+/// Copies files into objects, between objects, and within objects.
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+pub struct Copy {
+    /// Indicates that SRC directories should be copied recursively. This only applies when copying
+    /// from the local filesystem
+    #[structopt(short, long)]
+    pub recursive: bool,
+
+    /// Allows existing files to be overwritten.
+    #[structopt(short, long)]
+    pub force: bool,
+
+    /// Wildcards in glob expressions will not match '/'
+    #[structopt(short, long)]
+    pub glob_literal_separator: bool,
+
+    /// The object ID of the object to copy files from. Do not specify this option when copying
+    /// files from the local filesystem.
+    #[structopt(short, long, value_name = "SRC_OBJ_ID")]
+    pub source_object: Option<String>,
+
+    /// The object ID of the object to copy files into. This option is required when SRC_OBJ_ID is
+    /// not specified, but optional when it is. If not specified, the files are copied within the
+    /// source object.
+    #[structopt(short, long, value_name = "DST_OBJ_ID", required_unless = "source-object")]
+    pub destination_object: Option<String>,
+
+    /// The files to copy. This may be a glob pattern. When copying files within an OCFL object,
+    /// these paths are logical paths
+    #[structopt(name = "SRC")]
+    pub source: Vec<String>,
+
+    /// The logical path to copy SRC to. Specify '/' to copy into object's root.
+    #[structopt(name = "DST", last = true)]
+    pub destination: String,
 }
 
 #[derive(Debug)]

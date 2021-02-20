@@ -42,6 +42,7 @@ impl List {
         let object_id = self.object_id.as_ref().unwrap();
         let object = repo.get_object(object_id, self.version)?;
 
+        // TODO this should remove any leading slashes
         let glob = match self.path.as_ref() {
             Some(path) => Some(GlobBuilder::new(path)
                 .literal_separator(self.glob_literal_separator)

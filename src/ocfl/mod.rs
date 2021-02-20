@@ -16,16 +16,17 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display, Formatter};
+use std::fs::{File, Metadata};
 use std::hash::{Hash, Hasher};
-use std::io::Write;
-use std::ops::Deref;
+use std::io::{Read, Write};
+use std::ops::{Deref, DerefMut};
 use std::path::{self, Path, PathBuf};
 use std::rc::Rc;
 use std::str::FromStr;
 
 use blake2::{Blake2b, VarBlake2b};
 use chrono::{DateTime, Local};
-use digest::{Digest, Update, VariableOutput};
+use digest::{Digest, DynDigest, Update, VariableOutput};
 use lazy_static::lazy_static;
 use log::error;
 use md5::Md5;
@@ -48,6 +49,7 @@ use self::fs::FsOcflStore;
 use self::layout::LayoutExtensionName;
 #[cfg(feature = "s3")]
 use self::s3::S3OcflStore;
+use std::borrow::BorrowMut;
 
 mod fs;
 #[cfg(feature = "s3")]
@@ -509,23 +511,8 @@ impl OcflRepo {
         }
 
         let mut versions = BTreeMap::new();
-
-        let version_num = VersionNum {
-            number: 1,
-            width: padding_width,
-        };
-
-        let version = Version {
-            created: Local::now(),
-            message: Some("Staging new object".to_string()),
-            user: Some(User {
-                name: Some("rocfl".to_string()),
-                address: Some("https://github.com/pwinckles/rocfl".to_string()),
-            }),
-            state: HashMap::new(),
-        };
-
-        versions.insert(version_num, version);
+        let version_num = VersionNum::new(1, padding_width);
+        versions.insert(version_num, Version::new_staged());
 
         let inventory = Inventory {
             id: object_id.to_string(),
@@ -540,7 +527,132 @@ impl OcflRepo {
         };
 
         self.create_staging_if_necessary()?;
-        self.staging.borrow().as_ref().unwrap().create_object(inventory)
+        self.staging.borrow().as_ref().unwrap().stage_object(&inventory)
+    }
+
+    /// Copies files from outside the OCFL repository into the specified OCFL object.
+    /// A destination of `/` specifies the object's root.
+    ///
+    /// If `force` is `false` and the copy operation attempts to write a file to a logical
+    /// path where there is already a file, then the new file will **not** be copied.
+    pub fn copy_files_external<P: AsRef<Path>>(&self,
+                      object_id: &str,
+                      src: &[P],
+                      dst: &str,
+                      recursive: bool,
+                      force: bool) -> Result<()> {
+        // TODO enforce src > 0
+        // TODO enforce that the dst is legal
+
+        self.create_staging_if_necessary()?;
+        let staging_borrow = self.staging.borrow();
+        let staging = staging_borrow.as_ref().unwrap();
+
+        // TODO even though this is not supposed to be used concurrently, it's not a bad idea
+        //      to get some sort of file lock here so that an object cannot be updated concurrently
+
+        let mut inventory = match staging.get_inventory(&object_id) {
+            Ok(inventory) => inventory,
+            Err(RocflError::NotFound(_)) => {
+                let mut inventory = self.store.get_inventory(&object_id)?;
+                let version_num = inventory.head.next()?;
+                inventory.versions.insert(version_num, Version::new_staged());
+                staging.stage_object(&inventory)?;
+                inventory
+            },
+            Err(e) => return Err(e),
+        };
+
+        // TODO cleanup
+        for path in src.iter() {
+            let path = path.as_ref();
+            match std::fs::metadata(&path) {
+                Err(e) => error!("Could not read file {}: {}", path.to_string_lossy(), e),
+                Ok(meta) => {
+                    // TODO symbolic links?
+                    if meta.is_file() {
+                        let file = File::open(&path)?;
+
+                        // TODO cleanup
+                        let mut reader = match &inventory.digest_algorithm {
+                            DigestAlgorithm::Sha512 => DigestReader::new(Box::new(Sha512::new()), file),
+                            DigestAlgorithm::Sha256 => DigestReader::new(Box::new(Sha256::new()), file),
+                            _ => return Err(RocflError::IllegalState(
+                                format!("Invalid digest algorithm: {}",
+                                        &inventory.digest_algorithm.to_string())))
+                        };
+
+                        let mut logical_path = dst.to_string();
+
+                        if src.len() > 1 {
+                            logical_path.push('/');
+                            logical_path.push_str(&path.file_name().unwrap().to_string_lossy());
+                        }
+
+                        // TODO overwrite protection
+                        // TODO validate legal path
+
+                        // TODO or should it just fail?
+                        match staging.stage_file(&inventory, &mut reader, &logical_path) {
+                            Ok(content_path) => {
+                                // TODO make methods
+                                let digest = reader.finalize_hex();
+                                if !inventory.manifest.contains_key(&digest) {
+                                    let mut paths = Vec::with_capacity(1);
+                                    paths.push(content_path);
+                                    inventory.manifest.insert(digest.clone(), paths);
+                                }
+                                // TODO
+                                let version = inventory.versions.get_mut(&inventory.head).unwrap();
+                                if !version.state.contains_key(&digest) {
+                                    let mut paths = Vec::with_capacity(1);
+                                    paths.push(logical_path);
+                                    version.state.insert(digest, paths);
+                                } else {
+                                    let paths = version.state.get_mut(&digest).unwrap();
+                                    if !paths.contains(&logical_path) {
+                                        paths.push(logical_path);
+                                    }
+                                }
+                            }
+                            Err(e) => error!("Failed to copy file {} to object {}: {}",
+                                   &path.to_string_lossy(), &object_id, e)
+                        }
+                    } else if recursive {
+                        // TODO walk directory
+                    } else {
+                        error!("Skipping directory {} because recursive copy is not enabled",
+                               path.to_string_lossy());
+                    }
+                }
+            }
+        }
+
+        // TODO need to touch the version timestamp
+        staging.stage_inventory(&inventory)?;
+
+        Ok(())
+    }
+
+    /// Copies files from inside the OCFL repository into the specified OCFL object.
+    ///
+    /// If `dst_object_id` is not specified, then the files are copied within the same OCFL
+    /// object. If it is specified, then the files are copied between OCFL objects.
+    ///
+    /// The `src` parameter may be a glob pattern. `glob_literal_separator` controls whether
+    /// wildcards match `/`.
+    ///
+    /// If `force` is `false` and the copy operation attempts to write a file to a logical
+    /// path where there is already a file, then the new file will **not** be copied.
+    pub fn copy_files_internal(&self,
+                      src_obj_id: &str,
+                      src: &[&str],
+                      dst_obj_id: Option<&str>,
+                      dst: &str,
+                      glob_literal_separator: bool,
+                      force: bool) -> Result<()> {
+        // TODO leading slashes should be removed
+        Ok(())
     }
 
     fn create_staging_if_necessary(&self) -> Result<()> {
@@ -554,6 +666,14 @@ impl OcflRepo {
 }
 
 impl VersionNum {
+    /// Creates a new VersionNum
+    pub fn new(number: u32, width: u32) -> Self {
+        Self {
+            number,
+            width,
+        }
+    }
+
     /// Returns the previous version, or an Error if the previous version is invalid (less than 1).
     pub fn previous(&self) -> Result<VersionNum> {
         if self.number - 1 < 1 {
@@ -992,6 +1112,11 @@ struct InventoryAdapterIter<'a, T> {
     adapter: Box<dyn Fn(Inventory) -> Result<T>>
 }
 
+struct DigestReader<R: Read> {
+    digest: Box<dyn DynDigest>,
+    inner: R,
+}
+
 // ================================================== //
 //                private impls+fns                   //
 // ================================================== //
@@ -1065,6 +1190,19 @@ impl Validate for Inventory {
 }
 
 impl Version {
+    /// Create a new Version initialized with values for staging
+    fn new_staged() -> Self {
+        Self {
+            created: Local::now(),
+            message: Some("Staging new version".to_string()),
+            user: Some(User {
+                name: Some("rocfl".to_string()),
+                address: Some("https://github.com/pwinckles/rocfl".to_string()),
+            }),
+            state: HashMap::new(),
+        }
+    }
+
     /// Returns a reference to the digest associated to a logical path, or None if the logical
     /// path does not exist in the version's state.
     fn lookup_digest(&self, logical_path: &str) -> Option<&String> {
@@ -1106,6 +1244,31 @@ impl<'a, T> Iterator for InventoryAdapterIter<'a, T> {
                 }
             }
         }
+    }
+}
+
+impl<R: Read> DigestReader<R> {
+    fn new(digest: Box<dyn DynDigest>, reader: R) -> Self {
+        Self {
+            digest,
+            inner: reader,
+        }
+    }
+
+    fn finalize_hex(self) -> String {
+        hex::encode(self.digest.finalize().to_vec())
+    }
+}
+
+impl<R: Read> Read for DigestReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let result = self.inner.read(buf)?;
+
+        if result > 0 {
+            self.digest.update(&buf);
+        }
+
+        Ok(result)
     }
 }
 
