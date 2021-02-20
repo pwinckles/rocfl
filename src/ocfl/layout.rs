@@ -7,17 +7,14 @@ use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display as EnumDisplay, EnumString};
 
-use crate::ocfl::{DigestAlgorithm, Result, RocflError, Validate};
+use crate::ocfl::digest::DigestAlgorithm;
+use crate::ocfl::error::{Result, RocflError};
 
 const MAX_0003_ENCAPSULATION_LENGTH: usize = 100;
 
 lazy_static! {
     static ref NON_ALPHA_PLUS: AsciiSet = NON_ALPHANUMERIC.remove(b'-').remove(b'_');
 }
-
-// ================================================== //
-//             public structs+enums+traits            //
-// ================================================== //
 
 /// The storage layout maps object IDs to locations within the storage root
 #[derive(Debug)]
@@ -38,10 +35,6 @@ pub enum LayoutExtensionName {
     #[serde(rename = "0003-hash-and-id-n-tuple-storage-layout")]
     HashedNTupleObjectIdLayout
 }
-
-// ================================================== //
-//                   public impls+fns                 //
-// ================================================== //
 
 impl StorageLayout {
     pub fn new(name: LayoutExtensionName, config_bytes: Option<&[u8]>) -> Result<Self> {
@@ -70,10 +63,6 @@ impl StorageLayout {
         self.extension.serialize()
     }
 }
-
-// ================================================== //
-//            private structs+enums+traits            //
-// ================================================== //
 
 /// [Flat Direct Storage Layout Extension](https://ocfl.github.io/extensions/0002-flat-direct-storage-layout.html)
 #[derive(Debug)]
@@ -128,15 +117,25 @@ enum LayoutExtension {
     HashedNTupleObjectId(HashedNTupleObjectIdLayoutExtension),
 }
 
-// ================================================== //
-//                private impls+fns                   //
-// ================================================== //
+impl FlatDirectLayoutConfig {
+    fn validate(&self) -> Result<()> {
+        validate_extension_name(&LayoutExtensionName::FlatDirectLayout, &self.extension_name)
+    }
+}
 
 impl Default for FlatDirectLayoutConfig {
     fn default() -> Self {
         Self {
             extension_name: LayoutExtensionName::FlatDirectLayout,
         }
+    }
+}
+
+impl HashedNTupleLayoutConfig {
+    fn validate(&self) -> Result<()> {
+        validate_extension_name(&LayoutExtensionName::HashedNTupleLayout, &self.extension_name)?;
+        validate_tuple_config(self.tuple_size, self.number_of_tuples)?;
+        validate_digest_algorithm(self.digest_algorithm, self.tuple_size, self.number_of_tuples)
     }
 }
 
@@ -152,6 +151,14 @@ impl Default for HashedNTupleLayoutConfig {
     }
 }
 
+impl HashedNTupleObjectIdLayoutConfig {
+    fn validate(&self) -> Result<()> {
+        validate_extension_name(&LayoutExtensionName::HashedNTupleObjectIdLayout, &self.extension_name)?;
+        validate_tuple_config(self.tuple_size, self.number_of_tuples)?;
+        validate_digest_algorithm(self.digest_algorithm, self.tuple_size, self.number_of_tuples)
+    }
+}
+
 impl Default for HashedNTupleObjectIdLayoutConfig {
     fn default() -> Self {
         Self {
@@ -160,28 +167,6 @@ impl Default for HashedNTupleObjectIdLayoutConfig {
             tuple_size: 3,
             number_of_tuples: 3,
         }
-    }
-}
-
-impl Validate for FlatDirectLayoutConfig {
-    fn validate(&self) -> Result<()> {
-        validate_extension_name(&LayoutExtensionName::FlatDirectLayout, &self.extension_name)
-    }
-}
-
-impl Validate for HashedNTupleLayoutConfig {
-    fn validate(&self) -> Result<()> {
-        validate_extension_name(&LayoutExtensionName::HashedNTupleLayout, &self.extension_name)?;
-        validate_tuple_config(self.tuple_size, self.number_of_tuples)?;
-        validate_digest_algorithm(self.digest_algorithm, self.tuple_size, self.number_of_tuples)
-    }
-}
-
-impl Validate for HashedNTupleObjectIdLayoutConfig {
-    fn validate(&self) -> Result<()> {
-        validate_extension_name(&LayoutExtensionName::HashedNTupleObjectIdLayout, &self.extension_name)?;
-        validate_tuple_config(self.tuple_size, self.number_of_tuples)?;
-        validate_digest_algorithm(self.digest_algorithm, self.tuple_size, self.number_of_tuples)
     }
 }
 
@@ -271,7 +256,7 @@ impl HashedNTupleLayoutExtension {
 
     /// Object IDs are hashed and then divided into tuples to create a pair-tree like layout
     fn map_object_id(&self, object_id: &str) -> String {
-        let digest = self.config.digest_algorithm.hash_hex(&object_id.as_bytes());
+        let digest: String = self.config.digest_algorithm.hash_hex(&object_id.as_bytes()).into();
 
         if self.config.tuple_size == 0 {
             return digest
@@ -309,7 +294,7 @@ impl HashedNTupleObjectIdLayoutExtension {
     /// Object IDs are hashed and then divided into tuples to create a pair-tree like layout. The
     /// difference here is that the object encapsulation directory is the url-encoded object ID
     fn map_object_id(&self, object_id: &str) -> String {
-        let digest = self.config.digest_algorithm.hash_hex(&object_id.as_bytes());
+        let digest: String = self.config.digest_algorithm.hash_hex(&object_id.as_bytes()).into();
 
         if self.config.tuple_size == 0 {
             return digest
@@ -410,7 +395,7 @@ fn validate_tuple_config(tuple_size: usize, number_of_tuples: usize) -> Result<(
 fn validate_digest_algorithm(algorithm: DigestAlgorithm,
                              tuple_size: usize,
                              number_of_tuples: usize) -> Result<()>{
-    let digest = algorithm.hash_hex("test".as_bytes());
+    let digest: String = algorithm.hash_hex("test".as_bytes()).into();
     let total_tuples_length = tuple_size * number_of_tuples;
 
     if digest.len() < total_tuples_length {
