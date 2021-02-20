@@ -7,7 +7,8 @@ use rusoto_core::Region;
 
 use crate::cmd::cmds::init_repo;
 use crate::cmd::opts::*;
-use crate::ocfl::{OcflRepo, Result};
+use crate::ocfl::OcflRepo;
+use crate::ocfl::error::Result;
 #[cfg(not(feature = "s3"))]
 use crate::ocfl::RocflError;
 

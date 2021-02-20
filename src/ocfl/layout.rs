@@ -7,7 +7,8 @@ use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display as EnumDisplay, EnumString};
 
-use crate::ocfl::{DigestAlgorithm, Result, RocflError, Validate};
+use crate::ocfl::digest::DigestAlgorithm;
+use crate::ocfl::error::{Result, RocflError};
 
 const MAX_0003_ENCAPSULATION_LENGTH: usize = 100;
 
@@ -132,11 +133,25 @@ enum LayoutExtension {
 //                private impls+fns                   //
 // ================================================== //
 
+impl FlatDirectLayoutConfig {
+    fn validate(&self) -> Result<()> {
+        validate_extension_name(&LayoutExtensionName::FlatDirectLayout, &self.extension_name)
+    }
+}
+
 impl Default for FlatDirectLayoutConfig {
     fn default() -> Self {
         Self {
             extension_name: LayoutExtensionName::FlatDirectLayout,
         }
+    }
+}
+
+impl HashedNTupleLayoutConfig {
+    fn validate(&self) -> Result<()> {
+        validate_extension_name(&LayoutExtensionName::HashedNTupleLayout, &self.extension_name)?;
+        validate_tuple_config(self.tuple_size, self.number_of_tuples)?;
+        validate_digest_algorithm(self.digest_algorithm, self.tuple_size, self.number_of_tuples)
     }
 }
 
@@ -152,6 +167,14 @@ impl Default for HashedNTupleLayoutConfig {
     }
 }
 
+impl HashedNTupleObjectIdLayoutConfig {
+    fn validate(&self) -> Result<()> {
+        validate_extension_name(&LayoutExtensionName::HashedNTupleObjectIdLayout, &self.extension_name)?;
+        validate_tuple_config(self.tuple_size, self.number_of_tuples)?;
+        validate_digest_algorithm(self.digest_algorithm, self.tuple_size, self.number_of_tuples)
+    }
+}
+
 impl Default for HashedNTupleObjectIdLayoutConfig {
     fn default() -> Self {
         Self {
@@ -160,28 +183,6 @@ impl Default for HashedNTupleObjectIdLayoutConfig {
             tuple_size: 3,
             number_of_tuples: 3,
         }
-    }
-}
-
-impl Validate for FlatDirectLayoutConfig {
-    fn validate(&self) -> Result<()> {
-        validate_extension_name(&LayoutExtensionName::FlatDirectLayout, &self.extension_name)
-    }
-}
-
-impl Validate for HashedNTupleLayoutConfig {
-    fn validate(&self) -> Result<()> {
-        validate_extension_name(&LayoutExtensionName::HashedNTupleLayout, &self.extension_name)?;
-        validate_tuple_config(self.tuple_size, self.number_of_tuples)?;
-        validate_digest_algorithm(self.digest_algorithm, self.tuple_size, self.number_of_tuples)
-    }
-}
-
-impl Validate for HashedNTupleObjectIdLayoutConfig {
-    fn validate(&self) -> Result<()> {
-        validate_extension_name(&LayoutExtensionName::HashedNTupleObjectIdLayout, &self.extension_name)?;
-        validate_tuple_config(self.tuple_size, self.number_of_tuples)?;
-        validate_digest_algorithm(self.digest_algorithm, self.tuple_size, self.number_of_tuples)
     }
 }
 

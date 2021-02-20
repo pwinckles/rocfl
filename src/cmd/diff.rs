@@ -8,7 +8,8 @@ use crate::cmd::{Cmd, DATE_FORMAT, GlobalArgs, println};
 use crate::cmd::opts::{Diff, Log, Show};
 use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
-use crate::ocfl::{Diff as VersionDiff, DiffType, OcflRepo, Result, VersionDetails};
+use crate::ocfl::{Diff as VersionDiff, DiffType, OcflRepo, VersionDetails};
+use crate::ocfl::error::Result;
 
 lazy_static! {
     static ref DEFAULT_USER: String = "NA".to_owned();

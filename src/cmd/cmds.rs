@@ -5,8 +5,10 @@ use log::info;
 use crate::cmd::{Cmd, GlobalArgs, println};
 use crate::cmd::opts::{Cat, Copy, DigestAlgorithm as OptAlgorithm, New};
 use crate::cmd::opts::{Init, Layout, RocflArgs, Storage};
-use crate::ocfl::{DigestAlgorithm, OcflRepo, Result};
+use crate::ocfl::digest::DigestAlgorithm;
+use crate::ocfl::error::Result;
 use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
+use crate::ocfl::OcflRepo;
 
 impl Cmd for Cat {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {

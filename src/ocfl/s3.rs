@@ -14,7 +14,9 @@ use rusoto_s3::{GetObjectError, GetObjectRequest, ListObjectsV2Output, ListObjec
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
 
-use crate::ocfl::{EXTENSIONS_CONFIG_FILE, EXTENSIONS_DIR, OCFL_LAYOUT_FILE, OcflLayout, Result, RocflError, Validate, VersionNum};
+use crate::ocfl::{OcflLayout, VersionNum};
+use crate::ocfl::consts::*;
+use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::layout::StorageLayout;
 
 use super::{Inventory, INVENTORY_FILE, MUTABLE_HEAD_INVENTORY_FILE, not_found, OBJECT_NAMASTE_FILE, OcflStore};

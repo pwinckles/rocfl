@@ -10,40 +10,30 @@
 //! ```
 
 use core::fmt;
-use std::{error, io};
-use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryFrom;
-use std::fmt::{Debug, Display, Formatter};
-use std::fs::{File, Metadata};
+use std::fmt::{Debug, Formatter};
+use std::fs::File;
 use std::hash::{Hash, Hasher};
-use std::io::{Read, Write};
-use std::ops::{Deref, DerefMut};
+use std::io::Write;
+use std::ops::Deref;
 use std::path::{self, Path, PathBuf};
 use std::rc::Rc;
 use std::str::FromStr;
 
-use blake2::{Blake2b, VarBlake2b};
 use chrono::{DateTime, Local};
-use digest::{Digest, DynDigest, Update, VariableOutput};
 use lazy_static::lazy_static;
 use log::error;
-use md5::Md5;
 use regex::Regex;
 #[cfg(feature = "s3")]
 use rusoto_core::Region;
-#[cfg(feature = "s3")]
-use rusoto_core::region::ParseRegionError;
-#[cfg(feature = "s3")]
-use rusoto_core::RusotoError;
 use serde::{Deserialize, Serialize};
-use sha1::Sha1;
-use sha2::{Sha256, Sha512, Sha512Trunc256};
-use strum_macros::{Display as EnumDisplay, EnumString};
-use thiserror::Error;
 
+use crate::ocfl::consts::*;
+use crate::ocfl::digest::DigestAlgorithm;
+use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::layout::StorageLayout;
 
 use self::fs::FsOcflStore;
@@ -51,24 +41,14 @@ use self::layout::LayoutExtensionName;
 #[cfg(feature = "s3")]
 use self::s3::S3OcflStore;
 
+pub mod error;
+pub mod layout;
+pub mod digest;
+mod bimap;
+mod consts;
 mod fs;
 #[cfg(feature = "s3")]
 mod s3;
-pub mod layout;
-
-const REPO_NAMASTE_FILE: &str = "0=ocfl_1.0";
-const OBJECT_NAMASTE_FILE: &str = "0=ocfl_object_1.0";
-const INVENTORY_FILE: &str = "inventory.json";
-const OCFL_LAYOUT_FILE: &str = "ocfl_layout.json";
-const OCFL_SPEC_FILE: &str = "ocfl_1.0.txt";
-const EXTENSIONS_DIR: &str = "extensions";
-const EXTENSIONS_CONFIG_FILE: &str = "config.json";
-const OCFL_VERSION: &str = "ocfl_1.0";
-const OCFL_OBJECT_VERSION: &str = "ocfl_object_1.0";
-const INVENTORY_TYPE: &str = "https://ocfl.io/1.0/spec/#inventory";
-
-const MUTABLE_HEAD_INVENTORY_FILE: &str = "extensions/0005-mutable-head/head/inventory.json";
-const ROCFL_STAGING_EXTENSION: &str = "rocfl-staging";
 
 lazy_static! {
     static ref VERSION_REGEX: Regex = Regex::new(r#"^v\d+$"#).unwrap();
@@ -153,44 +133,6 @@ pub struct ObjectVersionDetails {
     pub version_details: VersionDetails,
 }
 
-/// Enum of all valid digest algorithms
-#[derive(Deserialize, Serialize, Debug, Eq, PartialEq, Copy, Clone, EnumString, EnumDisplay)]
-pub enum DigestAlgorithm {
-    #[serde(rename = "md5")]
-    #[strum(serialize = "md5")]
-    Md5,
-    #[serde(rename = "sha1")]
-    #[strum(serialize = "sha1")]
-    Sha1,
-    #[serde(rename = "sha256")]
-    #[strum(serialize = "sha256")]
-    Sha256,
-    #[serde(rename = "sha512")]
-    #[strum(serialize = "sha512")]
-    Sha512,
-    #[serde(rename = "sha512/256")]
-    #[strum(serialize = "sha512/256")]
-    Sha512_256,
-    #[serde(rename = "blake2b-512")]
-    #[strum(serialize = "blake2b-512")]
-    Blake2b512,
-    #[serde(rename = "blake2b-160")]
-    #[strum(serialize = "blake2b-160")]
-    Blake2b160,
-    #[serde(rename = "blake2b-256")]
-    #[strum(serialize = "blake2b-256")]
-    Blake2b256,
-    #[serde(rename = "blake2b-384")]
-    #[strum(serialize = "blake2b-384")]
-    Blake2b384,
-}
-
-/// Reader wrapper that calculates a digest while reading
-pub struct DigestReader<R: Read> {
-    digest: Box<dyn DynDigest>,
-    inner: R,
-}
-
 /// Represents a change to a file
 #[derive(Debug, Eq, PartialEq)]
 pub struct Diff {
@@ -206,80 +148,6 @@ pub enum DiffType {
     Added,
     Modified,
     Deleted,
-}
-
-pub type Result<T, E = RocflError> = core::result::Result<T, E>;
-
-/// Application errors
-#[derive(Error)]
-pub enum RocflError {
-    #[error("Object {object_id} is corrupt: {message}")]
-    CorruptObject {
-        object_id: String,
-        message: String,
-    },
-
-    #[error("Not found: {0}")]
-    NotFound(String),
-
-    #[error("Illegal argument: {0}")]
-    IllegalArgument(String),
-
-    #[error("Invalid configuration: {0}")]
-    InvalidConfiguration(String),
-
-    #[error("Illegal state: {0}")]
-    IllegalState(String),
-
-    #[error("{0}")]
-    General(String),
-
-    #[error("{0}")]
-    Io(io::Error),
-
-    #[error("{0}")]
-    Wrapped(Box<dyn error::Error>),
-}
-
-impl Debug for RocflError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Display::fmt(self, f)
-    }
-}
-
-impl From<io::Error> for RocflError {
-    fn from(e: io::Error) -> Self {
-        RocflError::Io(e)
-    }
-}
-
-impl From<globset::Error> for RocflError {
-    fn from(e: globset::Error) -> Self {
-        RocflError::Wrapped(Box::new(e))
-    }
-}
-
-impl From<ParseRegionError> for RocflError {
-    fn from(e: ParseRegionError) -> Self {
-        RocflError::Wrapped(Box::new(e))
-    }
-}
-
-impl From<serde_json::Error> for RocflError {
-    fn from(e: serde_json::Error) -> Self {
-        RocflError::Wrapped(Box::new(e))
-    }
-}
-
-impl<T: error::Error + 'static> From<RusotoError<T>> for RocflError {
-    fn from(e: RusotoError<T>) -> Self {
-        RocflError::Wrapped(Box::new(e))
-    }
-}
-
-// TODO remove this
-pub trait Validate {
-    fn validate(&self) -> Result<()>;
 }
 
 // ================================================== //
@@ -950,102 +818,6 @@ impl ObjectVersionDetails {
     }
 }
 
-impl DigestAlgorithm {
-    /// Hashes the input and returns its hex encoded digest
-    pub fn hash_hex(&self, data: impl AsRef<[u8]>) -> String {
-        // This ugliness is because the variable length blake2b algorithms don't work with DynDigest
-        let bytes = match self {
-            DigestAlgorithm::Md5 => {
-                let mut hasher = Md5::new();
-                Digest::update(&mut hasher, data);
-                hasher.finalize().to_vec()
-            }
-            DigestAlgorithm::Sha1 => {
-                let mut hasher = Sha1::new();
-                Digest::update(&mut hasher, data);
-                hasher.finalize().to_vec()
-            }
-            DigestAlgorithm::Sha256 => {
-                let mut hasher = Sha256::new();
-                Digest::update(&mut hasher, data);
-                hasher.finalize().to_vec()
-            }
-            DigestAlgorithm::Sha512 => {
-                let mut hasher = Sha512::new();
-                Digest::update(&mut hasher, data);
-                hasher.finalize().to_vec()
-            }
-            DigestAlgorithm::Sha512_256 => {
-                let mut hasher = Sha512Trunc256::new();
-                Digest::update(&mut hasher, data);
-                hasher.finalize().to_vec()
-            }
-            DigestAlgorithm::Blake2b512 => {
-                let mut hasher = Blake2b::new();
-                Digest::update(&mut hasher, data);
-                hasher.finalize().to_vec()
-            }
-            DigestAlgorithm::Blake2b160 => {
-                let mut hasher = VarBlake2b::new(20).unwrap();
-                hasher.update(data);
-                hasher.finalize_boxed().to_vec()
-            }
-            DigestAlgorithm::Blake2b256 => {
-                let mut hasher = VarBlake2b::new(32).unwrap();
-                hasher.update(data);
-                hasher.finalize_boxed().to_vec()
-            }
-            DigestAlgorithm::Blake2b384 => {
-                let mut hasher = VarBlake2b::new(48).unwrap();
-                hasher.update(data);
-                hasher.finalize_boxed().to_vec()
-            }
-        };
-
-        hex::encode(bytes)
-    }
-
-    /// Wraps the specified reader in a `DigestReader`. Does not support blake2b because of the
-    /// DynDigest problem.
-    pub fn reader<R: Read>(&self, reader: R) -> Result<DigestReader<R>> {
-        let digest: Box<dyn DynDigest> = match self {
-            DigestAlgorithm::Md5 => Box::new(Md5::new()),
-            DigestAlgorithm::Sha1 => Box::new(Sha1::new()),
-            DigestAlgorithm::Sha256 => Box::new(Sha256::new()),
-            DigestAlgorithm::Sha512 => Box::new(Sha512::new()),
-            DigestAlgorithm::Sha512_256 => Box::new(Sha512Trunc256::new()),
-            _ => return Err(RocflError::General("Blake2b is not supported for streaming digest.".to_string())),
-        };
-
-        Ok(DigestReader::new(digest, reader))
-    }
-}
-
-impl<R: Read> DigestReader<R> {
-    pub fn new(digest: Box<dyn DynDigest>, reader: R) -> Self {
-        Self {
-            digest,
-            inner: reader,
-        }
-    }
-
-    pub fn finalize_hex(self) -> String {
-        hex::encode(self.digest.finalize().to_vec())
-    }
-}
-
-impl<R: Read> Read for DigestReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let result = self.inner.read(buf)?;
-
-        if result > 0 {
-            self.digest.update(&buf);
-        }
-
-        Ok(result)
-    }
-}
-
 impl Diff {
     fn added(path: String) -> Self {
         Self {
@@ -1220,9 +992,7 @@ impl Inventory {
 
         self.lookup_content_path_by_digest(digest)
     }
-}
 
-impl Validate for Inventory {
     /// Performs a spot check on the inventory to see if it appears valid. This is not an
     /// exhaustive check, and does not guarantee that the inventory is valid.
     fn validate(&self) -> Result<()> {
