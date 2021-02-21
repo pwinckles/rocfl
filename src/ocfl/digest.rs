@@ -54,7 +54,7 @@ pub struct DigestReader<R: Read> {
 }
 
 /// A digest encoded as a hex string
-#[derive(Debug, Eq, Clone)]
+#[derive(Deserialize, Serialize, Debug, Eq, Clone)]
 pub struct HexDigest(String);
 
 impl DigestAlgorithm {
@@ -159,6 +159,12 @@ impl From<Vec<u8>> for HexDigest {
     }
 }
 
+impl From<&str> for HexDigest {
+    fn from(digest: &str) -> Self {
+        Self(digest.to_string())
+    }
+}
+
 impl From<HexDigest> for String {
     fn from(digest: HexDigest) -> Self {
         digest.0
@@ -201,7 +207,7 @@ impl PartialOrd for HexDigest {
 
 impl PartialEq for HexDigest {
     fn eq(&self, other: &Self) -> bool {
-        self.cmp(other) == Ordering::Equal
+        self.0.eq_ignore_ascii_case(&other.0)
     }
 }
 

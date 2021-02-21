@@ -66,7 +66,7 @@ grep-searcher = "0.1"
 grep-regex = "0.1"
 
 # Serialization
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 
 # AWS S3

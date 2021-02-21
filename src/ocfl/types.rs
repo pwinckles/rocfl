@@ -2,7 +2,7 @@ use core::fmt;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path;
 use std::rc::Rc;
@@ -30,9 +30,9 @@ pub struct VersionNum {
     pub width: u32,
 }
 
-#[derive(Debug, Eq, Ord, PartialOrd, PartialEq, Hash, Clone)]
-/// Represents an OCFL logical path.
-pub struct LogicalPath(String);
+#[derive(Deserialize, Serialize, Debug, Eq, Ord, PartialOrd, PartialEq, Hash, Clone)]
+/// Represents a logical or content path.
+pub struct InventoryPath(String);
 
 /// Represents a version of an OCFL object
 #[derive(Debug, Eq, PartialEq)]
@@ -252,13 +252,13 @@ impl Ord for VersionNum {
     }
 }
 
-impl LogicalPath {
+impl InventoryPath {
     pub fn parts(&self) -> Split<&str> {
         self.0.split("/")
     }
 }
 
-impl TryFrom<&str> for LogicalPath {
+impl TryFrom<&str> for InventoryPath {
     type Error = RocflError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -271,7 +271,7 @@ impl TryFrom<&str> for LogicalPath {
 
             if has_illegal_part {
                 return Err(RocflError::IllegalArgument(
-                    format!("Logical paths may not contain '.', '..', or '' parts. Found: {} ",
+                    format!("Paths may not contain '.', '..', or '' parts. Found: {} ",
                             value)));
             }
         }
@@ -280,9 +280,15 @@ impl TryFrom<&str> for LogicalPath {
     }
 }
 
-impl From<LogicalPath> for String {
-    fn from(path: LogicalPath) -> Self {
+impl From<InventoryPath> for String {
+    fn from(path: InventoryPath) -> Self {
         path.0
+    }
+}
+
+impl Display for InventoryPath {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -471,48 +477,48 @@ fn convert_path_separator(path: String) -> String {
 mod tests {
     use std::convert::TryInto;
 
-    use crate::ocfl::LogicalPath;
+    use crate::ocfl::InventoryPath;
 
     #[test]
     fn create_logical_path_when_valid() {
         let value = "foo/.bar/baz.txt";
-        let path: LogicalPath = value.try_into().unwrap();
+        let path: InventoryPath = value.try_into().unwrap();
         assert_eq!(value, path.0);
     }
 
     #[test]
     fn create_logical_path_when_root() {
-        let path: LogicalPath = "/".try_into().unwrap();
+        let path: InventoryPath = "/".try_into().unwrap();
         assert_eq!("", path.0);
     }
 
     #[test]
     fn remove_leading_and_trailing_slashes_from_logical_paths() {
-        let path: LogicalPath = "//foo/bar/baz//".try_into().unwrap();
+        let path: InventoryPath = "//foo/bar/baz//".try_into().unwrap();
         assert_eq!("foo/bar/baz", path.0);
     }
 
     #[test]
     #[should_panic(expected = "Logical paths may not")]
     fn reject_logical_paths_with_empty_parts() {
-        let path: LogicalPath = "foo//bar/baz".try_into().unwrap();
+        let path: InventoryPath = "foo//bar/baz".try_into().unwrap();
     }
 
     #[test]
     #[should_panic(expected = "Logical paths may not")]
     fn reject_logical_paths_with_single_dot() {
-        let path: LogicalPath = "foo/bar/./baz".try_into().unwrap();
+        let path: InventoryPath = "foo/bar/./baz".try_into().unwrap();
     }
 
     #[test]
     #[should_panic(expected = "Logical paths may not")]
     fn reject_logical_paths_with_double_dot() {
-        let path: LogicalPath = "foo/bar/../baz".try_into().unwrap();
+        let path: InventoryPath = "foo/bar/../baz".try_into().unwrap();
     }
 
     #[test]
     #[should_panic(expected = "Logical paths may not")]
     fn reject_logical_paths_with_double_dot_leading() {
-        let path: LogicalPath = "../foo/bar/baz".try_into().unwrap();
+        let path: InventoryPath = "../foo/bar/baz".try_into().unwrap();
     }
 }
