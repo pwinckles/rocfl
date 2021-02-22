@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{hash_map, HashMap, HashSet};
 use std::fmt;
 use std::fmt::Formatter;
 use std::rc::Rc;
@@ -10,8 +10,8 @@ use crate::ocfl::digest::HexDigest;
 use crate::ocfl::InventoryPath;
 
 /// A bidirectional map that maps a file id, `HexDigest` to a set of paths, `InventoryPath`,
-/// and a path to its file id.
-#[derive(Debug)]
+/// and a path to its file id. An id may have many paths, but a path may only have one id.
+#[derive(Debug, Clone)]
 pub struct PathBiMap {
     id_to_paths: HashMap<Rc<HexDigest>, HashSet<Rc<InventoryPath>>>,
     path_to_id: HashMap<Rc<InventoryPath>, Rc<HexDigest>>,
@@ -38,6 +38,11 @@ impl PathBiMap {
         let id_ref = Rc::new(id);
         let path_ref = Rc::new(path);
 
+        self.insert_rc(id_ref, path_ref);
+    }
+
+    /// Same as `insert`, but it accepts Rc values
+    pub fn insert_rc(&mut self, id_ref: Rc<HexDigest>, path_ref: Rc<InventoryPath>) {
         if self.path_to_id.contains_key(&path_ref) {
             self.remove_path(&path_ref);
         }
@@ -45,7 +50,7 @@ impl PathBiMap {
         let entry = self.id_to_paths.entry(id_ref);
         let id_ref = entry.key().clone();
 
-        entry.or_insert_with(|| HashSet::new())
+        entry.or_insert_with(HashSet::new)
             .insert(path_ref.clone());
 
         self.path_to_id.insert(path_ref, id_ref);
@@ -53,10 +58,14 @@ impl PathBiMap {
 
     /// Inserts all of the path mappings for an id. This is used for deserialization.
     fn insert_multiple(&mut self, id: HexDigest, paths: Vec<InventoryPath>) {
+        if paths.is_empty() {
+            return
+        }
+
         let id_ref = Rc::new(id);
 
         let set = self.id_to_paths.entry(id_ref.clone())
-            .or_insert_with(|| HashSet::new());
+            .or_insert_with(HashSet::new);
 
         for path in paths {
             let path_ref = Rc::new(path);
@@ -85,18 +94,51 @@ impl PathBiMap {
         self.id_to_paths.contains_key(id)
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.id_to_paths.is_empty()
+    }
+
     /// Removes a path mapping
-    pub fn remove_path(&mut self, path: &InventoryPath) {
-        if let Some(id) = self.path_to_id.remove(path) {
+    pub fn remove_path(&mut self, path: &InventoryPath)
+        -> Option<(Rc<InventoryPath>, Rc<HexDigest>)> {
+        if let Some((path, id)) = self.path_to_id.remove_entry(path) {
             let mut remove = false;
             if let Some(paths) = self.id_to_paths.get_mut(&id) {
-                paths.remove(path);
+                paths.remove(path.as_ref());
                 remove = paths.is_empty();
             }
             if remove {
                 self.id_to_paths.remove(&id);
             }
+            Some((path, id))
+        } else {
+            None
         }
+    }
+
+    /// Returns an iterator that moves all values of the map.
+    pub fn into_iter(self) -> IntoIter {
+        IntoIter {
+            iter: self.path_to_id.into_iter()
+        }
+    }
+}
+
+impl Default for PathBiMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub struct IntoIter {
+    iter: hash_map::IntoIter<Rc<InventoryPath>, Rc<HexDigest>>,
+}
+
+impl Iterator for IntoIter {
+    type Item = (Rc<InventoryPath>, Rc<HexDigest>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
     }
 }
 
@@ -219,7 +261,7 @@ mod tests {
 
     #[test]
     fn serialize_empty() {
-        let mut map = PathBiMap::new();
+        let map = PathBiMap::new();
 
         let json = serde_json::to_string(&map).unwrap();
 
