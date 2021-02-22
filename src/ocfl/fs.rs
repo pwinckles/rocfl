@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::fs::{self, File, ReadDir};
 use std::io::{self, Read, Write};
 use std::ops::Deref;
@@ -12,21 +13,18 @@ use grep_matcher::{Captures, Matcher};
 use grep_regex::RegexMatcher;
 use grep_searcher::Searcher;
 use grep_searcher::sinks::UTF8;
-use lazy_static::lazy_static;
 use log::{error, info};
+use once_cell::sync::Lazy;
 
-use crate::ocfl::{OcflLayout, VersionNum, InventoryPath};
+use crate::ocfl::{InventoryPath, OcflLayout, VersionNum};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::layout::StorageLayout;
 
 use super::OcflStore;
-use std::convert::TryInto;
 
-lazy_static! {
-    static ref OBJECT_ID_MATCHER: RegexMatcher = RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap();
-}
+static OBJECT_ID_MATCHER: Lazy<RegexMatcher> = Lazy::new(|| RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap());
 
 /// Local filesystem OCFL repository
 pub struct FsOcflStore {
@@ -124,13 +122,12 @@ impl FsOcflStore {
         // TODO this should be cached -- what if I stuck it in the inventory?
         let object_root = self.require_layout()?.map_object_id(&inventory.id);
 
-        // TODO make a const
         // TODO safe content path mappings?
         // TODO verify valid path? should that have already happened?
 
         let content_path: InventoryPath = format!("{}/{}/{}",
                                    &inventory.head.to_string(),
-                                   inventory.content_directory.as_ref().unwrap_or(&"content".to_string()),
+                                   inventory.defaulted_content_dir(),
                                    logical_path.as_ref()).try_into()?;
 
         let storage_path = self.storage_root.join(object_root).join(&content_path.as_ref());

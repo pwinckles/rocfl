@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display as EnumDisplay, EnumString};
@@ -12,9 +12,7 @@ use crate::ocfl::error::{Result, RocflError};
 
 const MAX_0003_ENCAPSULATION_LENGTH: usize = 100;
 
-lazy_static! {
-    static ref NON_ALPHA_PLUS: AsciiSet = NON_ALPHANUMERIC.remove(b'-').remove(b'_');
-}
+static NON_ALPHA_PLUS: Lazy<AsciiSet> = Lazy::new(|| NON_ALPHANUMERIC.remove(b'-').remove(b'_'));
 
 /// The storage layout maps object IDs to locations within the storage root
 #[derive(Debug)]

@@ -2,21 +2,18 @@ use core::fmt;
 use std::cmp::Ordering;
 use std::fmt::Formatter;
 
-use lazy_static::lazy_static;
-
 use crate::cmd::{Cmd, DATE_FORMAT, GlobalArgs, println};
 use crate::cmd::opts::{Diff, Log, Show};
 use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
 use crate::ocfl::{Diff as VersionDiff, DiffType, OcflRepo, VersionDetails, Result};
 use std::convert::TryInto;
+use once_cell::sync::Lazy;
 
-lazy_static! {
-    static ref DEFAULT_USER: String = "NA".to_owned();
-    static ref ADDED: String = "A".to_owned();
-    static ref MODIFIED: String = "M".to_owned();
-    static ref DELETED: String = "D".to_owned();
-}
+static DEFAULT_USER: Lazy<String> = Lazy::new(|| "NA".to_string());
+static ADDED: Lazy<String> = Lazy::new(|| "A".to_string());
+static MODIFIED: Lazy<String> = Lazy::new(|| "M".to_string());
+static DELETED: Lazy<String> = Lazy::new(|| "D".to_string());
 
 impl Cmd for Log {
     fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {

@@ -9,7 +9,6 @@
 //! let repo = OcflRepo::new_fs_repo("path/to/ocfl/storage/root");
 //! ```
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::fmt::Debug;
@@ -20,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use log::error;
+use once_cell::unsync::OnceCell;
 #[cfg(feature = "s3")]
 use rusoto_core::Region;
 use serde::{Deserialize, Serialize};
@@ -49,12 +49,14 @@ mod types;
 #[cfg(feature = "s3")]
 mod s3;
 
+// TODO consider moving the repo stuff to `repo.rs`
+
 /// Interface for interacting with an OCFL repository
 pub struct OcflRepo {
     /// For local filesystem repos, this is the storage root. TBD for S3.
     root: PathBuf,
     store: Box<dyn OcflStore>,
-    staging: RefCell<Option<FsOcflStore>>,
+    staging: OnceCell<FsOcflStore>,
 }
 
 impl OcflRepo {
@@ -64,7 +66,7 @@ impl OcflRepo {
         Ok(Self {
             root: PathBuf::from(storage_root.as_ref()),
             store: Box::new(FsOcflStore::new(storage_root)?),
-            staging: RefCell::new(None),
+            staging: OnceCell::default(),
         })
     }
 
@@ -74,7 +76,7 @@ impl OcflRepo {
         Ok(Self {
             root: PathBuf::from(root.as_ref()),
             store: Box::new(FsOcflStore::init(root, layout)?),
-            staging: RefCell::new(None),
+            staging: OnceCell::default(),
         })
     }
 
@@ -86,7 +88,7 @@ impl OcflRepo {
             // TODO this is not correct
             root: PathBuf::from("."),
             store: Box::new(S3OcflStore::new(region, bucket, prefix)?),
-            staging: RefCell::new(None),
+            staging: OnceCell::default(),
         })
     }
 
@@ -300,8 +302,7 @@ impl OcflRepo {
             object_root: "".to_string(),
         };
 
-        self.create_staging_if_necessary()?;
-        self.staging.borrow().as_ref().unwrap().stage_object(&inventory)
+        self.get_staging()?.stage_object(&inventory)
     }
 
     /// Copies files from outside the OCFL repository into the specified OCFL object.
@@ -312,15 +313,13 @@ impl OcflRepo {
     pub fn copy_files_external<P: AsRef<Path>>(&self,
                       object_id: &str,
                       src: &[P],
-                      dst: &str,
+                      dst: &InventoryPath,
                       recursive: bool,
                       force: bool) -> Result<()> {
         // TODO enforce src > 0
         // TODO enforce that the dst is legal
 
-        self.create_staging_if_necessary()?;
-        let staging_borrow = self.staging.borrow();  // This is necessary to keep it in scope
-        let staging = staging_borrow.as_ref().unwrap();
+        let staging = self.get_staging()?;
 
         // TODO even though this is not supposed to be used concurrently, it's not a bad idea
         //      to get some sort of file lock here so that an object cannot be updated concurrently
@@ -413,13 +412,11 @@ impl OcflRepo {
         Ok(())
     }
 
-    fn create_staging_if_necessary(&self) -> Result<()> {
-        if self.staging.borrow().is_none() {
-            let staging = FsOcflStore::init_if_needed(self.root.join(EXTENSIONS_DIR).join(ROCFL_STAGING_EXTENSION),
-                                                      StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None)?)?;
-            self.staging.replace(Some(staging));
-        }
-        Ok(())
+    fn get_staging(&self) -> Result<&FsOcflStore> {
+        Ok(self.staging.get_or_try_init(|| {
+            FsOcflStore::init_if_needed(self.root.join(EXTENSIONS_DIR).join(ROCFL_STAGING_EXTENSION),
+                                        StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None)?)
+        })?)
     }
 }
 
