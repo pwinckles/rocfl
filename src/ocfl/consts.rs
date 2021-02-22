@@ -9,5 +9,7 @@ pub const OCFL_VERSION: &str = "ocfl_1.0";
 pub const OCFL_OBJECT_VERSION: &str = "ocfl_object_1.0";
 pub const INVENTORY_TYPE: &str = "https://ocfl.io/1.0/spec/#inventory";
 
+pub const DEFAULT_CONTENT_DIR: &str = "content";
+
 pub const MUTABLE_HEAD_INVENTORY_FILE: &str = "extensions/0005-mutable-head/head/inventory.json";
 pub const ROCFL_STAGING_EXTENSION: &str = "rocfl-staging";

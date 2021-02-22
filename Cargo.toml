@@ -20,7 +20,7 @@ path = "src/bin/rocfl.rs"
 
 [dependencies]
 # General
-lazy_static = "1"
+once_cell = "1"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }

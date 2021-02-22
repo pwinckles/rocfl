@@ -7,14 +7,14 @@ use std::io::Write;
 use std::vec::IntoIter;
 
 use globset::GlobBuilder;
-use lazy_static::lazy_static;
 use log::{error, info};
+use once_cell::sync::Lazy;
 use rusoto_core::{Region, RusotoError};
 use rusoto_s3::{GetObjectError, GetObjectRequest, ListObjectsV2Output, ListObjectsV2Request, S3, S3Client as RusotoS3Client};
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
 
-use crate::ocfl::{OcflLayout, VersionNum, InventoryPath};
+use crate::ocfl::{InventoryPath, OcflLayout, VersionNum};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
@@ -22,9 +22,7 @@ use crate::ocfl::layout::StorageLayout;
 
 use super::OcflStore;
 
-lazy_static! {
-    static ref EXTENSIONS_DIR_SUFFIX: String = format!("/{}", EXTENSIONS_DIR);
-}
+static EXTENSIONS_DIR_SUFFIX: Lazy<String> = Lazy::new(|| format!("/{}", EXTENSIONS_DIR));
 
 pub struct S3OcflStore {
     s3_client: S3Client,

@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::str::{FromStr, Split};
 
 use chrono::{DateTime, Local};
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -19,9 +19,7 @@ use crate::ocfl::DigestAlgorithm;
 use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::{Inventory, Version};
 
-lazy_static! {
-    static ref VERSION_REGEX: Regex = Regex::new(r#"^v\d+$"#).unwrap();
-}
+static VERSION_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^v\d+$"#).unwrap());
 
 /// Represents an [OCFL object version](https://ocfl.io/1.0/spec/#version-directories).
 #[derive(Deserialize, Serialize, Debug, Copy, Clone)]
@@ -505,7 +503,7 @@ fn convert_path_separator(path: String) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::convert::{TryInto, TryFrom};
+    use std::convert::{TryFrom, TryInto};
 
     use crate::ocfl::InventoryPath;
 
