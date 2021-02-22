@@ -1,14 +1,18 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::rc::Rc;
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
-use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
-use crate::ocfl::error::{Result, RocflError, not_found};
-use crate::ocfl::{VersionNum, InventoryPath};
+use crate::ocfl::{InventoryPath, VersionNum};
 use crate::ocfl::bimap::PathBiMap;
-use std::rc::Rc;
 use crate::ocfl::consts::DEFAULT_CONTENT_DIR;
+use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
+use crate::ocfl::error::{not_found, Result, RocflError};
+
+const STAGING_MESSAGE: &str = "Staging new version";
+const ROCFL_USER: &str = "rocfl";
+const ROCFL_ADDRESS: &str = "https://github.com/pwinckles/rocfl";
 
 // TODO need to lock down all of these public members
 
@@ -159,10 +163,10 @@ impl Version {
     fn staged_version(state: PathBiMap) -> Self {
         Self {
             created: Local::now(),
-            message: Some("Staging new version".to_string()),
+            message: Some(STAGING_MESSAGE.to_string()),
             user: Some(User {
-                name: Some("rocfl".to_string()),
-                address: Some("https://github.com/pwinckles/rocfl".to_string()),
+                name: Some(ROCFL_USER.to_string()),
+                address: Some(ROCFL_ADDRESS.to_string()),
             }),
             state,
             virtual_dirs: None,

@@ -1,7 +1,7 @@
 use ansi_term::{Color, Style};
 use once_cell::sync::Lazy;
 
-pub static DEFAULT: Lazy<Style> = Lazy::new(|| Style::default());
+pub static DEFAULT: Lazy<Style> = Lazy::new(Style::default);
 
 pub static GREEN: Lazy<Style> = Lazy::new(|| Style::new().fg(Color::Green));
 pub static RED: Lazy<Style> = Lazy::new(|| Style::new().fg(Color::Red));

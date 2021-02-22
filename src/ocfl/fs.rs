@@ -1,5 +1,6 @@
 //! Local filesystem OCFL storage implementation.
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -32,8 +33,6 @@ pub struct FsOcflStore {
     storage_root: PathBuf,
     /// Maps object IDs to paths within the storage root
     storage_layout: Option<StorageLayout>,
-    // FIXME This "cache" is only intended to support the simple CLI use case.
-    //       It is not thread safe and it never evicts.
     /// Caches object ID to path mappings
     id_path_cache: RefCell<HashMap<String, String>>,
 }
@@ -99,8 +98,14 @@ impl FsOcflStore {
 
         info!("Staging OCFL object {} {}", &inventory.id, &inventory.head);
 
-        let object_root = self.require_layout()?.map_object_id(&inventory.id);
-        let storage_path = self.storage_root.join(object_root);
+        // If it's a new object, the object root path will not be known
+        let object_root: Cow<str> = if inventory.object_root.is_empty() {
+            Cow::Owned(self.require_layout()?.map_object_id(&inventory.id))
+        } else {
+            inventory.object_root.as_str().into()
+        };
+
+        let storage_path = self.storage_root.join(object_root.as_ref());
 
         // TODO existence?
 
@@ -118,9 +123,7 @@ impl FsOcflStore {
                            inventory: &Inventory,
                            source: &mut R,
                            logical_path: &InventoryPath) -> Result<InventoryPath> {
-
-        // TODO this should be cached -- what if I stuck it in the inventory?
-        let object_root = self.require_layout()?.map_object_id(&inventory.id);
+        // TODO any validation that the staged object exist?
 
         // TODO safe content path mappings?
         // TODO verify valid path? should that have already happened?
@@ -130,7 +133,9 @@ impl FsOcflStore {
                                    inventory.defaulted_content_dir(),
                                    logical_path.as_ref()).try_into()?;
 
-        let storage_path = self.storage_root.join(object_root).join(&content_path.as_ref());
+        let storage_path = self.storage_root
+            .join(&inventory.object_root)
+            .join(&content_path.as_ref());
 
         info!("Adding file {} to OCFL object {} at {}",
               &logical_path, &inventory.id, &content_path);
@@ -142,9 +147,9 @@ impl FsOcflStore {
     }
 
     pub(super) fn stage_inventory(&self, inventory: &Inventory) -> Result<()> {
-        // TODO cache...
-        let object_root = self.require_layout()?.map_object_id(&inventory.id);
-        let storage_path = self.storage_root.join(object_root);
+        // TODO any validation that the staged object exist?
+
+        let storage_path = self.storage_root.join(&inventory.object_root);
 
         serde_json::to_writer(File::create(storage_path.join(INVENTORY_FILE))?, &inventory)?;
 
@@ -206,10 +211,10 @@ impl OcflStore for FsOcflStore {
         let inventory = self.get_inventory(object_id)?;
 
         let content_path = inventory.content_path_for_logical_path(path, version_num)?;
-        let storage_path = self.storage_root.join(&inventory.object_root).join(content_path.as_ref().as_ref());
+        let storage_path = self.storage_root.join(&inventory.object_root)
+            .join(content_path.as_ref().as_ref());
 
         let mut file = File::open(storage_path)?;
-
         io::copy(&mut file, sink)?;
 
         Ok(())

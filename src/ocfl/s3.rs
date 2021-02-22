@@ -28,8 +28,6 @@ pub struct S3OcflStore {
     s3_client: S3Client,
     /// Maps object IDs to paths within the storage root
     storage_layout: Option<StorageLayout>,
-    // FIXME This "cache" is only intended to support the simple CLI use case.
-    //       It is not thread safe and it never evicts.
     /// Caches object ID to path mappings
     id_path_cache: RefCell<HashMap<String, String>>,
 }
