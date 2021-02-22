@@ -347,13 +347,6 @@ impl OcflRepo {
                     }
                 }
 
-                // TODO this has the "revision" bug.
-                //  1. add `file1.txt` with content `test`
-                //  2. add `file2.txt` with content `test`
-                //  3. overwrite `file1.txt` with content `test2`
-                //  4. `file2.txt` is now corrupt
-                //  I think I need to change `add_file_to_head` to NOT dedup anything until commit
-
                 staging.stage_file(&inventory, &mut reader, &logical_path)?;
                 let digest = reader.finalize_hex();
                 inventory.add_file_to_head(digest, logical_path)?;

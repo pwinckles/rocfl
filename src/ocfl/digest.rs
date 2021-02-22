@@ -146,7 +146,7 @@ impl<R: Read> Read for DigestReader<R> {
         let result = self.inner.read(buf)?;
 
         if result > 0 {
-            self.digest.update(&buf);
+            self.digest.update(&buf[0..result]);
         }
 
         Ok(result)
@@ -233,4 +233,33 @@ impl Display for HexDigest {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+
+    use crate::ocfl::DigestAlgorithm;
+    use crate::ocfl::error::Result;
+
+    #[test]
+    fn calculate_digest_while_reading() -> Result<()> {
+        let input = "testing\n".to_string();
+        let mut output: Vec<u8> = Vec::new();
+
+        let mut reader = DigestAlgorithm::Sha512.reader(input.as_bytes())?;
+
+        io::copy(&mut reader, &mut output)?;
+
+        let expected = "24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7c\
+        acfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28".to_string();
+        let actual = reader.finalize_hex();
+
+        assert_eq!(input, String::from_utf8(output).unwrap());
+        assert_eq!(DigestAlgorithm::Sha512.hash_hex(input.as_bytes()), actual);
+        assert_eq!(expected, actual.to_string());
+
+        Ok(())
+    }
+
 }
