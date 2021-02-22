@@ -224,7 +224,7 @@ impl OcflRepo {
         let mut diffs = Vec::new();
 
         if let Some(left) = left {
-            for (path, left_digest) in left.state.into_iter() {
+            for (path, left_digest) in left.state {
                 match right.state.remove_path(&path) {
                     None => diffs.push(Diff::deleted(path)),
                     Some((_, right_digest)) => {
@@ -236,11 +236,11 @@ impl OcflRepo {
             }
 
             // TODO Renames can be detected if the same digest has both a D and an A
-            for (path, _digest) in right.state.into_iter() {
+            for (path, _digest) in right.state {
                 diffs.push(Diff::added(path))
             }
         } else {
-            for (path, _digest) in right.state.into_iter() {
+            for (path, _digest) in right.state {
                 diffs.push(Diff::added(path));
             }
         }

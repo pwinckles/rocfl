@@ -260,6 +260,9 @@ impl InventoryPath {
     }
 }
 
+// It looks like its not possible to implement `impl<T: AsRef<str> TryFrom<t>`
+// https://github.com/rust-lang/rust/issues/50133
+
 impl TryFrom<&str> for InventoryPath {
     type Error = RocflError;
 
@@ -282,7 +285,6 @@ impl TryFrom<&str> for InventoryPath {
     }
 }
 
-// TODO figure out how to collapse these
 impl TryFrom<String> for InventoryPath {
     type Error = RocflError;
 
@@ -354,7 +356,7 @@ impl ObjectVersion {
 
             // No versions left to compare to; any remaining files were last updated here
             if version_details.version_num.number == 1 {
-                for (target_path, target_digest) in target_path_map.into_iter() {
+                for (target_path, target_digest) in target_path_map {
                     let content_path = inventory.content_path_for_digest(&target_digest)?;
                     state.insert(target_path, FileDetails::new(content_path.clone(),
                                                                target_digest,
@@ -371,7 +373,7 @@ impl ObjectVersion {
             let mut previous_path_map = previous_version.state;
             previous_version.state = PathBiMap::new();
 
-            for (target_path, target_digest) in target_path_map.into_iter() {
+            for (target_path, target_digest) in target_path_map {
                 let entry = previous_path_map.remove_path(&target_path);
 
                 if entry.is_none() || entry.unwrap().1 != target_digest {
