@@ -115,6 +115,18 @@ impl PathBiMap {
             None
         }
     }
+
+    /// Return an iterator that iterates over references to all path-id pairs
+    pub fn iter(&self) -> Iter {
+        Iter {
+            iter: self.path_to_id.iter()
+        }
+    }
+
+    /// Returns the number of path-id pairs in the map
+    pub fn len(&self) -> usize {
+        self.path_to_id.len()
+    }
 }
 
 impl Default for PathBiMap {
@@ -140,6 +152,18 @@ pub struct IntoIter {
 
 impl Iterator for IntoIter {
     type Item = (Rc<InventoryPath>, Rc<HexDigest>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
+pub struct Iter<'a> {
+    iter: hash_map::Iter<'a, Rc<InventoryPath>, Rc<HexDigest>>,
+}
+
+impl<'a> Iterator for Iter<'a> {
+    type Item = (&'a Rc<InventoryPath>, &'a Rc<HexDigest>);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
