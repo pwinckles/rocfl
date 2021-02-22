@@ -345,8 +345,7 @@ impl ObjectVersion {
 
         let mut current_version_num = target;
         let mut current_version = inventory.remove_version(target)?;
-        let mut target_path_map = current_version.state;
-        current_version.state = PathBiMap::new();
+        let mut target_path_map = current_version.remove_state();
 
         while !target_path_map.is_empty() {
             let mut not_found = PathBiMap::new();
@@ -368,8 +367,7 @@ impl ObjectVersion {
 
             let previous_version_num = version_details.version_num.previous()?;
             let mut previous_version = inventory.remove_version(previous_version_num)?;
-            let mut previous_path_map = previous_version.state;
-            previous_version.state = PathBiMap::new();
+            let mut previous_path_map = previous_version.remove_state();
 
             for (target_path, target_digest) in target_path_map {
                 let entry = previous_path_map.remove_path(&target_path);

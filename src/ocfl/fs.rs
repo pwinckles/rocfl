@@ -3,7 +3,6 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::convert::TryInto;
 use std::fs::{self, File, ReadDir};
 use std::io::{self, Read, Write};
 use std::ops::Deref;
@@ -122,28 +121,22 @@ impl FsOcflStore {
     pub(super) fn stage_file<R: Read>(&self,
                            inventory: &Inventory,
                            source: &mut R,
-                           logical_path: &InventoryPath) -> Result<InventoryPath> {
+                           logical_path: &InventoryPath) -> Result<()> {
         // TODO any validation that the staged object exist?
 
-        // TODO safe content path mappings?
-        // TODO verify valid path? should that have already happened?
-
-        let content_path: InventoryPath = format!("{}/{}/{}",
-                                   &inventory.head.to_string(),
-                                   inventory.defaulted_content_dir(),
-                                   logical_path.as_ref()).try_into()?;
+        let content_path = inventory.new_content_path_head(&logical_path)?;
 
         let storage_path = self.storage_root
             .join(&inventory.object_root)
             .join(&content_path.as_ref());
 
         info!("Adding file {} to OCFL object {} at {}",
-              &logical_path, &inventory.id, &content_path);
+              &logical_path, &inventory.id, &storage_path.to_string_lossy());
 
         fs::create_dir_all(storage_path.parent().unwrap())?;
         io::copy(source, &mut File::create(&storage_path)?)?;
 
-        Ok(content_path)
+        Ok(())
     }
 
     pub(super) fn stage_inventory(&self, inventory: &Inventory) -> Result<()> {

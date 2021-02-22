@@ -68,7 +68,7 @@ impl Cmd for Copy {
             // external copy
             repo.copy_files_external(self.destination_object.as_ref().unwrap(),
                                      &self.source,
-                                     &self.destination.as_str().try_into()?,
+                                     &self.destination,
                                      self.recursive,
                                      self.force)?;
         } else {

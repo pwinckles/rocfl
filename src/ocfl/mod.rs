@@ -9,7 +9,6 @@
 //! let repo = OcflRepo::new_fs_repo("path/to/ocfl/storage/root");
 //! ```
 
-use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::fmt::Debug;
 use std::fs::File;
@@ -24,11 +23,10 @@ use once_cell::unsync::OnceCell;
 use rusoto_core::Region;
 use serde::{Deserialize, Serialize};
 
-use crate::ocfl::bimap::PathBiMap;
 use crate::ocfl::consts::*;
 use crate::ocfl::digest::HexDigest;
 pub use crate::ocfl::error::{Result, RocflError};
-use crate::ocfl::inventory::{Inventory, Version};
+use crate::ocfl::inventory::Inventory;
 use crate::ocfl::layout::StorageLayout;
 
 pub use self::digest::DigestAlgorithm;
@@ -225,9 +223,9 @@ impl OcflRepo {
 
         let mut diffs = Vec::new();
 
-        if let Some(left) = left {
-            for (path, left_digest) in left.state {
-                match right.state.remove_path(&path) {
+        if let Some(mut left) = left {
+            for (path, left_digest) in left.state_into_iter() {
+                match right.remove_file(&path) {
                     None => diffs.push(Diff::deleted(path)),
                     Some((_, right_digest)) => {
                         if left_digest.ne(&right_digest) {
@@ -238,11 +236,11 @@ impl OcflRepo {
             }
 
             // TODO Renames can be detected if the same digest has both a D and an A
-            for (path, _digest) in right.state {
+            for (path, _digest) in right.state_into_iter() {
                 diffs.push(Diff::added(path))
             }
         } else {
-            for (path, _digest) in right.state {
+            for (path, _digest) in right.state_into_iter() {
                 diffs.push(Diff::added(path));
             }
         }
@@ -286,21 +284,13 @@ impl OcflRepo {
             }
         }
 
-        let mut versions = BTreeMap::new();
         let version_num = VersionNum::new(1, padding_width);
-        versions.insert(version_num, Version::new_staged());
 
-        let inventory = Inventory {
-            id: object_id.to_string(),
-            type_declaration: INVENTORY_TYPE.to_string(),
-            digest_algorithm,
-            content_directory: Some(content_dir.to_string()),
-            head: version_num,
-            manifest: PathBiMap::new(),
-            versions,
-            fixity: None,
-            object_root: "".to_string(),
-        };
+        let inventory = Inventory::builder(object_id)
+            .with_digest_algorithm(digest_algorithm)
+            .with_content_directory(content_dir)
+            .with_head(version_num)
+            .build()?;
 
         self.get_staging()?.stage_object(&inventory)
     }
@@ -313,7 +303,7 @@ impl OcflRepo {
     pub fn copy_files_external<P: AsRef<Path>>(&self,
                       object_id: &str,
                       src: &[P],
-                      dst: &InventoryPath,
+                      dst: &str,
                       recursive: bool,
                       force: bool) -> Result<()> {
         // TODO enforce src > 0
@@ -329,59 +319,61 @@ impl OcflRepo {
             Err(RocflError::NotFound(_)) => {
                 let mut inventory = self.store.get_inventory(&object_id)?;
                 inventory.create_staging_head()?;
-                // TODO is this step necessary? can I wait till after copying the files?
                 staging.stage_object(&inventory)?;
                 inventory
             },
             Err(e) => return Err(e),
         };
 
+        let version = inventory.versions.get_mut(&inventory.head).unwrap();
+
         // TODO cleanup
         for path in src.iter() {
             let path = path.as_ref();
-            match std::fs::metadata(&path) {
-                Err(e) => error!("Could not read file {}: {}", path.to_string_lossy(), e),
-                Ok(meta) => {
-                    // TODO symbolic links?
-                    if meta.is_file() {
-                        // TODO need to continue on error
-                        let file = File::open(&path)?;
-                        let mut reader = inventory.digest_algorithm.reader(file)?;
 
-                        // TODO clean this mess up
-                        // TODO this path is wrong -- must determine if it is a directory
-                        let mut logical_path = dst.to_string();
+            if path.is_file() {
+                // TODO need to continue on error
+                let mut reader = inventory.digest_algorithm.reader(File::open(&path)?)?;
 
-                        if src.len() > 1 {
-                            logical_path.push('/');
-                            logical_path.push_str(&path.file_name().unwrap().to_string_lossy());
-                        }
+                /*
+                1. Many SRC, DST must be dir
+                2. One SRC, DST may be dir or file
+                   a. DST exists && is_file => overwrite DST
+                   b. DST exists && is_dir => copy to DST/SRC-filename -- verify not dir
+                   c. DST does not exist && SRC ends_with / => copy to DST/SRC-filename -- verify not dir
+                   d. DST does not exist && SRC not ends_with / => copy to DST -- verify not dir
 
-                        let logical_path: InventoryPath = logical_path.try_into()?;
+                 */
 
-                        // TODO overwrite protection
-                        // TODO validate legal path
+                // TODO clean this mess up
+                // TODO this path is wrong -- must determine if it is a directory
+                let mut logical_path = dst.to_string();
 
-                        // TODO or should it just fail?
-                        match staging.stage_file(&inventory, &mut reader, &logical_path) {
-                            Ok(content_path) => {
-                                // TODO make methods
-                                let digest = reader.finalize_hex();
-                                inventory.manifest.insert(digest.clone(), content_path);
-                                // TODO
-                                let version = inventory.versions.get_mut(&inventory.head).unwrap();
-                                version.state.insert(digest, logical_path);
-                            }
-                            Err(e) => error!("Failed to copy file {} to object {}: {}",
-                                   &path.to_string_lossy(), &object_id, e)
-                        }
-                    } else if recursive {
-                        // TODO walk directory
-                    } else {
-                        error!("Skipping directory {} because recursive copy is not enabled",
-                               path.to_string_lossy());
-                    }
+                if src.len() > 1 {
+                    logical_path.push('/');
+                    logical_path.push_str(&path.file_name().unwrap().to_string_lossy());
                 }
+
+                let logical_path: InventoryPath = logical_path.try_into()?;
+
+                // TODO overwrite protection
+                // TODO validate legal path
+
+                // TODO or should it just fail?
+                match staging.stage_file(&inventory, &mut reader, &logical_path) {
+                    Ok(_) => {
+                        // TODO this is not correct... what if the digest already exists -- when to dedup
+                        let digest = reader.finalize_hex();
+                        inventory.add_file_to_head(digest, logical_path)?;
+                    }
+                    Err(e) => error!("Failed to copy file {} to object {}: {}",
+                                     &path.to_string_lossy(), &object_id, e)
+                }
+            } else if recursive {
+                // TODO walk directory
+            } else {
+                error!("Skipping directory {} because recursive copy is not enabled",
+                       path.to_string_lossy());
             }
         }
 
