@@ -91,10 +91,16 @@ impl Inventory {
         Ok(())
     }
 
-    /// Returns the HEAD version
+    /// Returns a reference to the HEAD version
     pub fn head_version(&self) -> &Version {
         // The head version must exist because we look for it when the Inventory is deserialized
         self.versions.get(&self.head).unwrap()
+    }
+
+    /// Returns a mutable reference to the HEAD version
+    pub fn head_version_mut(&mut self) -> &mut Version {
+        // The head version must exist because we look for it when the Inventory is deserialized
+        self.versions.get_mut(&self.head).unwrap()
     }
 
     /// Returns a reference to the specified version or an error if it does not exist.
@@ -151,23 +157,32 @@ impl Inventory {
         self.content_path_for_digest(digest)
     }
 
-    /// Adds a file to the manifest and version state of the HEAD version
+    /// Adds a file to the manifest and version state of the HEAD version.
+    ///
+    /// If the digest already exists in the manifest, the file is deduped and a new entry
+    /// is not added.
+    ///
+    /// If the logical path already exists in the version, then the existing file is overwritten.
     pub fn add_file_to_head(&mut self,
                             digest: HexDigest,
                             logical_path: InventoryPath) -> Result<()> {
-        let content_path = self.new_content_path_head(&logical_path)?;
+        // Add a new manifest entry if the digest is not already present
+        let digest_rc = if !self.manifest.contains_id(&digest) {
+            let digest_rc = Rc::new(digest);
+            let content_path = self.new_content_path_head(&logical_path)?;
+            self.manifest.insert_rc(digest_rc.clone(), Rc::new(content_path));
+            digest_rc
+        } else {
+            // must exist because we just checked
+            self.manifest.get_id_rc(&digest).unwrap().clone()
+        };
 
         let version = match self.versions.get_mut(&self.head) {
             Some(version) => version,
             None => return Err(not_found(&self.id, Some(self.head)))
         };
 
-        // TODO this is not correctly deduping digests
-
-        let digest = Rc::new(digest);
-
-        self.manifest.insert_rc(digest.clone(), Rc::new(content_path));
-        version.add_file(digest, logical_path);
+        version.add_file(digest_rc, logical_path);
 
         Ok(())
     }
@@ -329,11 +344,37 @@ impl Version {
         self.get_virtual_dirs().contains(path)
     }
 
+    /// Returns an error if the specified path conflicts with the existing state.
+    /// A path conflicts if it a portion of the path is interpreted as both a directory
+    /// and a file.
+    pub fn validate_non_conflicting(&self, path: &InventoryPath) -> Result<()> {
+        if self.is_dir(&path) {
+            return Err(RocflError::IllegalState(
+                format!("Conflicting logical path {}: This path is already in use as a directory",
+                        path)))
+        }
+
+        foreach_dir(&path, |dir| {
+            if self.is_file(&dir) {
+                return Err(RocflError::IllegalState(
+                    format!("Conflicting logical path {}: The path part {} is an existing logical file",
+                            path, dir)))
+            }
+            Ok(())
+        })
+    }
+
     /// Adds a new logical path to the version, and updates the virtual directory set, if needed.
     /// This path MUST be added to the inventory manifest separately for the inventory to be valid.
     fn add_file(&mut self, digest: Rc<HexDigest>, logical_path: InventoryPath) {
         if let Some(dirs) = self.virtual_dirs.get_mut() {
-            add_virtual_dirs(&logical_path, dirs);
+            if let Err(e) = foreach_dir(&logical_path, |dir| {
+                dirs.insert(dir);
+                Ok(())
+            }) {
+                // This should be impossible
+                error!("{}", e)
+            }
         }
         self.state.insert_rc(digest, Rc::new(logical_path));
     }
@@ -343,16 +384,21 @@ impl Version {
         self.virtual_dirs.get_or_init(|| {
             let mut dirs: HashSet<InventoryPath> = HashSet::with_capacity(self.state.len());
             for (path, _) in self.state.iter() {
-                add_virtual_dirs(path, &mut dirs)
+                if let Err(e) = foreach_dir(path, |dir| {
+                    dirs.insert(dir);
+                    Ok(())
+                }) {
+                    // This should be impossible
+                    error!("{}", e)
+                }
             }
             dirs
         })
     }
 }
 
-/// Creates virtual directory paths for every directory part of the specified path, and adds
-/// them to the provided set
-fn add_virtual_dirs(path: &InventoryPath, dirs: &mut HashSet<InventoryPath>) {
+/// Executes the `consumer` on every virtual directory that is part of the input path.
+fn foreach_dir<F: FnMut(InventoryPath) -> Result<()>>(path: &InventoryPath, mut consumer: F) -> Result<()> {
     let mut parts = path.parts();
     let mut dir = String::new();
     let mut current = parts.next();
@@ -364,14 +410,12 @@ fn add_virtual_dirs(path: &InventoryPath, dirs: &mut HashSet<InventoryPath>) {
         }
         dir.push_str(current.unwrap());
 
-        match dir.as_str().try_into() {
-            Ok(dir) => {
-                dirs.insert(dir);
-            },
-            Err(e) => error!("{}", e), // This should be impossible
-        }
+        let dir = dir.as_str().try_into()?;
+        consumer(dir)?;
 
         current = next;
         next = parts.next();
     }
+
+    Ok(())
 }
