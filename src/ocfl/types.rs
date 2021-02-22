@@ -360,7 +360,7 @@ impl ObjectVersion {
                                                                target_digest,
                                                                inventory.digest_algorithm,
                                                                &inventory.object_root,
-                                                               Rc::clone(&version_details)));
+                                                               version_details.clone()));
                 }
 
                 break;
@@ -380,7 +380,7 @@ impl ObjectVersion {
                                                                target_digest,
                                                                inventory.digest_algorithm,
                                                                &inventory.object_root,
-                                                               Rc::clone(&version_details)));
+                                                               version_details.clone()));
                 } else {
                     not_found.insert_rc(target_digest, target_path);
                 }
@@ -489,6 +489,7 @@ impl Diff {
     }
 }
 
+/// Joins to strings using the file system separator
 fn join(parent: &str, child: &str) -> String {
     format!("{}{}{}", parent, path::MAIN_SEPARATOR, child)
 }
