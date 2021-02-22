@@ -282,6 +282,7 @@ pub struct Copy {
     #[structopt(name = "SRC")]
     pub source: Vec<String>,
 
+    // TODO fix this -- it sucks to use
     /// The logical path to copy SRC to. Specify '/' to copy into object's root.
     #[structopt(name = "DST", last = true)]
     pub destination: String,

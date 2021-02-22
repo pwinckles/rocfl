@@ -7,7 +7,7 @@ use rusoto_core::region::ParseRegionError;
 #[cfg(feature = "s3")]
 use rusoto_core::RusotoError;
 use thiserror::Error;
-use crate::ocfl::VersionNum;
+use crate::ocfl::{VersionNum, InventoryPath};
 
 pub type Result<T, E = RocflError> = core::result::Result<T, E>;
 
@@ -34,6 +34,9 @@ pub enum RocflError {
 
     #[error("{0}")]
     General(String),
+
+    #[error("File already exists at {0}. Use the force flag if you wish to overwrite.")]
+    AlreadyExists(InventoryPath),
 
     #[error("{0}")]
     Io(io::Error),
