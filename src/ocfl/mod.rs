@@ -17,7 +17,8 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use log::error;
+use chrono::Local;
+use log::{error, info};
 use once_cell::unsync::OnceCell;
 #[cfg(feature = "s3")]
 use rusoto_core::Region;
@@ -26,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use crate::ocfl::consts::*;
 use crate::ocfl::digest::HexDigest;
 pub use crate::ocfl::error::{Result, RocflError};
-use crate::ocfl::inventory::Inventory;
+use crate::ocfl::inventory::{Inventory, Version};
 use crate::ocfl::layout::StorageLayout;
 
 pub use self::digest::DigestAlgorithm;
@@ -306,8 +307,9 @@ impl OcflRepo {
                       dst: &str,
                       recursive: bool,
                       force: bool) -> Result<()> {
-        // TODO enforce src > 0
-        // TODO enforce that the dst is legal
+        if src.is_empty() {
+            return Err(RocflError::IllegalArgument("Must provide at least one source".to_string()));
+        }
 
         let staging = self.get_staging()?;
 
@@ -325,50 +327,36 @@ impl OcflRepo {
             Err(e) => return Err(e),
         };
 
-        let version = inventory.versions.get_mut(&inventory.head).unwrap();
-
         // TODO cleanup
         for path in src.iter() {
             let path = path.as_ref();
 
             if path.is_file() {
-                // TODO need to continue on error
+                // TODO need to continue on error ?
+                let version = inventory.head_version();
                 let mut reader = inventory.digest_algorithm.reader(File::open(&path)?)?;
+                let logical_path = logical_path_for_file(&path, &dst,
+                                                         src.len() > 1,
+                                                         version)?;
 
-                /*
-                1. Many SRC, DST must be dir
-                2. One SRC, DST may be dir or file
-                   a. DST exists && is_file => overwrite DST
-                   b. DST exists && is_dir => copy to DST/SRC-filename -- verify not dir
-                   c. DST does not exist && SRC ends_with / => copy to DST/SRC-filename -- verify not dir
-                   d. DST does not exist && SRC not ends_with / => copy to DST -- verify not dir
-
-                 */
-
-                // TODO clean this mess up
-                // TODO this path is wrong -- must determine if it is a directory
-                let mut logical_path = dst.to_string();
-
-                if src.len() > 1 {
-                    logical_path.push('/');
-                    logical_path.push_str(&path.file_name().unwrap().to_string_lossy());
-                }
-
-                let logical_path: InventoryPath = logical_path.try_into()?;
-
-                // TODO overwrite protection
-                // TODO validate legal path
-
-                // TODO or should it just fail?
-                match staging.stage_file(&inventory, &mut reader, &logical_path) {
-                    Ok(_) => {
-                        // TODO this is not correct... what if the digest already exists -- when to dedup
-                        let digest = reader.finalize_hex();
-                        inventory.add_file_to_head(digest, logical_path)?;
+                if version.is_file(&logical_path) {
+                    if force {
+                        info!("Overwriting existing file at {}", &logical_path);
+                    } else {
+                        return Err(RocflError::AlreadyExists(logical_path));
                     }
-                    Err(e) => error!("Failed to copy file {} to object {}: {}",
-                                     &path.to_string_lossy(), &object_id, e)
                 }
+
+                // TODO this has the "revision" bug.
+                //  1. add `file1.txt` with content `test`
+                //  2. add `file2.txt` with content `test`
+                //  3. overwrite `file1.txt` with content `test2`
+                //  4. `file2.txt` is now corrupt
+                //  I think I need to change `add_file_to_head` to NOT dedup anything until commit
+
+                staging.stage_file(&inventory, &mut reader, &logical_path)?;
+                let digest = reader.finalize_hex();
+                inventory.add_file_to_head(digest, logical_path)?;
             } else if recursive {
                 // TODO walk directory
             } else {
@@ -377,7 +365,7 @@ impl OcflRepo {
             }
         }
 
-        // TODO need to touch the version timestamp
+        inventory.head_version_mut().created = Local::now();
         staging.stage_inventory(&inventory)?;
 
         Ok(())
@@ -477,4 +465,49 @@ impl<'a, T> Iterator for InventoryAdapterIter<'a, T> {
 struct OcflLayout {
     extension: LayoutExtensionName,
     description: String
+}
+
+/// Creates a logical path for a source file based on its destination.
+fn logical_path_for_file(file: impl AsRef<Path>,
+                         dst: &str,
+                         src_is_many: bool,
+                         version: &Version) -> Result<InventoryPath> {
+    let logical_path = if src_is_many || dst.ends_with('/') {
+        // When there are multiple source files, then the destination must be a directory
+        // OR there's a single source and the destination ends with a '/', so interpret it as a dir
+        logical_path_in_dst_dir(file, dst)?
+    } else {
+        let dst_path: InventoryPath = dst.try_into()?;
+
+        if version.exists(&dst_path) {
+            if version.is_file(&dst_path) {
+                // There's a single src and the destination is an existing logical path,
+                // use the destination as is
+                dst_path
+            } else {
+                // There's a single source and the destination is an existing virtual dir,
+                // interpret the destination as a directory
+                logical_path_in_dst_dir(file, dst)?
+            }
+        } else {
+            // Single source to a non-existent destination that does not end with a '/',
+            // interpret destination as logical path
+            dst_path
+        }
+    };
+
+    version.validate_non_conflicting(&logical_path)?;
+
+    Ok(logical_path)
+}
+
+/// Creates a logical path that uses `dst` as the parent directory and the filename of
+/// `src` as the filename.
+fn logical_path_in_dst_dir(src: impl AsRef<Path>, dst: &str) -> Result<InventoryPath> {
+    let mut logical_path = dst.to_string();
+    if !logical_path.ends_with('/') {
+        logical_path.push('/');
+    }
+    logical_path.push_str(&src.as_ref().file_name().unwrap().to_string_lossy());
+    logical_path.try_into()
 }
