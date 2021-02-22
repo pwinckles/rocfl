@@ -15,13 +15,14 @@ use grep_searcher::sinks::UTF8;
 use lazy_static::lazy_static;
 use log::{error, info};
 
-use crate::ocfl::{OcflLayout, VersionNum};
+use crate::ocfl::{OcflLayout, VersionNum, InventoryPath};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::layout::StorageLayout;
 
 use super::OcflStore;
+use std::convert::TryInto;
 
 lazy_static! {
     static ref OBJECT_ID_MATCHER: RegexMatcher = RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap();
@@ -118,7 +119,7 @@ impl FsOcflStore {
     pub(super) fn stage_file<R: Read>(&self,
                            inventory: &Inventory,
                            source: &mut R,
-                           logical_path: &str) -> Result<String> {
+                           logical_path: &InventoryPath) -> Result<InventoryPath> {
 
         // TODO this should be cached -- what if I stuck it in the inventory?
         let object_root = self.require_layout()?.map_object_id(&inventory.id);
@@ -127,19 +128,20 @@ impl FsOcflStore {
         // TODO safe content path mappings?
         // TODO verify valid path? should that have already happened?
 
-        let content_path = Path::new(&inventory.head.to_string())
-            .join(inventory.content_directory.as_ref().unwrap_or(&"content".to_string()))
-            .join(logical_path);
+        let content_path: InventoryPath = format!("{}/{}/{}",
+                                   &inventory.head.to_string(),
+                                   inventory.content_directory.as_ref().unwrap_or(&"content".to_string()),
+                                   logical_path.as_ref()).try_into()?;
 
-        let storage_path = self.storage_root.join(object_root).join(&content_path);
+        let storage_path = self.storage_root.join(object_root).join(&content_path.as_ref());
 
         info!("Adding file {} to OCFL object {} at {}",
-              &logical_path, &inventory.id, &content_path.to_string_lossy());
+              &logical_path, &inventory.id, &content_path);
 
         fs::create_dir_all(storage_path.parent().unwrap())?;
         io::copy(source, &mut File::create(&storage_path)?)?;
 
-        Ok(content_path.to_string_lossy().to_string())
+        Ok(content_path)
     }
 
     pub(super) fn stage_inventory(&self, inventory: &Inventory) -> Result<()> {
@@ -201,13 +203,13 @@ impl OcflStore for FsOcflStore {
     /// If the file cannot be found, then a `RocflError::NotFound` error is returned.
     fn get_object_file(&self,
                        object_id: &str,
-                       path: &str,
+                       path: &InventoryPath,
                        version_num: Option<VersionNum>,
                        sink: &mut dyn Write) -> Result<()> {
         let inventory = self.get_inventory(object_id)?;
 
-        let content_path = inventory.lookup_content_path_for_logical_path(path, version_num)?;
-        let storage_path = self.storage_root.join(&inventory.object_root).join(content_path);
+        let content_path = inventory.content_path_for_logical_path(path, version_num)?;
+        let storage_path = self.storage_root.join(&inventory.object_root).join(content_path.as_ref().as_ref());
 
         let mut file = File::open(storage_path)?;
 

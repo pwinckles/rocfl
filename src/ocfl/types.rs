@@ -1,7 +1,7 @@
 use core::fmt;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path;
@@ -13,7 +13,9 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::ocfl::{DigestAlgorithm, invert_path_map};
+use crate::ocfl::bimap::PathBiMap;
+use crate::ocfl::digest::HexDigest;
+use crate::ocfl::DigestAlgorithm;
 use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::{Inventory, Version};
 
@@ -46,18 +48,18 @@ pub struct ObjectVersion {
     /// Metadata about the version
     pub version_details: VersionDetails,
     /// A map of files (logical paths) in the version to details about the files.
-    pub state: HashMap<String, FileDetails>,
+    pub state: HashMap<Rc<InventoryPath>, FileDetails>,
 }
 
 /// Details about a file in an OCFL object
 #[derive(Debug, Eq, PartialEq)]
 pub struct FileDetails {
     /// The file's digest
-    pub digest: Rc<String>,
+    pub digest: Rc<HexDigest>,
     /// The digest algorithm
     pub digest_algorithm: DigestAlgorithm,
     /// The path to the file relative the object root
-    pub content_path: String,
+    pub content_path: Rc<InventoryPath>,
     /// The path to the file relative the storage root
     pub storage_path: String,
     /// The version metadata for when the file was last updated
@@ -98,7 +100,7 @@ pub struct Diff {
     /// The type of change
     pub diff_type: DiffType,
     /// The affected logical path
-    pub path: String,
+    pub path: Rc<InventoryPath>,
 }
 
 /// Represents a type of change
@@ -253,8 +255,8 @@ impl Ord for VersionNum {
 }
 
 impl InventoryPath {
-    pub fn parts(&self) -> Split<&str> {
-        self.0.split("/")
+    pub fn parts(&self) -> Split<char> {
+        self.0.split('/')
     }
 }
 
@@ -262,10 +264,10 @@ impl TryFrom<&str> for InventoryPath {
     type Error = RocflError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let trimmed = value.trim_start_matches("/").trim_end_matches("/");
+        let trimmed = value.trim_start_matches('/').trim_end_matches('/');
 
         if !trimmed.is_empty() {
-            let has_illegal_part = trimmed.split("/").any(|part| {
+            let has_illegal_part = trimmed.split('/').any(|part| {
                 part == "." || part == ".." || part.is_empty()
             });
 
@@ -280,9 +282,32 @@ impl TryFrom<&str> for InventoryPath {
     }
 }
 
+// TODO figure out how to collapse these
+impl TryFrom<String> for InventoryPath {
+    type Error = RocflError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.as_str().try_into()
+    }
+}
+
+impl TryFrom<&String> for InventoryPath {
+    type Error = RocflError;
+
+    fn try_from(value: &String) -> Result<Self, Self::Error> {
+        value.as_str().try_into()
+    }
+}
+
 impl From<InventoryPath> for String {
     fn from(path: InventoryPath) -> Self {
         path.0
+    }
+}
+
+impl AsRef<str> for InventoryPath {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
     }
 }
 
@@ -315,23 +340,23 @@ impl ObjectVersion {
     }
 
     fn construct_state(target: VersionNum,
-                       inventory: &mut Inventory) -> Result<HashMap<String, FileDetails>> {
+                       inventory: &mut Inventory) -> Result<HashMap<Rc<InventoryPath>, FileDetails>> {
         let mut state = HashMap::new();
 
         let mut current_version_num = target;
         let mut current_version = inventory.remove_version(target)?;
-        let mut target_path_map = invert_path_map(current_version.state);
-        current_version.state = HashMap::new();
+        let mut target_path_map = current_version.state;
+        current_version.state = PathBiMap::new();
 
         while !target_path_map.is_empty() {
-            let mut not_found = HashMap::new();
+            let mut not_found = PathBiMap::new();
             let version_details = Rc::new(VersionDetails::from_version(current_version_num, current_version));
 
             // No versions left to compare to; any remaining files were last updated here
             if version_details.version_num.number == 1 {
                 for (target_path, target_digest) in target_path_map.into_iter() {
-                    let content_path = inventory.lookup_content_path_by_digest(&target_digest)?.to_string();
-                    state.insert(target_path, FileDetails::new(content_path,
+                    let content_path = inventory.content_path_for_digest(&target_digest)?;
+                    state.insert(target_path, FileDetails::new(content_path.clone(),
                                                                target_digest,
                                                                inventory.digest_algorithm,
                                                                &inventory.object_root,
@@ -343,21 +368,21 @@ impl ObjectVersion {
 
             let previous_version_num = version_details.version_num.previous()?;
             let mut previous_version = inventory.remove_version(previous_version_num)?;
-            let mut previous_path_map = invert_path_map(previous_version.state);
-            previous_version.state = HashMap::new();
+            let mut previous_path_map = previous_version.state;
+            previous_version.state = PathBiMap::new();
 
             for (target_path, target_digest) in target_path_map.into_iter() {
-                let entry = previous_path_map.remove_entry(&target_path);
+                let entry = previous_path_map.remove_path(&target_path);
 
                 if entry.is_none() || entry.unwrap().1 != target_digest {
-                    let content_path = inventory.lookup_content_path_by_digest(&target_digest)?.to_string();
-                    state.insert(target_path, FileDetails::new(content_path,
+                    let content_path = inventory.content_path_for_digest(&target_digest)?;
+                    state.insert(target_path, FileDetails::new(content_path.clone(),
                                                                target_digest,
                                                                inventory.digest_algorithm,
                                                                &inventory.object_root,
                                                                Rc::clone(&version_details)));
                 } else {
-                    not_found.insert(target_path, target_digest);
+                    not_found.insert_rc(target_digest, target_path);
                 }
             }
 
@@ -372,14 +397,16 @@ impl ObjectVersion {
 }
 
 impl FileDetails {
-    pub fn new(content_path: String,
-           digest: Rc<String>,
+    pub fn new(content_path: Rc<InventoryPath>,
+           digest: Rc<HexDigest>,
            digest_algorithm: DigestAlgorithm,
            object_root: &str,
            version_details: Rc<VersionDetails>) -> Self {
+        let storage_path = convert_path_separator(join(object_root, content_path.as_ref().as_ref()));
+
         Self {
-            content_path: content_path.clone(),
-            storage_path: join(object_root, &convert_path_separator(content_path)),
+            content_path,
+            storage_path,
             digest,
             digest_algorithm,
             last_update: version_details,
@@ -442,19 +469,19 @@ impl ObjectVersionDetails {
 }
 
 impl Diff {
-    pub fn added(path: String) -> Self {
+    pub fn added(path: Rc<InventoryPath>) -> Self {
         Self {
             diff_type: DiffType::Added,
             path
         }
     }
-    pub fn modified(path: String) -> Self {
+    pub fn modified(path: Rc<InventoryPath>) -> Self {
         Self {
             diff_type: DiffType::Modified,
             path
         }
     }
-    pub fn deleted(path: String) -> Self {
+    pub fn deleted(path: Rc<InventoryPath>) -> Self {
         Self {
             diff_type: DiffType::Deleted,
             path
@@ -466,6 +493,7 @@ fn join(parent: &str, child: &str) -> String {
     format!("{}{}{}", parent, path::MAIN_SEPARATOR, child)
 }
 
+/// Changes `/` to `\` on Windows
 fn convert_path_separator(path: String) -> String {
     if path::MAIN_SEPARATOR == '\\' {
         return path.replace("/", "\\");
@@ -475,7 +503,7 @@ fn convert_path_separator(path: String) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::convert::TryInto;
+    use std::convert::{TryInto, TryFrom};
 
     use crate::ocfl::InventoryPath;
 
@@ -499,26 +527,26 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Logical paths may not")]
+    #[should_panic(expected = "Paths may not contain")]
     fn reject_logical_paths_with_empty_parts() {
-        let path: InventoryPath = "foo//bar/baz".try_into().unwrap();
+        InventoryPath::try_from("foo//bar/baz").unwrap();
     }
 
     #[test]
-    #[should_panic(expected = "Logical paths may not")]
+    #[should_panic(expected = "Paths may not contain")]
     fn reject_logical_paths_with_single_dot() {
-        let path: InventoryPath = "foo/bar/./baz".try_into().unwrap();
+        InventoryPath::try_from("foo/bar/./baz").unwrap();
     }
 
     #[test]
-    #[should_panic(expected = "Logical paths may not")]
+    #[should_panic(expected = "Paths may not contain")]
     fn reject_logical_paths_with_double_dot() {
-        let path: InventoryPath = "foo/bar/../baz".try_into().unwrap();
+        InventoryPath::try_from("foo/bar/../baz").unwrap();
     }
 
     #[test]
-    #[should_panic(expected = "Logical paths may not")]
+    #[should_panic(expected = "Paths may not contain")]
     fn reject_logical_paths_with_double_dot_leading() {
-        let path: InventoryPath = "../foo/bar/baz".try_into().unwrap();
+        InventoryPath::try_from("../foo/bar/baz").unwrap();
     }
 }

@@ -53,7 +53,7 @@ impl List {
         let mut listings: Vec<ContentListing> = object.state.into_iter()
             .map(move |(path, details)| {
                 ContentListing {
-                    logical_path: path,
+                    logical_path: path.to_string(),
                     details
                 }
             }).filter(|listing| {
