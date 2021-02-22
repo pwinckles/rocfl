@@ -159,23 +159,20 @@ impl Inventory {
 
     /// Adds a file to the manifest and version state of the HEAD version.
     ///
-    /// If the digest already exists in the manifest, the file is deduped and a new entry
-    /// is not added.
+    /// If the digest already exists in the manifest, an additional entry for it is added.
+    /// Content paths are NOT deduped until the version is committed.
     ///
     /// If the logical path already exists in the version, then the existing file is overwritten.
     pub fn add_file_to_head(&mut self,
                             digest: HexDigest,
                             logical_path: InventoryPath) -> Result<()> {
-        // Add a new manifest entry if the digest is not already present
-        let digest_rc = if !self.manifest.contains_id(&digest) {
-            let digest_rc = Rc::new(digest);
-            let content_path = self.new_content_path_head(&logical_path)?;
-            self.manifest.insert_rc(digest_rc.clone(), Rc::new(content_path));
-            digest_rc
-        } else {
-            // must exist because we just checked
-            self.manifest.get_id_rc(&digest).unwrap().clone()
+        let digest_rc = match self.manifest.get_id_rc(&digest) {
+            Some(digest_rc) => digest_rc.clone(),
+            None => Rc::new(digest),
         };
+
+        let content_path = self.new_content_path_head(&logical_path)?;
+        self.manifest.insert_rc(digest_rc.clone(), Rc::new(content_path));
 
         let version = match self.versions.get_mut(&self.head) {
             Some(version) => version,
