@@ -115,18 +115,22 @@ impl PathBiMap {
             None
         }
     }
-
-    /// Returns an iterator that moves all values of the map.
-    pub fn into_iter(self) -> IntoIter {
-        IntoIter {
-            iter: self.path_to_id.into_iter()
-        }
-    }
 }
 
 impl Default for PathBiMap {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl IntoIterator for PathBiMap {
+    type Item = (Rc<InventoryPath>, Rc<HexDigest>);
+    type IntoIter = IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter {
+            iter: self.path_to_id.into_iter()
+        }
     }
 }
 
