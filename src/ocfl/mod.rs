@@ -405,7 +405,7 @@ impl OcflRepo {
                       src_obj_id: &str,
                       src: &[&str],
                       dst_obj_id: Option<&str>,
-                      dst: &str,
+                      dst: &InventoryPath,
                       glob_literal_separator: bool,
                       force: bool) -> Result<()> {
         // TODO leading slashes should be removed
@@ -443,13 +443,6 @@ trait OcflStore {
                        sink: &mut dyn Write) -> Result<()>;
 }
 
-/// ocfl_layout.json serialization object
-#[derive(Deserialize, Serialize, Debug)]
-struct OcflLayout {
-    extension: LayoutExtensionName,
-    description: String
-}
-
 /// An iterator that adapts the output of a delegate `Inventory` iterator into another type.
 struct InventoryAdapterIter<'a, T> {
     iter: Box<dyn Iterator<Item=Inventory> + 'a>,
@@ -485,4 +478,11 @@ impl<'a, T> Iterator for InventoryAdapterIter<'a, T> {
             }
         }
     }
+}
+
+/// ocfl_layout.json serialization object
+#[derive(Deserialize, Serialize, Debug)]
+struct OcflLayout {
+    extension: LayoutExtensionName,
+    description: String
 }

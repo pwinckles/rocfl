@@ -165,9 +165,21 @@ impl From<&str> for HexDigest {
     }
 }
 
+impl From<String> for HexDigest {
+    fn from(digest: String) -> Self {
+        Self(digest)
+    }
+}
+
 impl From<HexDigest> for String {
     fn from(digest: HexDigest) -> Self {
         digest.0
+    }
+}
+
+impl AsRef<str> for HexDigest {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
     }
 }
 
