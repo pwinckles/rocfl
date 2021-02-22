@@ -1,12 +1,16 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::convert::TryInto;
+use std::mem;
 use std::rc::Rc;
 
 use chrono::{DateTime, Local};
+use log::error;
+use once_cell::unsync::OnceCell;
 use serde::{Deserialize, Serialize};
 
 use crate::ocfl::{InventoryPath, VersionNum};
-use crate::ocfl::bimap::PathBiMap;
-use crate::ocfl::consts::DEFAULT_CONTENT_DIR;
+use crate::ocfl::bimap::{IntoIter, Iter, PathBiMap};
+use crate::ocfl::consts::{DEFAULT_CONTENT_DIR, INVENTORY_TYPE};
 use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
 use crate::ocfl::error::{not_found, Result, RocflError};
 
@@ -27,7 +31,7 @@ pub struct Inventory {
     pub head: VersionNum,
     pub content_directory: Option<String>,
     // TODO look into deduping all HexDigests and InventoryPaths using a deserialize seed
-    pub manifest: PathBiMap,
+    manifest: PathBiMap,
     pub versions: BTreeMap<VersionNum, Version>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
@@ -36,11 +40,24 @@ pub struct Inventory {
     pub object_root: String,
 }
 
+/// Used to construct new inventories. This is not currently a general purposes builder. It is
+/// focused on building new inventories for staging.
+pub struct InventoryBuilder {
+    id: String,
+    type_declaration: String,
+    digest_algorithm: DigestAlgorithm,
+    head: VersionNum,
+    content_directory: String,
+    manifest: PathBiMap,
+    versions: BTreeMap<VersionNum, Version>,
+    object_root: String,
+}
+
 /// OCFL version serialization object
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Version {
     pub created: DateTime<Local>,
-    pub state: PathBiMap,
+    state: PathBiMap,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -48,7 +65,7 @@ pub struct Version {
 
     /// All of the logical path parts that should be treated as directories
     #[serde(skip)]
-    pub virtual_dirs: Option<HashSet<String>>,
+    virtual_dirs: OnceCell<HashSet<InventoryPath>>,
 }
 
 /// OCFL user serialization object
@@ -59,6 +76,11 @@ pub struct User {
 }
 
 impl Inventory {
+    /// Returns a new inventory builder
+    pub fn builder(object_id: &str) -> InventoryBuilder {
+        InventoryBuilder::new(object_id)
+    }
+
     /// Creates a new HEAD version, copying over the state of the previous HEAD.
     pub fn create_staging_head(&mut self) -> Result<()> {
         let version_num = self.head.next()?;
@@ -129,6 +151,46 @@ impl Inventory {
         self.content_path_for_digest(digest)
     }
 
+    /// Adds a file to the manifest and version state of the HEAD version
+    pub fn add_file_to_head(&mut self,
+                            digest: HexDigest,
+                            logical_path: InventoryPath) -> Result<()> {
+        let content_path = self.new_content_path_head(&logical_path)?;
+
+        let version = match self.versions.get_mut(&self.head) {
+            Some(version) => version,
+            None => return Err(not_found(&self.id, Some(self.head)))
+        };
+
+        // TODO this is not correctly deduping digests
+
+        let digest = Rc::new(digest);
+
+        self.manifest.insert_rc(digest.clone(), Rc::new(content_path));
+        version.add_file(digest, logical_path);
+
+        Ok(())
+    }
+
+    /// Returns a new content path for the specified logical path, assuming a direct one-to-one
+    /// mapping of logical path to content path.
+    pub fn new_content_path_head(&self, logical_path: &InventoryPath) -> Result<InventoryPath> {
+        self.new_content_path(self.head, logical_path)
+    }
+
+    /// Returns a new content path for the specified logical path, assuming a direct one-to-one
+    /// mapping of logical path to content path.
+    pub fn new_content_path(&self,
+                            version_num: VersionNum,
+                            logical_path: &InventoryPath) -> Result<InventoryPath> {
+        // TODO this is not correct for the mutable HEAD
+        // TODO should any other path cleanup be performed?
+        format!("{}/{}/{}",
+                version_num.to_string(),
+                self.defaulted_content_dir(),
+                logical_path.as_ref()).try_into()
+    }
+
     pub fn defaulted_content_dir(&self) -> &str {
         match &self.content_directory {
             Some(dir) => dir.as_str(),
@@ -146,6 +208,56 @@ impl Inventory {
             })
         }
         Ok(())
+    }
+}
+
+impl InventoryBuilder {
+    pub fn new(object_id: &str) -> Self {
+        Self {
+            id: object_id.to_string(),
+            type_declaration: INVENTORY_TYPE.to_string(),
+            digest_algorithm: DigestAlgorithm::Sha512,
+            head: VersionNum::new(1, 0),
+            content_directory: DEFAULT_CONTENT_DIR.to_string(),
+            manifest: PathBiMap::new(),
+            versions: BTreeMap::new(),
+            object_root: "".to_string(),
+        }
+    }
+
+    pub fn with_digest_algorithm(mut self, digest_algorithm: DigestAlgorithm) -> Self {
+        self.digest_algorithm = digest_algorithm;
+        self
+    }
+
+    pub fn with_head(mut self, head: VersionNum) -> Self {
+        self.head = head;
+        self
+    }
+
+    pub fn with_content_directory(mut self, content_directory: &str) -> Self {
+        self.content_directory = content_directory.to_string();
+        self
+    }
+
+    pub fn build(mut self) -> Result<Inventory> {
+        self.versions.insert(self.head, Version::new_staged());
+
+        let inventory = Inventory {
+            id: self.id,
+            type_declaration: self.type_declaration,
+            digest_algorithm: self.digest_algorithm,
+            head: self.head,
+            content_directory: Some(self.content_directory),
+            manifest: self.manifest,
+            versions: self.versions,
+            fixity: None,
+            object_root: self.object_root
+        };
+
+        inventory.validate()?;
+
+        Ok(inventory)
     }
 }
 
@@ -169,13 +281,97 @@ impl Version {
                 address: Some(ROCFL_ADDRESS.to_string()),
             }),
             state,
-            virtual_dirs: None,
+            virtual_dirs: OnceCell::default(),
         }
+    }
+
+    /// Returns a consuming iterator for the version's state
+    pub fn state_into_iter(&mut self) -> IntoIter {
+        self.remove_state().into_iter()
+    }
+
+    /// Returns non-consuming iterator for the version's state
+    pub fn state_iter(&self) -> Iter {
+        self.state.iter()
+    }
+
+    /// Removes a logical path from the version's state
+    pub fn remove_file(&mut self, path: &InventoryPath) -> Option<(Rc<InventoryPath>, Rc<HexDigest>)> {
+        // must invalidate the virtual dirs
+        self.virtual_dirs = OnceCell::default();
+        self.state.remove_path(path)
+    }
+
+    /// Moves the current state map out, replacing it when an empty state
+    pub fn remove_state(&mut self) -> PathBiMap {
+        self.virtual_dirs = OnceCell::default();
+        mem::replace(&mut self.state, PathBiMap::new())
     }
 
     /// Returns a reference to the digest associated to a logical path, or None if the logical
     /// path does not exist in the version's state.
     pub fn lookup_digest(&self, logical_path: &InventoryPath) -> Option<&Rc<HexDigest>> {
         self.state.get_id(logical_path)
+    }
+
+    /// Returns true if the specified path exists as either a logical file or virtual directory
+    pub fn exists(&self, path: &InventoryPath) -> bool {
+        self.is_file(&path) || self.is_dir(path)
+    }
+
+    /// Returns true if the specified path is a logical file
+    pub fn is_file(&self, path: &InventoryPath) -> bool {
+        self.state.contains_path(path)
+    }
+
+    // Returns true if the specified path is a virtual directory
+    pub fn is_dir(&self, path: &InventoryPath) -> bool {
+        self.get_virtual_dirs().contains(path)
+    }
+
+    /// Adds a new logical path to the version, and updates the virtual directory set, if needed.
+    /// This path MUST be added to the inventory manifest separately for the inventory to be valid.
+    fn add_file(&mut self, digest: Rc<HexDigest>, logical_path: InventoryPath) {
+        if let Some(dirs) = self.virtual_dirs.get_mut() {
+            add_virtual_dirs(&logical_path, dirs);
+        }
+        self.state.insert_rc(digest, Rc::new(logical_path));
+    }
+
+    /// Initializes a HashSet containing all of the virtual directories within a version.
+    fn get_virtual_dirs(&self) -> &HashSet<InventoryPath> {
+        self.virtual_dirs.get_or_init(|| {
+            let mut dirs: HashSet<InventoryPath> = HashSet::with_capacity(self.state.len());
+            for (path, _) in self.state.iter() {
+                add_virtual_dirs(path, &mut dirs)
+            }
+            dirs
+        })
+    }
+}
+
+/// Creates virtual directory paths for every directory part of the specified path, and adds
+/// them to the provided set
+fn add_virtual_dirs(path: &InventoryPath, dirs: &mut HashSet<InventoryPath>) {
+    let mut parts = path.parts();
+    let mut dir = String::new();
+    let mut current = parts.next();
+    let mut next = parts.next();
+
+    while next.is_some() {
+        if !dir.is_empty() {
+            dir.push('/');
+        }
+        dir.push_str(current.unwrap());
+
+        match dir.as_str().try_into() {
+            Ok(dir) => {
+                dirs.insert(dir);
+            },
+            Err(e) => error!("{}", e), // This should be impossible
+        }
+
+        current = next;
+        next = parts.next();
     }
 }
