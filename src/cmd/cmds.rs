@@ -7,11 +7,12 @@ use crate::cmd::opts::{Cat, Copy, DigestAlgorithm as OptAlgorithm, New};
 use crate::cmd::opts::{Init, Layout, RocflArgs, Storage};
 use crate::ocfl::{DigestAlgorithm, OcflRepo, Result};
 use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
+use std::convert::TryInto;
 
 impl Cmd for Cat {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
         repo.get_object_file(&self.object_id,
-                             &self.path,
+                             &self.path.as_str().try_into()?,
                              self.version,
                              &mut io::stdout())
     }

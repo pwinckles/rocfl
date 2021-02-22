@@ -10,7 +10,8 @@
 //! ```
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
+use std::convert::TryInto;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::Write;
@@ -23,7 +24,9 @@ use log::error;
 use rusoto_core::Region;
 use serde::{Deserialize, Serialize};
 
+use crate::ocfl::bimap::PathBiMap;
 use crate::ocfl::consts::*;
+use crate::ocfl::digest::HexDigest;
 pub use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::{Inventory, Version};
 use crate::ocfl::layout::StorageLayout;
@@ -147,7 +150,7 @@ impl OcflRepo {
     /// If the file cannot be found, then a `RocflError::NotFound` error is returned.
     pub fn get_object_file(&self,
                            object_id: &str,
-                           path: &str,
+                           path: &InventoryPath,
                            version_num: Option<VersionNum>,
                            sink: &mut dyn Write) -> Result<()> {
         self.store.get_object_file(object_id, path, version_num, sink)
@@ -157,18 +160,19 @@ impl OcflRepo {
     /// affected the specified file. The vector is sorted in ascending order.
     ///
     /// If the object or path cannot be found, then a `RocflError::NotFound' error is returned.
-    pub fn list_file_versions(&self, object_id: &str, path: &str) -> Result<Vec<VersionDetails>> {
+    pub fn list_file_versions(&self,
+                              object_id: &str,
+                              path: &InventoryPath) -> Result<Vec<VersionDetails>> {
         let inventory = self.store.get_inventory(object_id)?;
 
         let mut versions = Vec::new();
 
-        let path = path.to_string();
-        let mut current_digest: Option<String> = None;
+        let mut current_digest: Option<Rc<HexDigest>> = None;
 
         for (id, version) in inventory.versions {
             match version.lookup_digest(&path) {
                 Some(digest) => {
-                    if current_digest.is_none() || current_digest.as_ref().unwrap().ne(digest) {
+                    if current_digest.is_none() || current_digest.as_ref().unwrap().as_ref().ne(digest) {
                         current_digest = Some(digest.clone());
                         versions.push(VersionDetails::from_version(id, version));
                     }
@@ -204,7 +208,7 @@ impl OcflRepo {
 
         let mut inventory = self.store.get_inventory(object_id)?;
 
-        let right = inventory.remove_version(right_version)?;
+        let mut right = inventory.remove_version(right_version)?;
 
         let left = match left_version {
             Some(version) => Some(inventory.remove_version(version)?),
@@ -217,18 +221,14 @@ impl OcflRepo {
             }
         };
 
-        let mut right_state = invert_path_map(right.state);
-
         let mut diffs = Vec::new();
 
         if let Some(left) = left {
-            let left_state = invert_path_map(left.state);
-
-            for (path, left_digest) in left_state {
-                match right_state.remove(&path) {
+            for (path, left_digest) in left.state.into_iter() {
+                match right.state.remove_path(&path) {
                     None => diffs.push(Diff::deleted(path)),
-                    Some(right_digest) => {
-                        if left_digest.deref().ne(right_digest.deref()) {
+                    Some((_, right_digest)) => {
+                        if left_digest.ne(&right_digest) {
                             diffs.push(Diff::modified(path))
                         }
                     }
@@ -236,11 +236,11 @@ impl OcflRepo {
             }
 
             // TODO Renames can be detected if the same digest has both a D and an A
-            for (path, _digest) in right_state {
+            for (path, _digest) in right.state.into_iter() {
                 diffs.push(Diff::added(path))
             }
         } else {
-            for (path, _digest) in right_state {
+            for (path, _digest) in right.state.into_iter() {
                 diffs.push(Diff::added(path));
             }
         }
@@ -294,7 +294,7 @@ impl OcflRepo {
             digest_algorithm,
             content_directory: Some(content_dir.to_string()),
             head: version_num,
-            manifest: HashMap::new(),
+            manifest: PathBiMap::new(),
             versions,
             fixity: None,
             object_root: "".to_string(),
@@ -349,6 +349,7 @@ impl OcflRepo {
                         let file = File::open(&path)?;
                         let mut reader = inventory.digest_algorithm.reader(file)?;
 
+                        // TODO clean this mess up
                         // TODO this path is wrong -- must determine if it is a directory
                         let mut logical_path = dst.to_string();
 
@@ -357,6 +358,8 @@ impl OcflRepo {
                             logical_path.push_str(&path.file_name().unwrap().to_string_lossy());
                         }
 
+                        let logical_path: InventoryPath = logical_path.try_into()?;
+
                         // TODO overwrite protection
                         // TODO validate legal path
 
@@ -364,18 +367,11 @@ impl OcflRepo {
                         match staging.stage_file(&inventory, &mut reader, &logical_path) {
                             Ok(content_path) => {
                                 // TODO make methods
-                                // TODO convert this to a string for now
-                                let digest: String = reader.finalize_hex().into();
-                                if !inventory.manifest.contains_key(&digest) {
-                                    let mut paths = Vec::with_capacity(1);
-                                    paths.push(content_path);
-                                    inventory.manifest.insert(digest.clone(), paths);
-                                }
+                                let digest = reader.finalize_hex();
+                                inventory.manifest.insert(digest.clone(), content_path);
                                 // TODO
                                 let version = inventory.versions.get_mut(&inventory.head).unwrap();
-                                version.state.entry(digest)
-                                    .or_insert_with(|| Vec::with_capacity(1))
-                                    .push(logical_path);
+                                version.state.insert(digest, logical_path);
                             }
                             Err(e) => error!("Failed to copy file {} to object {}: {}",
                                    &path.to_string_lossy(), &object_id, e)
@@ -445,7 +441,7 @@ trait OcflStore {
     /// If the file cannot be found, then a `RocflError::NotFound` error is returned.
     fn get_object_file(&self,
                        object_id: &str,
-                       path: &str,
+                       path: &InventoryPath,
                        version_num: Option<VersionNum>,
                        sink: &mut dyn Write) -> Result<()>;
 }
@@ -492,20 +488,4 @@ impl<'a, T> Iterator for InventoryAdapterIter<'a, T> {
             }
         }
     }
-}
-
-// TODO this should no longer be needed when the bimap is complete
-/// Transforms an input map of digest to vector of paths to a map of paths to digests.
-/// The original map is consumed.
-fn invert_path_map(map: HashMap<String, Vec<String>>) -> HashMap<String, Rc<String>> {
-    let mut inverted = HashMap::new();
-
-    for (digest, paths) in map.into_iter() {
-        let digest = Rc::new(digest);
-        for path in paths.into_iter() {
-            inverted.insert(path, Rc::clone(&digest));
-        }
-    }
-
-    inverted
 }

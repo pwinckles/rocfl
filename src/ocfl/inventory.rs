@@ -3,9 +3,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
-use crate::ocfl::digest::DigestAlgorithm;
+use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
 use crate::ocfl::error::{Result, RocflError, not_found};
-use crate::ocfl::VersionNum;
+use crate::ocfl::{VersionNum, InventoryPath};
+use crate::ocfl::bimap::PathBiMap;
+use std::rc::Rc;
 
 // TODO need to lock down all of these public members
 
@@ -19,7 +21,8 @@ pub struct Inventory {
     pub digest_algorithm: DigestAlgorithm,
     pub head: VersionNum,
     pub content_directory: Option<String>,
-    pub manifest: HashMap<String, Vec<String>>,
+    // TODO is it possible to implement a custom serializer so that all of the digests and paths are deduped?
+    pub manifest: PathBiMap,
     pub versions: BTreeMap<VersionNum, Version>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
@@ -32,7 +35,7 @@ pub struct Inventory {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Version {
     pub created: DateTime<Local>,
-    pub state: HashMap<String, Vec<String>>,
+    pub state: PathBiMap,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -85,11 +88,11 @@ impl Inventory {
 
     /// Returns the first content path associated with the specified digest, or an error if it does
     /// not exist.
-    pub fn lookup_content_path_by_digest(&self, digest: &str) -> Result<&str> {
-        match self.manifest.get(digest) {
+    pub fn content_path_for_digest(&self, digest: &HexDigest) -> Result<&Rc<InventoryPath>> {
+        match self.manifest.get_paths(digest) {
             Some(paths) => {
-                match paths.first() {
-                    Some(path) => Ok(path.as_str()),
+                match paths.iter().next() {
+                    Some(path) => Ok(path),
                     None => Err(RocflError::CorruptObject {
                         object_id: self.id.clone(),
                         message: format!("Digest {} is not mapped to any content paths", digest)
@@ -103,9 +106,11 @@ impl Inventory {
         }
     }
 
-    pub fn lookup_content_path_for_logical_path(&self,
-                                            logical_path: &str,
-                                            version_num: Option<VersionNum>) -> Result<&str> {
+    /// Returns the content path for the logical path, or a `NotFound` error if the path
+    /// is not found.
+    pub fn content_path_for_logical_path(&self,
+                                         logical_path: &InventoryPath,
+                                         version_num: Option<VersionNum>) -> Result<&Rc<InventoryPath>> {
         let version_num = version_num.unwrap_or(self.head);
         let version = self.get_version(version_num)?;
 
@@ -116,7 +121,7 @@ impl Inventory {
                         logical_path, self.id, version_num)))
         };
 
-        self.lookup_content_path_by_digest(digest)
+        self.content_path_for_digest(digest)
     }
 
     /// Performs a spot check on the inventory to see if it appears valid. This is not an
@@ -135,7 +140,7 @@ impl Inventory {
 impl Version {
     /// Create a new Version initialized with values for staging
     pub fn new_staged() -> Self {
-        Self::staged_version(HashMap::new())
+        Self::staged_version(PathBiMap::new())
     }
 
     /// Creates a new Version with a cloned state and staging meta
@@ -143,7 +148,7 @@ impl Version {
         Self::staged_version(self.state.clone())
     }
 
-    fn staged_version(state: HashMap<String, Vec<String>>) -> Self {
+    fn staged_version(state: PathBiMap) -> Self {
         Self {
             created: Local::now(),
             message: Some("Staging new version".to_string()),
@@ -158,13 +163,7 @@ impl Version {
 
     /// Returns a reference to the digest associated to a logical path, or None if the logical
     /// path does not exist in the version's state.
-    pub fn lookup_digest(&self, logical_path: &str) -> Option<&String> {
-        for (digest, paths) in &self.state {
-            if paths.iter().any(|e| e == logical_path) {
-                return Some(digest);
-            }
-        }
-
-        None
+    pub fn lookup_digest(&self, logical_path: &InventoryPath) -> Option<&Rc<HexDigest>> {
+        self.state.get_id(logical_path)
     }
 }

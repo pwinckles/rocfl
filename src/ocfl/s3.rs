@@ -14,7 +14,7 @@ use rusoto_s3::{GetObjectError, GetObjectRequest, ListObjectsV2Output, ListObjec
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
 
-use crate::ocfl::{OcflLayout, VersionNum};
+use crate::ocfl::{OcflLayout, VersionNum, InventoryPath};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
@@ -170,13 +170,13 @@ impl OcflStore for S3OcflStore {
     /// If the file cannot be found, then a `RocflError::NotFound` error is returned.
     fn get_object_file(&self,
                        object_id: &str,
-                       path: &str,
+                       path: &InventoryPath,
                        version_num: Option<VersionNum>,
                        sink: &mut dyn Write) -> Result<()> {
         let inventory = self.get_inventory(object_id)?;
 
-        let content_path = inventory.lookup_content_path_for_logical_path(path, version_num)?;
-        let storage_path = join(&inventory.object_root, content_path);
+        let content_path = inventory.content_path_for_logical_path(path, version_num)?;
+        let storage_path = join(&inventory.object_root, content_path.as_ref().as_ref());
 
         self.s3_client.stream_object(&storage_path, sink)
     }
@@ -458,9 +458,7 @@ fn is_object_dir(objects: &[String]) -> bool {
 
 fn join(part1: &str, part2: &str) -> String {
     let mut joined = match part1.ends_with('/') {
-        true => {
-            part1[..part1.len() - 1].to_string()
-        },
+        true => part1[..part1.len() - 1].to_string(),
         false => part1.to_string()
     };
 

@@ -1,11 +1,11 @@
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use chrono::DateTime;
 use maplit::hashmap;
 
-use rocfl::ocfl::{Diff, DiffType, DigestAlgorithm, FileDetails, ObjectVersion, ObjectVersionDetails, OcflRepo, Result, VersionDetails, VersionNum};
+use rocfl::ocfl::{Diff, DiffType, DigestAlgorithm, FileDetails, InventoryPath, ObjectVersion, ObjectVersionDetails, OcflRepo, Result, VersionDetails, VersionNum};
 
 #[test]
 fn list_all_objects() -> Result<()> {
@@ -137,20 +137,20 @@ fn get_object_when_exists() -> Result<()> {
         digest_algorithm: DigestAlgorithm::Sha512,
         version_details: o2_v3_details(),
         state: hashmap!{
-            "dir1/file3".to_string() => FileDetails {
+            path_rc("dir1/file3") => FileDetails {
                 digest: Rc::new("6e027f3dc89e0bfd97e4c2ec6919a8fb793bdc7b5c513bea618f174beec32a66d2\
-                fc0ce19439751e2f01ae49f78c56dcfc7b49c167a751c823d09da8419a4331".to_string()),
+                fc0ce19439751e2f01ae49f78c56dcfc7b49c167a751c823d09da8419a4331".into()),
                 digest_algorithm: DigestAlgorithm::Sha512,
-                content_path: "v3/content/dir1/file3".to_string(),
+                content_path: path_rc("v3/content/dir1/file3"),
                 storage_path: object_root.join("v3").join("content").join("dir1").join("file3")
                     .to_string_lossy().to_string(),
                 last_update: Rc::new(o2_v3_details())
             },
-            "dir1/dir2/file2".to_string() => FileDetails {
+            path_rc("dir1/dir2/file2") => FileDetails {
                 digest: Rc::new("4cf0ff5673ec65d9900df95502ed92b2605fc602ca20b6901652c7561b30266802\
-                6095813af6adb0e663bdcdbe1f276d18bf0de254992a78573ad6574e7ae1f6".to_string()),
+                6095813af6adb0e663bdcdbe1f276d18bf0de254992a78573ad6574e7ae1f6".into()),
                 digest_algorithm: DigestAlgorithm::Sha512,
-                content_path: "v1/content/dir1/dir2/file2".to_string(),
+                content_path: path_rc("v1/content/dir1/dir2/file2"),
                 storage_path: object_root.join("v1").join("content").join("dir1").join("dir2").join("file2")
                     .to_string_lossy().to_string(),
                 last_update: Rc::new(o2_v1_details())
@@ -177,29 +177,29 @@ fn get_object_version_when_exists() -> Result<()> {
         digest_algorithm: DigestAlgorithm::Sha512,
         version_details: o2_v2_details(),
         state: hashmap!{
-            "dir1/file3".to_string() => FileDetails {
+            path_rc("dir1/file3") => FileDetails {
                 digest: Rc::new("7b866cfcfe06bf2bcaea7086f2a059854afe8de12a6e21e4286bec4828d3da36bd\
-                ef28599be8c9be49da3e45ede3ddbc049f99ee197e5244c33e294748b1a986".to_string()),
+                ef28599be8c9be49da3e45ede3ddbc049f99ee197e5244c33e294748b1a986".into()),
                 digest_algorithm: DigestAlgorithm::Sha512,
-                content_path: "v2/content/dir1/file3".to_string(),
+                content_path: path_rc("v2/content/dir1/file3"),
                 storage_path: object_root.join("v2").join("content").join("dir1").join("file3")
                     .to_string_lossy().to_string(),
                 last_update: Rc::new(o2_v2_details())
             },
-            "dir1/dir2/file2".to_string() => FileDetails {
+            path_rc("dir1/dir2/file2") => FileDetails {
                 digest: Rc::new("4cf0ff5673ec65d9900df95502ed92b2605fc602ca20b6901652c7561b30266802\
-                6095813af6adb0e663bdcdbe1f276d18bf0de254992a78573ad6574e7ae1f6".to_string()),
+                6095813af6adb0e663bdcdbe1f276d18bf0de254992a78573ad6574e7ae1f6".into()),
                 digest_algorithm: DigestAlgorithm::Sha512,
-                content_path: "v1/content/dir1/dir2/file2".to_string(),
+                content_path: path_rc("v1/content/dir1/dir2/file2"),
                 storage_path: object_root.join("v1").join("content").join("dir1").join("dir2").join("file2")
                     .to_string_lossy().to_string(),
                 last_update: Rc::new(o2_v1_details())
             },
-            "dir3/file1".to_string() => FileDetails {
+            path_rc("dir3/file1") => FileDetails {
                 digest: Rc::new("96a26e7629b55187f9ba3edc4acc940495d582093b8a88cb1f0303cf3399fe6b1f\
-                5283d76dfd561fc401a0cdf878c5aad9f2d6e7e2d9ceee678757bb5d95c39e".to_string()),
+                5283d76dfd561fc401a0cdf878c5aad9f2d6e7e2d9ceee678757bb5d95c39e".into()),
                 digest_algorithm: DigestAlgorithm::Sha512,
-                content_path: "v1/content/file1".to_string(),
+                content_path: path_rc("v1/content/file1"),
                 storage_path: object_root.join("v1").join("content").join("file1")
                     .to_string_lossy().to_string(),
                 last_update: Rc::new(o2_v2_details())
@@ -234,20 +234,20 @@ fn get_object_when_exists_using_layout() -> Result<()> {
         digest_algorithm: DigestAlgorithm::Sha512,
         version_details: o2_v3_details(),
         state: hashmap!{
-            "dir1/file3".to_string() => FileDetails {
+            path_rc("dir1/file3") => FileDetails {
                 digest: Rc::new("6e027f3dc89e0bfd97e4c2ec6919a8fb793bdc7b5c513bea618f174beec32a66d2\
-                fc0ce19439751e2f01ae49f78c56dcfc7b49c167a751c823d09da8419a4331".to_string()),
+                fc0ce19439751e2f01ae49f78c56dcfc7b49c167a751c823d09da8419a4331".into()),
                 digest_algorithm: DigestAlgorithm::Sha512,
-                content_path: "v3/content/dir1/file3".to_string(),
+                content_path: path_rc("v3/content/dir1/file3"),
                 storage_path: object_root.join("v3").join("content").join("dir1").join("file3")
                     .to_string_lossy().to_string(),
                 last_update: Rc::new(o2_v3_details())
             },
-            "dir1/dir2/file2".to_string() => FileDetails {
+            path_rc("dir1/dir2/file2") => FileDetails {
                 digest: Rc::new("4cf0ff5673ec65d9900df95502ed92b2605fc602ca20b6901652c7561b30266802\
-                6095813af6adb0e663bdcdbe1f276d18bf0de254992a78573ad6574e7ae1f6".to_string()),
+                6095813af6adb0e663bdcdbe1f276d18bf0de254992a78573ad6574e7ae1f6".into()),
                 digest_algorithm: DigestAlgorithm::Sha512,
-                content_path: "v1/content/dir1/dir2/file2".to_string(),
+                content_path: path_rc("v1/content/dir1/dir2/file2"),
                 storage_path: object_root.join("v1").join("content").join("dir1").join("dir2").join("file2")
                     .to_string_lossy().to_string(),
                 last_update: Rc::new(o2_v1_details())
@@ -303,7 +303,7 @@ fn list_file_versions_when_multiple() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::new_fs_repo(&repo_root)?;
 
-    let mut versions = repo.list_file_versions("o2", "dir3/file1")?;
+    let mut versions = repo.list_file_versions("o2", &"dir3/file1".try_into()?)?;
 
     assert_eq!(2, versions.len());
 
@@ -326,7 +326,7 @@ fn list_versions_not_exists() {
 fn list_file_versions_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::new_fs_repo(&repo_root).unwrap();
-    repo.list_file_versions("o2", "bogus.txt").unwrap();
+    repo.list_file_versions("o2", &"bogus.txt".try_into().unwrap()).unwrap();
 }
 
 #[test]
@@ -343,11 +343,11 @@ fn diff_when_left_and_right_specified() -> Result<()> {
 
     assert_eq!(diff.remove(0), Diff {
         diff_type: DiffType::Added,
-        path: "dir1/file3".to_string()
+        path: path_rc("dir1/file3")
     });
     assert_eq!(diff.remove(0), Diff {
         diff_type: DiffType::Deleted,
-        path: "file1".to_string()
+        path: path_rc("file1")
     });
 
     Ok(())
@@ -366,11 +366,11 @@ fn diff_with_previous_when_left_not_specified() -> Result<()> {
 
     assert_eq!(diff.remove(0), Diff {
         diff_type: DiffType::Modified,
-        path: "dir1/file3".to_string()
+        path: path_rc("dir1/file3")
     });
     assert_eq!(diff.remove(0), Diff {
         diff_type: DiffType::Deleted,
-        path: "dir3/file1".to_string()
+        path: path_rc("dir3/file1")
     });
 
     Ok(())
@@ -389,11 +389,11 @@ fn diff_first_version_all_adds() -> Result<()> {
 
     assert_eq!(diff.remove(0), Diff {
         diff_type: DiffType::Added,
-        path: "dir1/dir2/file2".to_string()
+        path: path_rc("dir1/dir2/file2")
     });
     assert_eq!(diff.remove(0), Diff {
         diff_type: DiffType::Added,
-        path: "file1".to_string()
+        path: path_rc("file1")
     });
 
     Ok(())
@@ -437,7 +437,7 @@ fn get_object_file_when_exists() -> Result<()> {
     let version = VersionNum::try_from(2)?;
     let mut out: Vec<u8> = Vec::new();
 
-    repo.get_object_file(id, "dir1/file3", Some(version), &mut out)?;
+    repo.get_object_file(id, &"dir1/file3".try_into()?, Some(version), &mut out)?;
 
     assert_eq!("file 3", String::from_utf8(out).unwrap());
 
@@ -454,7 +454,7 @@ fn fail_get_object_file_when_does_not_exist() {
     let version = VersionNum::try_from(2).unwrap();
     let mut out: Vec<u8> = Vec::new();
 
-    repo.get_object_file(id, "dir1/bogus", Some(version), &mut out).unwrap();
+    repo.get_object_file(id, &"dir1/bogus".try_into().unwrap(), Some(version), &mut out).unwrap();
 }
 
 fn o2_v1_details() -> VersionDetails {
@@ -506,4 +506,8 @@ fn sort_diffs(diffs: &mut Vec<Diff>) {
     diffs.sort_unstable_by(|a, b| {
         a.path.cmp(&b.path)
     })
+}
+
+fn path_rc(path: &str) -> Rc<InventoryPath> {
+    Rc::new(InventoryPath::try_from(path).unwrap())
 }

@@ -9,6 +9,7 @@ use crate::cmd::opts::{Diff, Log, Show};
 use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
 use crate::ocfl::{Diff as VersionDiff, DiffType, OcflRepo, VersionDetails, Result};
+use std::convert::TryInto;
 
 lazy_static! {
     static ref DEFAULT_USER: String = "NA".to_owned();
@@ -20,7 +21,7 @@ lazy_static! {
 impl Cmd for Log {
     fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         let mut versions = match &self.path {
-            Some(path) => repo.list_file_versions(&self.object_id, path)?,
+            Some(path) => repo.list_file_versions(&self.object_id, &path.try_into()?)?,
             None => repo.list_object_versions(&self.object_id)?,
         };
 
