@@ -8,6 +8,7 @@ use crate::ocfl::error::{Result, RocflError, not_found};
 use crate::ocfl::{VersionNum, InventoryPath};
 use crate::ocfl::bimap::PathBiMap;
 use std::rc::Rc;
+use crate::ocfl::consts::DEFAULT_CONTENT_DIR;
 
 // TODO need to lock down all of these public members
 
@@ -21,7 +22,7 @@ pub struct Inventory {
     pub digest_algorithm: DigestAlgorithm,
     pub head: VersionNum,
     pub content_directory: Option<String>,
-    // TODO is it possible to implement a custom serializer so that all of the digests and paths are deduped?
+    // TODO look into deduping all HexDigests and InventoryPaths using a deserialize seed
     pub manifest: PathBiMap,
     pub versions: BTreeMap<VersionNum, Version>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -122,6 +123,13 @@ impl Inventory {
         };
 
         self.content_path_for_digest(digest)
+    }
+
+    pub fn defaulted_content_dir(&self) -> &str {
+        match &self.content_directory {
+            Some(dir) => dir.as_str(),
+            None => DEFAULT_CONTENT_DIR,
+        }
     }
 
     /// Performs a spot check on the inventory to see if it appears valid. This is not an
