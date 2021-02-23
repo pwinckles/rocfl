@@ -130,9 +130,6 @@ impl FsOcflStore {
             .join(&inventory.object_root)
             .join(&content_path.as_ref());
 
-        info!("Adding file {} to OCFL object {} at {}",
-              &logical_path, &inventory.id, &storage_path.to_string_lossy());
-
         fs::create_dir_all(storage_path.parent().unwrap())?;
         io::copy(source, &mut File::create(&storage_path)?)?;
 
