@@ -9,12 +9,14 @@
 //! let repo = OcflRepo::new_fs_repo("path/to/ocfl/storage/root");
 //! ```
 
+use std::borrow::Cow;
 use std::convert::TryInto;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::Write;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::path;
 use std::rc::Rc;
 
 use chrono::Local;
@@ -23,6 +25,7 @@ use once_cell::unsync::OnceCell;
 #[cfg(feature = "s3")]
 use rusoto_core::Region;
 use serde::{Deserialize, Serialize};
+use walkdir::WalkDir;
 
 use crate::ocfl::consts::*;
 use crate::ocfl::digest::HexDigest;
@@ -327,31 +330,24 @@ impl OcflRepo {
             Err(e) => return Err(e),
         };
 
-        // TODO cleanup
         for path in src.iter() {
             let path = path.as_ref();
 
             if path.is_file() {
                 // TODO need to continue on error ?
-                let version = inventory.head_version();
-                let mut reader = inventory.digest_algorithm.reader(File::open(&path)?)?;
-                let logical_path = logical_path_for_file(&path, &dst,
-                                                         src.len() > 1,
-                                                         version)?;
-
-                if version.is_file(&logical_path) {
-                    if force {
-                        info!("Overwriting existing file at {}", &logical_path);
-                    } else {
-                        return Err(RocflError::AlreadyExists(logical_path));
+                self.copy_file(&path, path.parent().unwrap(),
+                               &dst, src.len() > 1,
+                               force, &mut inventory)?;
+            } else if recursive {
+                for file in WalkDir::new(&path).into_iter() {
+                    let file = file?;
+                    if file.path().is_file() {
+                        // TODO need to continue on error ?
+                        self.copy_file(file.path(), &path,
+                                       &dst, true,
+                                       force, &mut inventory)?;
                     }
                 }
-
-                staging.stage_file(&inventory, &mut reader, &logical_path)?;
-                let digest = reader.finalize_hex();
-                inventory.add_file_to_head(digest, logical_path)?;
-            } else if recursive {
-                // TODO walk directory
             } else {
                 error!("Skipping directory {} because recursive copy is not enabled",
                        path.to_string_lossy());
@@ -383,6 +379,36 @@ impl OcflRepo {
                       force: bool) -> Result<()> {
         // TODO leading slashes should be removed
         Ok(())
+    }
+
+    fn copy_file<F,B>(&self,
+                      file: F,
+                      base: B,
+                      dst: &str,
+                      many: bool,
+                      force: bool,
+                      inventory: &mut Inventory) -> Result<()>
+        where
+            F: AsRef<Path>,
+            B: AsRef<Path>,
+    {
+        let version = inventory.head_version();
+        let mut reader = inventory.digest_algorithm.reader(File::open(&file)?)?;
+        let logical_path = logical_path_for_file(&file, base, dst, many, version)?;
+
+        if version.is_file(&logical_path) {
+            if force {
+                info!("Overwriting existing file at {}", &logical_path);
+            } else {
+                return Err(RocflError::AlreadyExists(logical_path));
+            }
+        }
+
+        info!("Copying file {} into object at {}", file.as_ref().to_string_lossy(), &logical_path);
+
+        self.get_staging()?.stage_file(&inventory, &mut reader, &logical_path)?;
+        let digest = reader.finalize_hex();
+        inventory.add_file_to_head(digest, logical_path)
     }
 
     fn get_staging(&self) -> Result<&FsOcflStore> {
@@ -461,14 +487,19 @@ struct OcflLayout {
 }
 
 /// Creates a logical path for a source file based on its destination.
-fn logical_path_for_file(file: impl AsRef<Path>,
+fn logical_path_for_file<F, B>(file: F,
+                         base: B,
                          dst: &str,
                          src_is_many: bool,
-                         version: &Version) -> Result<InventoryPath> {
+                         version: &Version) -> Result<InventoryPath>
+    where
+        F: AsRef<Path>,
+        B: AsRef<Path>,
+{
     let logical_path = if src_is_many || dst.ends_with('/') {
         // When there are multiple source files, then the destination must be a directory
         // OR there's a single source and the destination ends with a '/', so interpret it as a dir
-        logical_path_in_dst_dir(file, dst)?
+        logical_path_in_dst_dir(file, base, dst)?
     } else {
         let dst_path: InventoryPath = dst.try_into()?;
 
@@ -480,7 +511,7 @@ fn logical_path_for_file(file: impl AsRef<Path>,
             } else {
                 // There's a single source and the destination is an existing virtual dir,
                 // interpret the destination as a directory
-                logical_path_in_dst_dir(file, dst)?
+                logical_path_in_dst_dir(file, base, dst)?
             }
         } else {
             // Single source to a non-existent destination that does not end with a '/',
@@ -494,13 +525,24 @@ fn logical_path_for_file(file: impl AsRef<Path>,
     Ok(logical_path)
 }
 
-/// Creates a logical path that uses `dst` as the parent directory and the filename of
-/// `src` as the filename.
-fn logical_path_in_dst_dir(src: impl AsRef<Path>, dst: &str) -> Result<InventoryPath> {
+/// Creates a logical path that combines `dst` with the relativized `src` path.
+fn logical_path_in_dst_dir<F, B>(src: F, base: B, dst: &str) -> Result<InventoryPath>
+    where
+        F: AsRef<Path>,
+        B: AsRef<Path>,
+{
     let mut logical_path = dst.to_string();
     if !logical_path.ends_with('/') {
         logical_path.push('/');
     }
-    logical_path.push_str(&src.as_ref().file_name().unwrap().to_string_lossy());
+
+    let relative_path = pathdiff::diff_paths(src, base).unwrap();
+    let mut relative = relative_path.to_string_lossy();
+
+    if path::MAIN_SEPARATOR == '\\' {
+        relative = Cow::Owned(relative.as_ref().replace("\\", "/"))
+    }
+
+    logical_path.push_str(relative.as_ref());
     logical_path.try_into()
 }

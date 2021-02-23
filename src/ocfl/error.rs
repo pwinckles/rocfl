@@ -7,7 +7,8 @@ use rusoto_core::region::ParseRegionError;
 #[cfg(feature = "s3")]
 use rusoto_core::RusotoError;
 use thiserror::Error;
-use crate::ocfl::{VersionNum, InventoryPath};
+
+use crate::ocfl::{InventoryPath, VersionNum};
 
 pub type Result<T, E = RocflError> = core::result::Result<T, E>;
 
@@ -73,6 +74,12 @@ impl From<globset::Error> for RocflError {
 
 impl From<serde_json::Error> for RocflError {
     fn from(e: serde_json::Error) -> Self {
+        RocflError::Wrapped(Box::new(e))
+    }
+}
+
+impl From<walkdir::Error> for RocflError {
+    fn from(e: walkdir::Error) -> Self {
         RocflError::Wrapped(Box::new(e))
     }
 }
