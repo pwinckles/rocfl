@@ -305,11 +305,11 @@ impl OcflRepo {
     /// If `force` is `false` and the copy operation attempts to write a file to a logical
     /// path where there is already a file, then the new file will **not** be copied.
     pub fn copy_files_external<P: AsRef<Path>>(&self,
-                      object_id: &str,
-                      src: &[P],
-                      dst: &str,
-                      recursive: bool,
-                      force: bool) -> Result<()> {
+                                               object_id: &str,
+                                               src: &[P],
+                                               dst: &str,
+                                               recursive: bool,
+                                               force: bool) -> Result<()> {
         if src.is_empty() {
             return Err(RocflError::IllegalArgument("Must provide at least one source".to_string()));
         }
@@ -330,22 +330,30 @@ impl OcflRepo {
             Err(e) => return Err(e),
         };
 
+        let dst_path: InventoryPath = dst.try_into()?;
+
         for path in src.iter() {
             let path = path.as_ref();
 
             if path.is_file() {
                 // TODO need to continue on error ?
-                self.copy_file(&path, path.parent().unwrap(),
-                               &dst, src.len() > 1,
-                               force, &mut inventory)?;
+                let parent = path.parent().unwrap_or_else(|| &Path::new(""));
+                let logical_path = logical_path_for_file(&path, parent, &dst,
+                                                         src.len() > 1, false,
+                                                         &inventory.head_version())?;
+
+                self.copy_file(&path, logical_path, force, &mut inventory)?;
             } else if recursive {
+                let dst_dir_exists = inventory.head_version().is_dir(&dst_path);
+
                 for file in WalkDir::new(&path).into_iter() {
                     let file = file?;
                     if file.path().is_file() {
+                        let logical_path = logical_path_for_file(&file.path(), &path, &dst,
+                                                                 true, dst_dir_exists,
+                                                                 &inventory.head_version())?;
                         // TODO need to continue on error ?
-                        self.copy_file(file.path(), &path,
-                                       &dst, true,
-                                       force, &mut inventory)?;
+                        self.copy_file(file.path(), logical_path, force, &mut inventory)?;
                     }
                 }
             } else {
@@ -360,41 +368,13 @@ impl OcflRepo {
         Ok(())
     }
 
-    /// Copies files from inside the OCFL repository into the specified OCFL object.
-    ///
-    /// If `dst_object_id` is not specified, then the files are copied within the same OCFL
-    /// object. If it is specified, then the files are copied between OCFL objects.
-    ///
-    /// The `src` parameter may be a glob pattern. `glob_literal_separator` controls whether
-    /// wildcards match `/`.
-    ///
-    /// If `force` is `false` and the copy operation attempts to write a file to a logical
-    /// path where there is already a file, then the new file will **not** be copied.
-    pub fn copy_files_internal(&self,
-                      src_obj_id: &str,
-                      src: &[&str],
-                      dst_obj_id: Option<&str>,
-                      dst: &InventoryPath,
-                      glob_literal_separator: bool,
-                      force: bool) -> Result<()> {
-        // TODO leading slashes should be removed
-        Ok(())
-    }
-
-    fn copy_file<F,B>(&self,
-                      file: F,
-                      base: B,
-                      dst: &str,
-                      many: bool,
-                      force: bool,
-                      inventory: &mut Inventory) -> Result<()>
-        where
-            F: AsRef<Path>,
-            B: AsRef<Path>,
-    {
+    fn copy_file(&self,
+                 file: impl AsRef<Path>,
+                 logical_path: InventoryPath,
+                 force: bool,
+                 inventory: &mut Inventory) -> Result<()> {
         let version = inventory.head_version();
         let mut reader = inventory.digest_algorithm.reader(File::open(&file)?)?;
-        let logical_path = logical_path_for_file(&file, base, dst, many, version)?;
 
         if version.is_file(&logical_path) {
             if force {
@@ -488,17 +468,26 @@ struct OcflLayout {
 
 /// Creates a logical path for a source file based on its destination.
 fn logical_path_for_file<F, B>(file: F,
-                         base: B,
-                         dst: &str,
-                         src_is_many: bool,
-                         version: &Version) -> Result<InventoryPath>
+                               base: B,
+                               dst: &str,
+                               src_is_many: bool,
+                               dst_dir_exists: bool,
+                               version: &Version) -> Result<InventoryPath>
     where
         F: AsRef<Path>,
         B: AsRef<Path>,
 {
-    let logical_path = if src_is_many || dst.ends_with('/') {
-        // When there are multiple source files, then the destination must be a directory
-        // OR there's a single source and the destination ends with a '/', so interpret it as a dir
+    let logical_path = if src_is_many {
+        if dst_dir_exists {
+            // When multiple src and dst is existing dir, then copy into dir; x -> y/x
+            let parent = base.as_ref().parent().unwrap_or_else(|| &Path::new(""));
+            logical_path_in_dst_dir(file, parent, dst)?
+        } else {
+            // When multiple src and dst not exists, then copy to dir; x -> y
+            logical_path_in_dst_dir(file, base, dst)?
+        }
+    } else if !src_is_many && dst.ends_with('/') {
+        // When there's a single source and the destination ends with `/`, then it must be a dir
         logical_path_in_dst_dir(file, base, dst)?
     } else {
         let dst_path: InventoryPath = dst.try_into()?;

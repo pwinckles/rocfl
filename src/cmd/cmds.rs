@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::io;
 
 use log::info;
@@ -7,7 +8,6 @@ use crate::cmd::opts::{Cat, Copy, DigestAlgorithm as OptAlgorithm, New};
 use crate::cmd::opts::{Init, Layout, RocflArgs, Storage};
 use crate::ocfl::{DigestAlgorithm, OcflRepo, Result};
 use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
-use std::convert::TryInto;
 
 impl Cmd for Cat {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
@@ -50,7 +50,7 @@ impl Cmd for Init {
 }
 
 impl Cmd for New {
-    fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
+    fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
         repo.create_object(&self.object_id,
                            algorithm(self.digest_algorithm),
                            &self.content_directory,
@@ -75,8 +75,6 @@ impl Cmd for Copy {
             // internal copy
             // TODO
         }
-
-        // TODO output? maybe info logging internally
 
         Ok(())
     }

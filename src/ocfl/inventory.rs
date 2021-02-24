@@ -389,6 +389,8 @@ impl Version {
                     error!("{}", e)
                 }
             }
+            // Add the root path
+            dirs.insert("/".try_into().unwrap());
             dirs
         })
     }
