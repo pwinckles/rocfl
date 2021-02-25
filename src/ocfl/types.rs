@@ -94,19 +94,14 @@ pub struct ObjectVersionDetails {
 
 /// Represents a change to a file
 #[derive(Debug, Eq, PartialEq)]
-pub struct Diff {
-    /// The type of change
-    pub diff_type: DiffType,
-    /// The affected logical path
-    pub path: Rc<InventoryPath>,
-}
-
-/// Represents a type of change
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum DiffType {
-    Added,
-    Modified,
-    Deleted,
+pub enum Diff {
+    Added(Rc<InventoryPath>),
+    Modified(Rc<InventoryPath>),
+    Deleted(Rc<InventoryPath>),
+    Renamed {
+        original: Vec<Rc<InventoryPath>>,
+        renamed: Vec<Rc<InventoryPath>>,
+    },
 }
 
 impl VersionNum {
@@ -467,22 +462,15 @@ impl ObjectVersionDetails {
 }
 
 impl Diff {
-    pub fn added(path: Rc<InventoryPath>) -> Self {
-        Self {
-            diff_type: DiffType::Added,
-            path
-        }
-    }
-    pub fn modified(path: Rc<InventoryPath>) -> Self {
-        Self {
-            diff_type: DiffType::Modified,
-            path
-        }
-    }
-    pub fn deleted(path: Rc<InventoryPath>) -> Self {
-        Self {
-            diff_type: DiffType::Deleted,
-            path
+    /// This method returns the path associated with the diff. If there are multiple paths,
+    /// it is the first path on the left hand side.
+    pub fn path(&self) -> &Rc<InventoryPath> {
+        match self {
+            Diff::Added(path) => path,
+            Diff::Modified(path) => path,
+            Diff::Deleted(path) => path,
+            Diff::Renamed { original, ..} =>
+                original.first().expect("At least one renamed path should have existed"),
         }
     }
 }

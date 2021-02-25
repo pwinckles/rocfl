@@ -5,7 +5,7 @@ use std::rc::Rc;
 use chrono::DateTime;
 use maplit::hashmap;
 
-use rocfl::ocfl::{Diff, DiffType, DigestAlgorithm, FileDetails, InventoryPath, ObjectVersion, ObjectVersionDetails, OcflRepo, Result, VersionDetails, VersionNum};
+use rocfl::ocfl::{DigestAlgorithm, FileDetails, InventoryPath, ObjectVersion, ObjectVersionDetails, OcflRepo, Result, VersionDetails, VersionNum, Diff};
 
 #[test]
 fn list_all_objects() -> Result<()> {
@@ -341,14 +341,8 @@ fn diff_when_left_and_right_specified() -> Result<()> {
 
     assert_eq!(2, diff.len());
 
-    assert_eq!(diff.remove(0), Diff {
-        diff_type: DiffType::Added,
-        path: path_rc("dir1/file3")
-    });
-    assert_eq!(diff.remove(0), Diff {
-        diff_type: DiffType::Deleted,
-        path: path_rc("file1")
-    });
+    assert_eq!(diff.remove(0), Diff::Added(path_rc("dir1/file3")));
+    assert_eq!(diff.remove(0), Diff::Deleted(path_rc("file1")));
 
     Ok(())
 }
@@ -364,14 +358,8 @@ fn diff_with_previous_when_left_not_specified() -> Result<()> {
 
     assert_eq!(2, diff.len());
 
-    assert_eq!(diff.remove(0), Diff {
-        diff_type: DiffType::Modified,
-        path: path_rc("dir1/file3")
-    });
-    assert_eq!(diff.remove(0), Diff {
-        diff_type: DiffType::Deleted,
-        path: path_rc("dir3/file1")
-    });
+    assert_eq!(diff.remove(0), Diff::Modified(path_rc("dir1/file3")));
+    assert_eq!(diff.remove(0), Diff::Deleted(path_rc("dir3/file1")));
 
     Ok(())
 }
@@ -387,14 +375,8 @@ fn diff_first_version_all_adds() -> Result<()> {
 
     assert_eq!(2, diff.len());
 
-    assert_eq!(diff.remove(0), Diff {
-        diff_type: DiffType::Added,
-        path: path_rc("dir1/dir2/file2")
-    });
-    assert_eq!(diff.remove(0), Diff {
-        diff_type: DiffType::Added,
-        path: path_rc("file1")
-    });
+    assert_eq!(diff.remove(0), Diff::Added(path_rc("dir1/dir2/file2")));
+    assert_eq!(diff.remove(0), Diff::Added(path_rc("file1")));
 
     Ok(())
 }
@@ -411,6 +393,8 @@ fn diff_same_version_no_diff() -> Result<()> {
 
     Ok(())
 }
+
+// TODO rename test
 
 #[test]
 #[should_panic(expected = "Not found: Object o6")]
@@ -504,7 +488,7 @@ fn sort_obj_details(objects: &mut Vec<ObjectVersionDetails>) {
 
 fn sort_diffs(diffs: &mut Vec<Diff>) {
     diffs.sort_unstable_by(|a, b| {
-        a.path.cmp(&b.path)
+        a.path().cmp(&b.path())
     })
 }
 
