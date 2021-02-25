@@ -4,12 +4,12 @@ use globset::GlobBuilder;
 
 use crate::cmd::{Cmd, DATE_FORMAT, GlobalArgs};
 use crate::cmd::opts::*;
-use crate::cmd::opts::List;
+use crate::cmd::opts::ListCmd;
 use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
 use crate::ocfl::{FileDetails, ObjectVersionDetails, OcflRepo, Result};
 
-impl Cmd for List {
+impl Cmd for ListCmd {
     fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         if self.objects || self.object_id.is_none() {
             self.list_objects(repo, args)
@@ -19,7 +19,7 @@ impl Cmd for List {
     }
 }
 
-impl List {
+impl ListCmd {
     fn list_objects(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         let iter = repo.list_objects(self.object_id.as_deref())?;
 

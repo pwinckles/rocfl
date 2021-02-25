@@ -110,6 +110,7 @@ impl FsOcflStore {
 
         fs::create_dir_all(&storage_path)?;
 
+        // TODO should we fail if already exists?
         writeln!(File::create(storage_path.join(OBJECT_NAMASTE_FILE))?, "{}", OCFL_OBJECT_VERSION)?;
         serde_json::to_writer(File::create(storage_path.join(INVENTORY_FILE))?, &inventory)?;
 
@@ -525,6 +526,7 @@ fn init_new_repo<P: AsRef<Path>>(root: P, layout: &StorageLayout) -> Result<()> 
 
     fs::create_dir_all(&root)?;
 
+    // TODO should we fail if already exists?
     writeln!(File::create(root.join(REPO_NAMASTE_FILE))?, "{}", OCFL_VERSION)?;
 
     let ocfl_spec = include_str!("../../resources/main/specs/ocfl_1.0.txt");

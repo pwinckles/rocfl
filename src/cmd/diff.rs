@@ -1,21 +1,23 @@
 use core::fmt;
 use std::cmp::Ordering;
+use std::convert::TryInto;
 use std::fmt::Formatter;
 
+use once_cell::sync::Lazy;
+
 use crate::cmd::{Cmd, DATE_FORMAT, GlobalArgs, println};
-use crate::cmd::opts::{Diff, Log, Show};
+use crate::cmd::opts::{DiffCmd, LogCmd, ShowCmd, StatusCmd};
 use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
-use crate::ocfl::{Diff as VersionDiff, DiffType, OcflRepo, VersionDetails, Result};
-use std::convert::TryInto;
-use once_cell::sync::Lazy;
+use crate::ocfl::{Diff, OcflRepo, Result, VersionDetails};
 
 static DEFAULT_USER: Lazy<String> = Lazy::new(|| "NA".to_string());
 static ADDED: Lazy<String> = Lazy::new(|| "A".to_string());
 static MODIFIED: Lazy<String> = Lazy::new(|| "M".to_string());
 static DELETED: Lazy<String> = Lazy::new(|| "D".to_string());
+static RENAMED: Lazy<String> = Lazy::new(|| "R".to_string());
 
-impl Cmd for Log {
+impl Cmd for LogCmd {
     fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         let mut versions = match &self.path {
             Some(path) => repo.list_file_versions(&self.object_id, &path.try_into()?)?,
@@ -32,7 +34,7 @@ impl Cmd for Log {
     }
 }
 
-impl Log {
+impl LogCmd {
     fn print_versions(&self, versions: &[VersionDetails], args: GlobalArgs) -> Result<()> {
         if self.compact {
             let mut table = self.version_table(args);
@@ -67,7 +69,7 @@ impl Log {
     }
 }
 
-impl Cmd for Show {
+impl Cmd for ShowCmd {
     fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         let object = repo.get_object_details(&self.object_id, self.version)?;
 
@@ -92,7 +94,7 @@ impl Cmd for Show {
     }
 }
 
-impl Cmd for Diff {
+impl Cmd for DiffCmd {
     fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         if self.left == self.right {
             return Ok(());
@@ -114,13 +116,25 @@ impl Cmd for Diff {
     }
 }
 
+impl Cmd for StatusCmd {
+    fn exec(&self, _repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
+        if let Some(_object_id) = &self.object_id {
+            // TODO diff the staged changes
+        } else {
+            // TODO list all staged objects
+        }
+
+        Ok(())
+    }
+}
+
 struct FormatVersion<'a> {
     details: &'a VersionDetails,
     enable_styling: bool,
 }
 
 struct DiffLine {
-    diff: VersionDiff,
+    diff: Diff,
     enable_styling: bool,
 }
 
@@ -154,7 +168,7 @@ impl fmt::Display for FormatVersion<'_> {
 }
 
 impl DiffLine {
-    fn new(diff: VersionDiff, enable_styling: bool) -> Self {
+    fn new(diff: Diff, enable_styling: bool) -> Self {
         Self {
             diff,
             enable_styling,
@@ -164,10 +178,11 @@ impl DiffLine {
 
 impl fmt::Display for DiffLine {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let (letter, style) = match self.diff.diff_type {
-            DiffType::Added => (&*ADDED, &*style::GREEN),
-            DiffType::Modified => (&*MODIFIED, &*style::CYAN),
-            DiffType::Deleted => (&*DELETED, &*style::RED),
+        let (letter, style) = match &self.diff {
+            Diff::Added(_) => (&*ADDED, &*style::GREEN),
+            Diff::Modified(_) => (&*MODIFIED, &*style::CYAN),
+            Diff::Deleted(_) => (&*DELETED, &*style::RED),
+            Diff::Renamed{ .. } => (&*RENAMED, &*style::CYAN),
         };
 
         let style = if self.enable_styling {
@@ -176,13 +191,24 @@ impl fmt::Display for DiffLine {
             &*style::DEFAULT
         };
 
-        write!(f, "{}\t{}", style.paint(letter), self.diff.path)
+        match &self.diff {
+            Diff::Renamed {original, renamed} => {
+                write!(f, "{}\t{} -> {}",
+                       style.paint(letter),
+                       original.iter().map(|e| e.as_ref().as_ref()).collect::<Vec<&str>>().join(", "),
+                       renamed.iter().map(|e| e.as_ref().as_ref()).collect::<Vec<&str>>().join(", "),
+                )
+            }
+            Diff::Added(path) => write!(f, "{}\t{}", style.paint(letter), path),
+            Diff::Modified(path) => write!(f, "{}\t{}", style.paint(letter), path),
+            Diff::Deleted(path) => write!(f, "{}\t{}", style.paint(letter), path),
+        }
     }
 }
 
 impl PartialEq for DiffLine {
     fn eq(&self, other: &Self) -> bool {
-        self.diff.path == other.diff.path
+        self.diff.path() == other.diff.path()
     }
 }
 
@@ -196,7 +222,7 @@ impl PartialOrd for DiffLine {
 
 impl Ord for DiffLine {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.diff.path.cmp(&other.diff.path)
+        self.diff.path().cmp(&other.diff.path())
     }
 }
 

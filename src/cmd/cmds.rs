@@ -4,12 +4,12 @@ use std::io;
 use log::info;
 
 use crate::cmd::{Cmd, GlobalArgs, println};
-use crate::cmd::opts::{Cat, Copy, DigestAlgorithm as OptAlgorithm, New};
-use crate::cmd::opts::{Init, Layout, RocflArgs, Storage};
+use crate::cmd::opts::{CatCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, NewCmd};
+use crate::cmd::opts::{InitCmd, Layout, RocflArgs, Storage};
 use crate::ocfl::{DigestAlgorithm, OcflRepo, Result};
 use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
 
-impl Cmd for Cat {
+impl Cmd for CatCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
         repo.get_object_file(&self.object_id,
                              &self.path.as_str().try_into()?,
@@ -18,7 +18,7 @@ impl Cmd for Cat {
     }
 }
 
-pub fn init_repo(cmd: &Init, args: &RocflArgs) -> Result<()> {
+pub fn init_repo(cmd: &InitCmd, args: &RocflArgs) -> Result<()> {
     match args.target_storage() {
         Storage::FileSystem => {
             let _ = OcflRepo::init_fs_repo(&args.root, create_layout(cmd.layout)?)?;
@@ -43,13 +43,13 @@ fn create_layout(layout: Layout) -> Result<StorageLayout> {
 }
 
 /// This is needed to keep enum_dispatch happy
-impl Cmd for Init {
+impl Cmd for InitCmd {
     fn exec(&self, _repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
         unimplemented!()
     }
 }
 
-impl Cmd for New {
+impl Cmd for NewCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
         repo.create_object(&self.object_id,
                            algorithm(self.digest_algorithm),
@@ -62,7 +62,7 @@ impl Cmd for New {
     }
 }
 
-impl Cmd for Copy {
+impl Cmd for CopyCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
         if self.source_object.is_none() {
             // external copy
@@ -73,7 +73,8 @@ impl Cmd for Copy {
                                      self.force)?;
         } else {
             // internal copy
-            // TODO
+            // TODO copy within object
+            // TODO copy between objects
         }
 
         Ok(())
