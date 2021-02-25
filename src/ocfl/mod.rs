@@ -39,6 +39,7 @@ use self::layout::LayoutExtensionName;
 #[cfg(feature = "s3")]
 use self::s3::S3OcflStore;
 pub use self::types::*;
+use std::collections::HashMap;
 
 pub mod error;
 pub mod layout;
@@ -225,27 +226,60 @@ impl OcflRepo {
             }
         };
 
+        // TODO move
+
         let mut diffs = Vec::new();
+        let mut deletes: HashMap<Rc<HexDigest>, Vec<Rc<InventoryPath>>> = HashMap::new();
 
         if let Some(mut left) = left {
             for (path, left_digest) in left.state_into_iter() {
                 match right.remove_file(&path) {
-                    None => diffs.push(Diff::deleted(path)),
+                    None => {
+                        deletes.entry(left_digest)
+                            .or_insert_with(Vec::new)
+                            .push(path);
+                    },
                     Some((_, right_digest)) => {
                         if left_digest.ne(&right_digest) {
-                            diffs.push(Diff::modified(path))
+                            diffs.push(Diff::Modified(path))
                         }
                     }
                 }
             }
 
-            // TODO Renames can be detected if the same digest has both a D and an A
-            for (path, _digest) in right.state_into_iter() {
-                diffs.push(Diff::added(path))
+            let mut renames: HashMap<Rc<HexDigest>, Diff> = HashMap::new();
+
+            for (path, digest) in right.state_into_iter() {
+                if let Some(original) = deletes.remove(&digest) {
+                    let mut renamed = Vec::new();
+                    renamed.push(path);
+                    renames.insert(digest, Diff::Renamed {
+                        original,
+                        renamed,
+                    });
+                } else if let Some(Diff::Renamed { original: _, renamed }) = renames.get_mut(&digest) {
+                     renamed.push(path);
+                } else {
+                    diffs.push(Diff::Added(path));
+                }
+            }
+
+            for (_digest, deletes) in deletes {
+                for delete in deletes {
+                    diffs.push(Diff::Deleted(delete));
+                }
+            }
+
+            for (_digest, mut rename) in renames {
+                if let Diff::Renamed {original, renamed} = &mut rename {
+                    original.sort_unstable();
+                    renamed.sort_unstable();
+                }
+                diffs.push(rename);
             }
         } else {
             for (path, _digest) in right.state_into_iter() {
-                diffs.push(Diff::added(path));
+                diffs.push(Diff::Added(path));
             }
         }
 

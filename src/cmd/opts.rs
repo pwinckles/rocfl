@@ -51,27 +51,29 @@ pub struct RocflArgs {
 #[derive(Debug, StructOpt)]
 pub enum Command {
     #[structopt(name = "ls")]
-    List(List),
+    List(ListCmd),
     #[structopt(name = "log")]
-    Log(Log),
+    Log(LogCmd),
     #[structopt(name = "show")]
-    Show(Show),
+    Show(ShowCmd),
     #[structopt(name = "diff")]
-    Diff(Diff),
+    Diff(DiffCmd),
     #[structopt(name = "cat")]
-    Cat(Cat),
+    Cat(CatCmd),
     #[structopt(name = "init")]
-    Init(Init),
+    Init(InitCmd),
     #[structopt(name = "new")]
-    New(New),
+    New(NewCmd),
     #[structopt(name = "cp")]
-    Copy(Copy),
+    Copy(CopyCmd),
+    #[structopt(name = "status")]
+    Status(StatusCmd),
 }
 
 /// Lists objects or files within objects.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
-pub struct List {
+pub struct ListCmd {
     /// Enables long output format: Version, Updated, Name (Object ID or Logical Path)
     #[structopt(short, long)]
     pub long: bool,
@@ -128,7 +130,7 @@ pub struct List {
 /// Displays the version history of an object or file.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
-pub struct Log {
+pub struct LogCmd {
     /// Enables compact format
     #[structopt(short, long)]
     pub compact: bool,
@@ -161,7 +163,7 @@ pub struct Log {
 /// Shows a summary of changes in a version.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
-pub struct Show {
+pub struct ShowCmd {
     /// Suppresses the version details output
     #[structopt(short, long)]
     pub minimal: bool,
@@ -178,7 +180,7 @@ pub struct Show {
 /// Shows the files that changed between two versions
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
-pub struct Diff {
+pub struct DiffCmd {
     /// ID of the object
     #[structopt(name = "OBJ_ID")]
     pub object_id: String,
@@ -195,7 +197,7 @@ pub struct Diff {
 /// Cats the specified file
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
-pub struct Cat {
+pub struct CatCmd {
     /// Specifies the version of the object to retrieve the file from
     #[structopt(short, long, value_name = "VERSION")]
     pub version: Option<VersionNum>,
@@ -212,7 +214,7 @@ pub struct Cat {
 /// Creates a new OCFL repository.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
-pub struct Init {
+pub struct InitCmd {
     /// Specifies the OCFL storage layout extension to use
     #[structopt(short, long,
     value_name = "LAYOUT",
@@ -227,7 +229,7 @@ pub struct Init {
 /// Stages a new OCFL object. The object does not exist until it is committed.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
-pub struct New {
+pub struct NewCmd {
     /// Specifies the digest algorithm to use for the inventory digest
     #[structopt(short, long,
     value_name = "ALGORITHM",
@@ -252,9 +254,8 @@ pub struct New {
 /// Copies files into objects, between objects, and within objects.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
-pub struct Copy {
-    /// Indicates that SRC directories should be copied recursively. This only applies when copying
-    /// from the local filesystem
+pub struct CopyCmd {
+    /// Indicates that SRC directories should be copied recursively.
     #[structopt(short, long)]
     pub recursive: bool,
 
@@ -262,18 +263,18 @@ pub struct Copy {
     #[structopt(short, long)]
     pub force: bool,
 
-    /// Wildcards in glob expressions will not match '/'
-    #[structopt(short, long)]
-    pub glob_literal_separator: bool,
-
     /// The object ID of the object to copy files from. Do not specify this option when copying
     /// files from the local filesystem.
     #[structopt(short, long, value_name = "SRC_OBJ_ID")]
     pub source_object: Option<String>,
 
+    /// The version of the source object to copy files from. The most recent version is used if
+    /// not specified
+    #[structopt(short = "v", long, value_name = "VERSION")]
+    pub source_version: Option<VersionNum>,
+
     /// The object ID of the object to copy files into. This option is required when SRC_OBJ_ID is
-    /// not specified, but optional when it is. If not specified, the files are copied within the
-    /// source object.
+    /// not specified. If not specified, the files are copied within the source object.
     #[structopt(short, long, value_name = "DST_OBJ_ID", required_unless = "source-object")]
     pub destination_object: Option<String>,
 
@@ -282,10 +283,19 @@ pub struct Copy {
     #[structopt(name = "SRC")]
     pub source: Vec<String>,
 
-    // TODO fix this -- it sucks to use
     /// The logical path to copy SRC to. Specify '/' to copy into object's root.
     #[structopt(name = "DST", last = true)]
     pub destination: String,
+}
+
+/// Displays a summary of staged objects or staged changes within an object
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+pub struct StatusCmd {
+    /// The ID of the object to display staged changes for. If not provided, all objects with
+    /// changes are listed.
+    #[structopt(name = "OBJ_ID")]
+    pub object_id: Option<String>,
 }
 
 #[derive(Debug)]
