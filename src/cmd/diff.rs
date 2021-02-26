@@ -9,7 +9,7 @@ use crate::cmd::{Cmd, DATE_FORMAT, GlobalArgs, println};
 use crate::cmd::opts::{DiffCmd, LogCmd, ShowCmd, StatusCmd};
 use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
-use crate::ocfl::{Diff, OcflRepo, Result, VersionDetails};
+use crate::ocfl::{Diff, OcflRepo, Result, VersionDetails, ObjectVersionDetails};
 
 static DEFAULT_USER: Lazy<String> = Lazy::new(|| "NA".to_string());
 static ADDED: Lazy<String> = Lazy::new(|| "A".to_string());
@@ -117,11 +117,33 @@ impl Cmd for DiffCmd {
 }
 
 impl Cmd for StatusCmd {
-    fn exec(&self, _repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
+    fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         if let Some(_object_id) = &self.object_id {
             // TODO diff the staged changes
         } else {
-            // TODO list all staged objects
+            let iter = repo.list_staged_objects()?;
+
+            let mut objects: Vec<ObjectVersionDetails> = iter.collect();
+
+            if objects.is_empty() {
+                println("No objects with staged changes found.")?;
+            } else {
+                // TODO add ls sort options?
+                objects.sort_unstable_by(|a, b| {
+                    natord::compare(&a.id, &b.id)
+                });
+
+                let mut columns = Vec::new();
+                columns.push(Column::new(ColumnId::ObjectId, "Object ID", Alignment::Left));
+                // TODO add ls -l columns?
+                columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
+                columns.push(Column::new(ColumnId::Created, "Updated", Alignment::Left));
+                // TODO add header flag?
+                let mut table = TableView::new(columns, " ", true, !args.no_styles);
+
+                objects.iter().for_each(|object| table.add_row(object));
+                table.write_stdio()?;
+            }
         }
 
         Ok(())

@@ -110,6 +110,16 @@ impl OcflRepo {
         })))
     }
 
+    /// Returns a list of objects that have staged changes
+    pub fn list_staged_objects<'a>(&'a self)
+                            -> Result<Box<dyn Iterator<Item=ObjectVersionDetails> + 'a>> {
+        let inv_iter = self.get_staging()?.iter_inventories(None)?;
+
+        Ok(Box::new(InventoryAdapterIter::new(inv_iter, |inventory| {
+            ObjectVersionDetails::from_inventory(inventory, None)
+        })))
+    }
+
     /// Returns a view of a version of an object. If a `VersionNum` is not specified,
     /// then the head version of the object is returned.
     ///
