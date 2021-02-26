@@ -10,6 +10,7 @@
 //! ```
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::Debug;
 use std::fs::File;
@@ -39,7 +40,6 @@ use self::layout::LayoutExtensionName;
 #[cfg(feature = "s3")]
 use self::s3::S3OcflStore;
 pub use self::types::*;
-use std::collections::HashMap;
 
 pub mod error;
 pub mod layout;
@@ -213,7 +213,7 @@ impl OcflRepo {
 
         let mut inventory = self.store.get_inventory(object_id)?;
 
-        let mut right = inventory.remove_version(right_version)?;
+        let right = inventory.remove_version(right_version)?;
 
         let left = match left_version {
             Some(version) => Some(inventory.remove_version(version)?),
@@ -226,64 +226,7 @@ impl OcflRepo {
             }
         };
 
-        // TODO move
-
-        let mut diffs = Vec::new();
-        let mut deletes: HashMap<Rc<HexDigest>, Vec<Rc<InventoryPath>>> = HashMap::new();
-
-        if let Some(mut left) = left {
-            for (path, left_digest) in left.state_into_iter() {
-                match right.remove_file(&path) {
-                    None => {
-                        deletes.entry(left_digest)
-                            .or_insert_with(Vec::new)
-                            .push(path);
-                    },
-                    Some((_, right_digest)) => {
-                        if left_digest.ne(&right_digest) {
-                            diffs.push(Diff::Modified(path))
-                        }
-                    }
-                }
-            }
-
-            let mut renames: HashMap<Rc<HexDigest>, Diff> = HashMap::new();
-
-            for (path, digest) in right.state_into_iter() {
-                if let Some(original) = deletes.remove(&digest) {
-                    let mut renamed = Vec::new();
-                    renamed.push(path);
-                    renames.insert(digest, Diff::Renamed {
-                        original,
-                        renamed,
-                    });
-                } else if let Some(Diff::Renamed { original: _, renamed }) = renames.get_mut(&digest) {
-                     renamed.push(path);
-                } else {
-                    diffs.push(Diff::Added(path));
-                }
-            }
-
-            for (_digest, deletes) in deletes {
-                for delete in deletes {
-                    diffs.push(Diff::Deleted(delete));
-                }
-            }
-
-            for (_digest, mut rename) in renames {
-                if let Diff::Renamed {original, renamed} = &mut rename {
-                    original.sort_unstable();
-                    renamed.sort_unstable();
-                }
-                diffs.push(rename);
-            }
-        } else {
-            for (path, _digest) in right.state_into_iter() {
-                diffs.push(Diff::Added(path));
-            }
-        }
-
-        Ok(diffs)
+        Ok(diff_versions(left, right))
     }
 
     /// Stages a new OCFL object if there is not an existing object with the same ID. The object
@@ -498,6 +441,67 @@ impl<'a, T> Iterator for InventoryAdapterIter<'a, T> {
 struct OcflLayout {
     extension: LayoutExtensionName,
     description: String
+}
+
+/// Computes a diff of two versions, consuming them in the process
+fn diff_versions(left: Option<Version>, mut right: Version) -> Vec<Diff> {
+    // TODO perhaps a non-consuming version of this should be added to Version?
+    let mut diffs = Vec::new();
+    let mut deletes: HashMap<Rc<HexDigest>, Vec<Rc<InventoryPath>>> = HashMap::new();
+
+    if let Some(mut left) = left {
+        for (path, left_digest) in left.state_into_iter() {
+            match right.remove_file(&path) {
+                None => {
+                    deletes.entry(left_digest)
+                        .or_insert_with(Vec::new)
+                        .push(path);
+                },
+                Some((_, right_digest)) => {
+                    if left_digest.ne(&right_digest) {
+                        diffs.push(Diff::Modified(path))
+                    }
+                }
+            }
+        }
+
+        let mut renames: HashMap<Rc<HexDigest>, Diff> = HashMap::new();
+
+        for (path, digest) in right.state_into_iter() {
+            if let Some(original) = deletes.remove(&digest) {
+                let mut renamed = Vec::new();
+                renamed.push(path);
+                renames.insert(digest, Diff::Renamed {
+                    original,
+                    renamed,
+                });
+            } else if let Some(Diff::Renamed { original: _, renamed }) = renames.get_mut(&digest) {
+                renamed.push(path);
+            } else {
+                diffs.push(Diff::Added(path));
+            }
+        }
+
+        for (_digest, deletes) in deletes {
+            for delete in deletes {
+                diffs.push(Diff::Deleted(delete));
+            }
+        }
+
+        for (_digest, mut rename) in renames {
+            if let Diff::Renamed {original, renamed} = &mut rename {
+                original.sort_unstable();
+                renamed.sort_unstable();
+            }
+            diffs.push(rename);
+        }
+    } else {
+        for (path, _digest) in right.state_into_iter() {
+            diffs.push(Diff::Added(path));
+        }
+    }
+
+    diffs
 }
 
 /// Creates a logical path for a source file based on its destination.
