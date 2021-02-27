@@ -65,6 +65,7 @@ impl OcflRepo {
     /// Creates a new `OcflRepo` instance backed by the local filesystem. `storage_root` is the
     /// location of the OCFL repository to open. The OCFL repository must already exist.
     pub fn new_fs_repo<P: AsRef<Path>>(storage_root: P) -> Result<Self> {
+        // TODO need to warn about unsupported extensions
         Ok(Self {
             root: PathBuf::from(storage_root.as_ref()),
             store: Box::new(FsOcflStore::new(storage_root)?),
@@ -112,6 +113,7 @@ impl OcflRepo {
     /// Returns a list of objects that have staged changes
     pub fn list_staged_objects<'a>(&'a self)
                             -> Result<Box<dyn Iterator<Item=ObjectVersionDetails> + 'a>> {
+        // TODO this should NOT create staging if it does not exist
         let inv_iter = self.get_staging()?.iter_inventories(None)?;
 
         Ok(Box::new(InventoryAdapterIter::new(inv_iter, |inventory| {
@@ -221,6 +223,7 @@ impl OcflRepo {
 
     /// Returns all of the staged changes to the specified object, if there are any.
     pub fn diff_staged(&self, object_id: &str) -> Result<Vec<Diff>> {
+        // TODO this should NOT create staging if it does not exist
         let staging = self.get_staging()?;
 
         match staging.get_inventory(&object_id) {
