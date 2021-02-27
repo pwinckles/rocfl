@@ -251,6 +251,7 @@ pub struct NewCmd {
     pub object_id: String,
 }
 
+// TODO should this also support copying entire objects, or should that be `clone`?
 /// Copies files into objects, between objects, and within objects.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
