@@ -9,7 +9,7 @@ use crate::cmd::{Cmd, DATE_FORMAT, GlobalArgs, println};
 use crate::cmd::opts::{DiffCmd, LogCmd, ShowCmd, StatusCmd};
 use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
-use crate::ocfl::{Diff, OcflRepo, Result, VersionDetails, ObjectVersionDetails};
+use crate::ocfl::{Diff, ObjectVersionDetails, OcflRepo, Result, VersionDetails};
 
 static DEFAULT_USER: Lazy<String> = Lazy::new(|| "NA".to_string());
 static ADDED: Lazy<String> = Lazy::new(|| "A".to_string());
@@ -100,26 +100,22 @@ impl Cmd for DiffCmd {
             return Ok(());
         }
 
-        let raw_diffs = repo.diff(&self.object_id, Some(self.left), self.right)?;
+        let diffs = repo.diff(&self.object_id, Some(self.left), self.right)?;
 
-        let mut diffs: Vec<DiffLine> = raw_diffs.into_iter()
-            .map(|diff| DiffLine::new(diff, !args.no_styles))
-            .collect();
-
-        diffs.sort_unstable();
-
-        for diff in diffs {
-            println(diff)?;
-        }
-
-        Ok(())
+        display_diffs(diffs, &args)
     }
 }
 
 impl Cmd for StatusCmd {
     fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
-        if let Some(_object_id) = &self.object_id {
-            // TODO diff the staged changes
+        if let Some(object_id) = &self.object_id {
+            let diffs = repo.diff_staged(object_id)?;
+
+            if diffs.is_empty() {
+                println("No staged changes found.")?;
+            } else {
+                display_diffs(diffs, &args)?;
+            }
         } else {
             let iter = repo.list_staged_objects()?;
 
@@ -148,6 +144,20 @@ impl Cmd for StatusCmd {
 
         Ok(())
     }
+}
+
+fn display_diffs(diffs: Vec<Diff>, args: &GlobalArgs) -> Result<()> {
+    let mut diffs: Vec<DiffLine> = diffs.into_iter()
+        .map(|diff| DiffLine::new(diff, !args.no_styles))
+        .collect();
+
+    diffs.sort_unstable();
+
+    for diff in diffs {
+        println(diff)?;
+    }
+
+    Ok(())
 }
 
 struct FormatVersion<'a> {
