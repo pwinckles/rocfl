@@ -9,6 +9,8 @@ use structopt::StructOpt;
 
 use crate::ocfl::VersionNum;
 
+// TODO review all of these docs so that the language agrees
+
 #[derive(Debug, StructOpt)]
 #[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
 #[structopt(setting(ColorAuto), setting(ColoredHelp))]
@@ -68,6 +70,8 @@ pub enum Command {
     Copy(CopyCmd),
     #[structopt(name = "status")]
     Status(StatusCmd),
+    #[structopt(name = "commit")]
+    Commit(CommitCmd),
 }
 
 /// Lists objects or files within objects.
@@ -251,7 +255,6 @@ pub struct NewCmd {
     pub object_id: String,
 }
 
-// TODO should this also support copying entire objects, or should that be `clone`?
 /// Copies files into objects, between objects, and within objects.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
@@ -297,6 +300,29 @@ pub struct StatusCmd {
     /// changes are listed.
     #[structopt(name = "OBJ_ID")]
     pub object_id: Option<String>,
+}
+
+/// Commits all of an objects staged changes to a new OCFL version
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+pub struct CommitCmd {
+    /// The name of the user to attribute the changes to
+    #[structopt(short = "n", long, value_name = "NAME")]
+    pub user_name: Option<String>,
+
+    /// The address of the user to attribute the changes to
+    #[structopt(short = "a", long, value_name = "ADDRESS", requires = "user-name")]
+    pub user_address: Option<String>,
+
+    /// A message describing the changes
+    #[structopt(short, long, value_name = "MESSAGE")]
+    pub message: Option<String>,
+
+    // TODO allow setting the `created` timestamp?
+
+    /// The ID of the object to commit changes for
+    #[structopt(name = "OBJ_ID")]
+    pub object_id: String,
 }
 
 #[derive(Debug)]

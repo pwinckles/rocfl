@@ -21,6 +21,7 @@ use crate::ocfl::inventory::Inventory;
 use crate::ocfl::layout::StorageLayout;
 
 use super::OcflStore;
+use std::path::Path;
 
 static EXTENSIONS_DIR_SUFFIX: Lazy<String> = Lazy::new(|| format!("/{}", EXTENSIONS_DIR));
 
@@ -175,6 +176,18 @@ impl OcflStore for S3OcflStore {
         let storage_path = join(&inventory.object_root, content_path.as_ref().as_ref());
 
         self.s3_client.stream_object(&storage_path, sink)
+    }
+
+    fn write_new_object(&self,
+                        _inventory: &Inventory,
+                        _object_path: &Path) -> Result<(), RocflError> {
+        unimplemented!()
+    }
+
+    fn write_new_version(&self,
+                         _inventory: &Inventory,
+                         _version_path: &Path) -> Result<(), RocflError> {
+        unimplemented!()
     }
 }
 
