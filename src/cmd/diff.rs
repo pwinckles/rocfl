@@ -136,7 +136,7 @@ impl Cmd for StatusCmd {
 
 fn display_diffs(diffs: Vec<Diff>, args: &GlobalArgs) -> Result<()> {
     let mut diffs: Vec<DiffLine> = diffs.into_iter()
-        .map(|diff| DiffLine::new(diff))
+        .map(DiffLine::new)
         .collect();
 
     diffs.sort_unstable();
