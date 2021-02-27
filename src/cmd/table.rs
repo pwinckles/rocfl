@@ -6,6 +6,7 @@ use ansi_term::Style;
 use unicode_width::UnicodeWidthStr;
 
 use crate::cmd::style;
+use std::fmt::{self, Display, Formatter};
 
 pub trait AsRow<'a> {
     fn as_row(&'a self, columns: &[Column]) -> Row<'a>;
@@ -22,6 +23,7 @@ pub enum ColumnId {
     Author,
     Address,
     Message,
+    Operation,
 }
 
 #[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
@@ -30,7 +32,12 @@ pub enum Alignment {
     Right,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum Separator {
+    TAB,
+    SPACE,
+}
+
 pub struct Column {
     pub id: ColumnId,
     heading: String,
@@ -42,10 +49,8 @@ pub struct Row<'a> {
     cells: Vec<TextCell<'a>>,
 }
 
-#[derive(Debug)]
 pub struct TextCell<'a> {
-    value_owned: Option<String>,
-    value_ref: Option<&'a str>,
+    value: Box<dyn AsRef<str> + 'a>,
     width: usize,
     style: &'static Style,
 }
@@ -54,20 +59,20 @@ pub struct TableView<'a> {
     display_header: bool,
     columns: Vec<Column>,
     rows: Vec<Row<'a>>,
-    separator: String,
+    separator: Separator,
     enable_styling: bool,
 }
 
 impl<'a> TableView<'a> {
     pub fn new(columns: Vec<Column>,
-               separator: &str,
+               separator: Separator,
                display_header: bool,
                enable_styling: bool) -> Self {
         let mut table = Self {
             display_header,
             columns,
             rows: Vec::new(),
-            separator: separator.to_owned(),
+            separator,
             enable_styling,
         };
 
@@ -105,7 +110,7 @@ impl<'a> TableView<'a> {
         }
 
         for row in self.rows.iter() {
-            row.write(writer, &self.columns, &self.separator, self.enable_styling)?;
+            row.write(writer, &self.columns, self.separator, self.enable_styling)?;
         }
 
         Ok(())
@@ -152,7 +157,7 @@ impl Column {
     }
 
     fn heading_cell(&self) -> TextCell {
-        let mut cell = TextCell::new_ref(&self.heading);
+        let mut cell = TextCell::new(&self.heading);
         cell.style = &*style::UNDERLINE;
         cell
     }
@@ -168,7 +173,7 @@ impl<'a> Row<'a> {
     fn write(&self,
              writer: &mut impl Write,
              columns: &[Column],
-             separator: &str,
+             separator: Separator,
              enable_styling: bool) -> Result<()> {
         let mut iter = self.cells.iter().zip(columns);
         let mut next = iter.next();
@@ -185,7 +190,7 @@ impl<'a> Row<'a> {
             cell.write(writer, width, column.alignment, enable_styling)?;
 
             if next.is_some() {
-                write!(writer, "{}", &separator)?;
+                write!(writer, "{}", separator)?;
             }
         }
 
@@ -194,26 +199,16 @@ impl<'a> Row<'a> {
 }
 
 impl<'a> TextCell<'a> {
-    pub fn new_owned(value: &str) -> Self {
+    pub fn new(value: impl AsRef<str> + 'a) -> Self {
         Self {
-            width: UnicodeWidthStr::width(value),
-            value_owned: Some(value.to_owned()),
-            value_ref: None,
-            style: &*style::DEFAULT,
-        }
-    }
-
-    pub fn new_ref(value: &'a str) -> Self {
-        Self {
-            width: UnicodeWidthStr::width(value),
-            value_owned: None,
-            value_ref: Some(value),
+            width: UnicodeWidthStr::width(value.as_ref()),
+            value: Box::new(value),
             style: &*style::DEFAULT,
         }
     }
 
     pub fn blank() -> Self {
-        Self::new_owned("")
+        Self::new("")
     }
 
     pub fn with_style(mut self, style: &'static Style) -> Self {
@@ -223,14 +218,6 @@ impl<'a> TextCell<'a> {
 
     fn width(&self) -> usize {
         self.width
-    }
-
-    fn value(&self) -> &str {
-        if let Some(owned) = &self.value_owned {
-            owned
-        } else {
-            self.value_ref.unwrap()
-        }
     }
 
     fn write(&self,
@@ -251,9 +238,20 @@ impl<'a> TextCell<'a> {
             &*style::DEFAULT
         };
 
+        let value = self.value.as_ref().as_ref();
+
         match alignment {
-            Alignment::Left => write!(writer, "{}{}", style.paint(self.value()), spaces),
-            Alignment::Right => write!(writer, "{}{}", spaces, style.paint(self.value()))
+            Alignment::Left => write!(writer, "{}{}", style.paint(value), spaces),
+            Alignment::Right => write!(writer, "{}{}", spaces, style.paint(value))
+        }
+    }
+}
+
+impl Display for Separator {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Separator::TAB => write!(f, "\t"),
+            Separator::SPACE => write!(f, " "),
         }
     }
 }
