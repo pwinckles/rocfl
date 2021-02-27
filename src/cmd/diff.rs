@@ -1,21 +1,21 @@
 use core::fmt;
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::fmt::Formatter;
 
-use once_cell::sync::Lazy;
-
 use crate::cmd::{Cmd, DATE_FORMAT, GlobalArgs, println};
 use crate::cmd::opts::{DiffCmd, LogCmd, ShowCmd, StatusCmd};
 use crate::cmd::style;
-use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
+use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, Separator, TableView, TextCell};
 use crate::ocfl::{Diff, ObjectVersionDetails, OcflRepo, Result, VersionDetails};
 
-static DEFAULT_USER: Lazy<String> = Lazy::new(|| "NA".to_string());
-static ADDED: Lazy<String> = Lazy::new(|| "A".to_string());
-static MODIFIED: Lazy<String> = Lazy::new(|| "M".to_string());
-static DELETED: Lazy<String> = Lazy::new(|| "D".to_string());
-static RENAMED: Lazy<String> = Lazy::new(|| "R".to_string());
+const DEFAULT_USER: &str = "NA";
+
+const ADDED: &str = "Added";
+const MODIFIED: &str = "Modified";
+const DELETED: &str = "Deleted";
+const RENAMED: &str = "Renamed";
 
 impl Cmd for LogCmd {
     fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
@@ -57,14 +57,14 @@ impl LogCmd {
         columns.push(Column::new(ColumnId::Created, "Created", Alignment::Left));
         columns.push(Column::new(ColumnId::Message, "Message", Alignment::Left));
 
-        TableView::new(columns, &self.separator(), self.header, !args.no_styles)
+        TableView::new(columns, self.separator(), self.header, !args.no_styles)
     }
 
-    fn separator(&self) -> String {
+    fn separator(&self) -> Separator {
         if self.tsv {
-            "\t".to_string()
+            Separator::TAB
         } else {
-            " ".to_string()
+            Separator::SPACE
         }
     }
 }
@@ -79,18 +79,9 @@ impl Cmd for ShowCmd {
 
         let right = object.version_details.version_num;
 
-        let mut diffs: Vec<DiffLine> = repo.diff(&self.object_id, None, right)?
-            .into_iter()
-            .map(|diff| DiffLine::new(diff, !args.no_styles))
-            .collect();
+        let diffs = repo.diff(&self.object_id, None, right)?;
 
-        diffs.sort_unstable();
-
-        for diff in diffs {
-            println(diff)?;
-        }
-
-        Ok(())
+        display_diffs(diffs, &args)
     }
 }
 
@@ -135,7 +126,7 @@ impl Cmd for StatusCmd {
                 columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
                 columns.push(Column::new(ColumnId::Created, "Updated", Alignment::Left));
                 // TODO add header flag?
-                let mut table = TableView::new(columns, " ", true, !args.no_styles);
+                let mut table = TableView::new(columns, Separator::SPACE, true, !args.no_styles);
 
                 objects.iter().for_each(|object| table.add_row(object));
                 table.write_stdio()?;
@@ -148,14 +139,18 @@ impl Cmd for StatusCmd {
 
 fn display_diffs(diffs: Vec<Diff>, args: &GlobalArgs) -> Result<()> {
     let mut diffs: Vec<DiffLine> = diffs.into_iter()
-        .map(|diff| DiffLine::new(diff, !args.no_styles))
+        .map(|diff| DiffLine::new(diff))
         .collect();
 
     diffs.sort_unstable();
 
-    for diff in diffs {
-        println(diff)?;
-    }
+    let mut columns = Vec::new();
+    columns.push(Column::new(ColumnId::Operation, "Operation", Alignment::Left));
+    columns.push(Column::new(ColumnId::LogicalPath, "Logical Path", Alignment::Left));
+    let mut table = TableView::new(columns, Separator::SPACE, true, !args.no_styles);
+
+    diffs.iter().for_each(|diff| table.add_row(diff));
+    table.write_stdio()?;
 
     Ok(())
 }
@@ -167,7 +162,6 @@ struct FormatVersion<'a> {
 
 struct DiffLine {
     diff: Diff,
-    enable_styling: bool,
 }
 
 impl<'a> FormatVersion<'a> {
@@ -191,8 +185,8 @@ impl fmt::Display for FormatVersion<'_> {
         write!(f, "{}\n{:width$} {} <{}>\n{:width$} {}\n{:width$} {}\n",
                style.paint(version),
                "Author:",
-               self.details.user_name.as_ref().unwrap_or(&(*DEFAULT_USER)),
-               self.details.user_address.as_ref().unwrap_or(&(*DEFAULT_USER)),
+                defaulted_str(&self.details.user_name, DEFAULT_USER),
+                defaulted_str(&self.details.user_address, DEFAULT_USER),
                "Date:", self.details.created.to_rfc2822(),
                "Message:", self.details.message.as_ref().unwrap_or(&"".to_owned()),
                width = 8)
@@ -200,40 +194,51 @@ impl fmt::Display for FormatVersion<'_> {
 }
 
 impl DiffLine {
-    fn new(diff: Diff, enable_styling: bool) -> Self {
+    fn new(diff: Diff) -> Self {
         Self {
             diff,
-            enable_styling,
         }
     }
 }
 
-impl fmt::Display for DiffLine {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let (letter, style) = match &self.diff {
-            Diff::Added(_) => (&*ADDED, &*style::GREEN),
-            Diff::Modified(_) => (&*MODIFIED, &*style::CYAN),
-            Diff::Deleted(_) => (&*DELETED, &*style::RED),
-            Diff::Renamed{ .. } => (&*RENAMED, &*style::CYAN),
-        };
+impl<'a> AsRow<'a> for DiffLine {
+    fn as_row(&'a self, columns: &[Column]) -> Row<'a> {
+        let mut cells = Vec::new();
 
-        let style = if self.enable_styling {
-            style
-        } else {
-            &*style::DEFAULT
-        };
+        for column in columns {
+            let cell = match column.id {
+                ColumnId::Operation => {
+                    match &self.diff {
+                        Diff::Added(_) => TextCell::new(ADDED).with_style(&*style::GREEN),
+                        Diff::Modified(_) => TextCell::new(MODIFIED).with_style(&*style::CYAN),
+                        Diff::Deleted(_) => TextCell::new(DELETED).with_style(&*style::RED),
+                        Diff::Renamed { .. } => TextCell::new(RENAMED).with_style(&*style::CYAN),
+                    }
+                }
+                ColumnId::LogicalPath => TextCell::new(self.path_display()),
+                _ => TextCell::blank()
+            };
 
+            cells.push(cell);
+        }
+
+        Row::new(cells)
+    }
+}
+
+impl DiffLine {
+    fn path_display(&self) -> Cow<str> {
         match &self.diff {
             Diff::Renamed {original, renamed} => {
-                write!(f, "{}\t{} -> {}",
-                       style.paint(letter),
-                       original.iter().map(|e| e.as_ref().as_ref()).collect::<Vec<&str>>().join(", "),
-                       renamed.iter().map(|e| e.as_ref().as_ref()).collect::<Vec<&str>>().join(", "),
-                )
+                Cow::Owned(format!("{} -> {}",
+                        original.iter().map(|e| e.as_ref().as_ref())
+                            .collect::<Vec<&str>>().join(", "),
+                        renamed.iter().map(|e| e.as_ref().as_ref())
+                            .collect::<Vec<&str>>().join(", ")))
             }
-            Diff::Added(path) => write!(f, "{}\t{}", style.paint(letter), path),
-            Diff::Modified(path) => write!(f, "{}\t{}", style.paint(letter), path),
-            Diff::Deleted(path) => write!(f, "{}\t{}", style.paint(letter), path),
+            Diff::Added(path) => path.as_ref().as_ref().into(),
+            Diff::Modified(path) => path.as_ref().as_ref().into(),
+            Diff::Deleted(path) => path.as_ref().as_ref().into(),
         }
     }
 }
@@ -264,18 +269,19 @@ impl<'a> AsRow<'a> for VersionDetails {
 
         for column in columns {
             let cell = match column.id {
-                ColumnId::Version => TextCell::new_owned(&self.version_num.to_string())
+                ColumnId::Version => TextCell::new(self.version_num.to_string())
                     .with_style(&*style::GREEN),
-                ColumnId::Author => TextCell::new_owned(
-                    self.user_name.as_ref().unwrap_or(&*DEFAULT_USER))
+                ColumnId::Author => TextCell::new(defaulted_str(&self.user_name, DEFAULT_USER))
                     .with_style(&*style::BOLD),
-                ColumnId::Address =>TextCell::new_owned(
-                    self.user_address.as_ref().unwrap_or(&*DEFAULT_USER)),
-                ColumnId::Created => TextCell::new_owned(
-                    &self.created.format(DATE_FORMAT).to_string())
+                ColumnId::Address => TextCell::new(defaulted_str(&self.user_address, DEFAULT_USER)),
+                ColumnId::Created => TextCell::new(self.created.format(DATE_FORMAT).to_string())
                     .with_style(&*style::YELLOW),
-                ColumnId::Message => TextCell::new_owned(
-                    self.message.as_ref().unwrap_or(&"".to_string())),
+                ColumnId::Message => {
+                    match &self.message {
+                        Some(message) => TextCell::new(message),
+                        None => TextCell::blank(),
+                    }
+                },
                 _ => TextCell::blank()
             };
 
@@ -283,5 +289,12 @@ impl<'a> AsRow<'a> for VersionDetails {
         }
 
         Row::new(cells)
+    }
+}
+
+fn defaulted_str<'a>(value: &'a Option<String>, default: &'a str) -> &'a str {
+    match value {
+        Some(value) => value.as_ref(),
+        None => default
     }
 }

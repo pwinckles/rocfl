@@ -6,7 +6,7 @@ use crate::cmd::{Cmd, DATE_FORMAT, GlobalArgs};
 use crate::cmd::opts::*;
 use crate::cmd::opts::ListCmd;
 use crate::cmd::style;
-use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, TableView, TextCell};
+use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, Separator, TableView, TextCell};
 use crate::ocfl::{FileDetails, ObjectVersionDetails, OcflRepo, Result};
 
 impl Cmd for ListCmd {
@@ -90,7 +90,7 @@ impl ListCmd {
             columns.push(Column::new(ColumnId::PhysicalPath, "Physical Path", Alignment::Left));
         }
 
-        TableView::new(columns, &self.separator(), self.header, !args.no_styles)
+        TableView::new(columns, self.separator(), self.header, !args.no_styles)
     }
 
     fn object_content_table(&self, args: GlobalArgs) -> TableView {
@@ -111,14 +111,14 @@ impl ListCmd {
             columns.push(Column::new(ColumnId::Digest, "Digest", Alignment::Left));
         }
 
-        TableView::new(columns, &self.separator(), self.header, !args.no_styles)
+        TableView::new(columns, self.separator(), self.header, !args.no_styles)
     }
 
-    fn separator(&self) -> String {
+    fn separator(&self) -> Separator {
         if self.tsv {
-            "\t".to_string()
+            Separator::TAB
         } else {
-            " ".to_string()
+            Separator::SPACE
         }
     }
 }
@@ -156,18 +156,18 @@ impl<'a> AsRow<'a> for ContentListing {
 
         for column in columns {
             let cell = match column.id {
-                ColumnId::Version => TextCell::new_owned(
-                    &self.details.last_update.version_num.to_string())
+                ColumnId::Version => TextCell::new(
+                    self.details.last_update.version_num.to_string())
                     .with_style(&*style::GREEN),
-                ColumnId::Created => TextCell::new_owned(
-                    &self.details.last_update.created.format(DATE_FORMAT).to_string())
+                ColumnId::Created => TextCell::new(
+                    self.details.last_update.created.format(DATE_FORMAT).to_string())
                     .with_style(&*style::YELLOW),
-                ColumnId::LogicalPath =>TextCell::new_ref(&self.logical_path)
+                ColumnId::LogicalPath =>TextCell::new(&self.logical_path)
                     .with_style(&*style::BOLD),
-                ColumnId::PhysicalPath => TextCell::new_ref(&self.details.storage_path),
-                ColumnId::Digest => TextCell::new_owned(&format!("{}:{}",
-                                                                 self.details.digest_algorithm.to_string(),
-                                                                 self.details.digest)),
+                ColumnId::PhysicalPath => TextCell::new(&self.details.storage_path),
+                ColumnId::Digest => TextCell::new(format!("{}:{}",
+                                                          self.details.digest_algorithm.to_string(),
+                                                          self.details.digest)),
                 _ => TextCell::blank()
             };
 
@@ -184,15 +184,15 @@ impl<'a> AsRow<'a> for ObjectVersionDetails {
 
         for column in columns {
             let cell = match column.id {
-                ColumnId::Version => TextCell::new_owned(
-                    &self.version_details.version_num.to_string())
+                ColumnId::Version => TextCell::new(
+                    self.version_details.version_num.to_string())
                     .with_style(&*style::GREEN),
-                ColumnId::Created => TextCell::new_owned(
-                    &self.version_details.created.format(DATE_FORMAT).to_string())
+                ColumnId::Created => TextCell::new(
+                    self.version_details.created.format(DATE_FORMAT).to_string())
                     .with_style(&*style::YELLOW),
-                ColumnId::ObjectId =>TextCell::new_ref(&self.id)
+                ColumnId::ObjectId =>TextCell::new(&self.id)
                     .with_style(&*style::BOLD),
-                ColumnId::PhysicalPath => TextCell::new_ref(&self.object_root),
+                ColumnId::PhysicalPath => TextCell::new(&self.object_root),
                 _ => TextCell::blank()
             };
 
