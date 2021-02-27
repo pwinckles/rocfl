@@ -1,6 +1,5 @@
 //! Local filesystem OCFL storage implementation.
 
-use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::{self, File, ReadDir};
@@ -83,8 +82,10 @@ impl FsOcflStore {
         }
     }
 
+    // TODO all of this staging stuff should be moved into a trait
+
     /// Stages an OCFL object if there is not an existing object with the same ID.
-    pub(super) fn stage_object(&self, inventory: &Inventory) -> Result<()> {
+    pub(super) fn stage_object(&self, inventory: &mut Inventory) -> Result<()> {
         match self.get_inventory(&inventory.id) {
             Err(RocflError::NotFound(_)) => (),
             Err(e) => return Err(e),
@@ -98,13 +99,12 @@ impl FsOcflStore {
         info!("Staging OCFL object {} {}", &inventory.id, &inventory.head);
 
         // If it's a new object, the object root path will not be known
-        let object_root: Cow<str> = if inventory.object_root.is_empty() {
-            Cow::Owned(self.require_layout()?.map_object_id(&inventory.id))
-        } else {
-            inventory.object_root.as_str().into()
-        };
+        if inventory.object_root.is_empty() {
+            let object_root = self.require_layout()?.map_object_id(&inventory.id);
+            inventory.object_root = object_root;
+        }
 
-        let storage_path = self.storage_root.join(object_root.as_ref());
+        let storage_path = self.storage_root.join(&inventory.object_root);
 
         // TODO existence?
 
@@ -112,17 +112,15 @@ impl FsOcflStore {
 
         // TODO should we fail if already exists?
         writeln!(File::create(storage_path.join(OBJECT_NAMASTE_FILE))?, "{}", OCFL_OBJECT_VERSION)?;
-        serde_json::to_writer(File::create(storage_path.join(INVENTORY_FILE))?, &inventory)?;
-
-        // TODO write inventory digest?
+        self.stage_inventory(&inventory, false)?;
 
         Ok(())
     }
 
     pub(super) fn stage_file<R: Read>(&self,
-                           inventory: &Inventory,
-                           source: &mut R,
-                           logical_path: &InventoryPath) -> Result<()> {
+                                      inventory: &Inventory,
+                                      source: &mut R,
+                                      logical_path: &InventoryPath) -> Result<()> {
         // TODO any validation that the staged object exist?
 
         let content_path = inventory.new_content_path_head(&logical_path)?;
@@ -137,16 +135,96 @@ impl FsOcflStore {
         Ok(())
     }
 
-    pub(super) fn stage_inventory(&self, inventory: &Inventory) -> Result<()> {
-        // TODO any validation that the staged object exist?
+    /// Deletes staged content files.
+    pub(super) fn rm_staged_files(&self,
+                                  inventory: &Inventory,
+                                  // TODO fix other sigs: Rc<T> -> impl AsRef<T>
+                                  paths: &[impl AsRef<InventoryPath>]) -> Result<()> {
 
-        let storage_path = self.storage_root.join(&inventory.object_root);
+        let object_root = self.storage_root
+            .join(&inventory.object_root);
 
-        serde_json::to_writer(File::create(storage_path.join(INVENTORY_FILE))?, &inventory)?;
-
-        // TODO sidecar?
+        for path in paths.iter() {
+            let full_path = object_root.join(&path.as_ref().as_ref());
+            info!("Deleting duplicate staged file: {}", full_path.to_string_lossy());
+            fs::remove_file(full_path)?;
+        }
 
         Ok(())
+    }
+
+    /// Serializes the inventory to the object's staging directory. If `finalize` is true,
+    /// then the inventory file will additionally be copied into the version directory.
+    pub(super) fn stage_inventory(&self, inventory: &Inventory, finalize: bool) -> Result<()> {
+        // TODO any validation that the staged object exist?
+
+        let object_root = self.storage_root.join(&inventory.object_root);
+        let inventory_path = object_root.join(INVENTORY_FILE);
+        let sidecar_name = format!("{}.{}", INVENTORY_FILE, inventory.digest_algorithm.to_string());
+        let sidecar_path = object_root.join(&sidecar_name);
+
+        let mut inv_writer = inventory.digest_algorithm.writer(File::create(&inventory_path)?)?;
+        serde_json::to_writer(&mut inv_writer, &inventory)?;
+
+        let digest = inv_writer.finalize_hex();
+
+        let mut sidecar_file = File::create(&sidecar_path)?;
+        writeln!(&mut sidecar_file, "{}  {}", digest, INVENTORY_FILE)?;
+
+        if finalize {
+            let version_path = object_root.join(inventory.head.to_string());
+            fs::copy(inventory_path, version_path.join(INVENTORY_FILE))?;
+            fs::copy(sidecar_path, version_path.join(sidecar_name))?;
+        }
+
+        Ok(())
+    }
+
+    /// Returns the given path joined to the path to the staging root
+    pub(super) fn staging_path(&self, path: impl AsRef<Path>) -> impl AsRef<Path> {
+        self.storage_root.join(path)
+    }
+
+    fn get_object_root_path(&self, object_id: &str) -> Option<String> {
+        let mut cache = self.id_path_cache.borrow_mut();
+        match cache.get(object_id) {
+            Some(object_root) => Some(object_root.clone()),
+            None => {
+                match &self.storage_layout {
+                    Some(storage_layout) => {
+                        let object_root = storage_layout.map_object_id(object_id);
+                        cache.insert(object_id.to_string(), object_root.clone());
+                        Some(object_root)
+                    },
+                    None => None
+                }
+            }
+        }
+    }
+
+    fn scan_for_inventory(&self, object_id: &str) -> Result<Inventory> {
+        info!("Storage layout not configured, scanning repository to locate object {}", &object_id);
+
+        let mut iter = InventoryIter::new_id_matching(&self.storage_root, &object_id)?;
+
+        match iter.next() {
+            Some(inventory) => {
+                self.id_path_cache.borrow_mut().insert(object_id.to_string(),
+                                                       inventory.object_root.clone());
+                Ok(inventory)
+            },
+            None => Err(not_found(&object_id, None))
+        }
+    }
+
+    fn get_inventory_by_path(&self, object_id: &str, object_root: &str) -> Result<Inventory> {
+        let object_root = self.storage_root.join(object_root);
+
+        if object_root.exists() {
+            parse_inventory(&object_root, &self.storage_root)
+        } else {
+            Err(not_found(&object_id, None))
+        }
     }
 
     fn require_layout(&self) -> Result<&StorageLayout> {
@@ -162,21 +240,9 @@ impl OcflStore for FsOcflStore {
     /// Returns the most recent inventory version for the specified object, or an a
     /// `RocflError::NotFound` if it does not exist.
     fn get_inventory(&self, object_id: &str) -> Result<Inventory> {
-        let object_root = match self.id_path_cache.borrow().get(object_id) {
-            Some(object_root) => Some(object_root.clone()),
-            None => None
-        };
-
-        match object_root {
-            Some(object_root) => {
-                self.get_inventory_by_path(object_id, &object_root)
-            }
-            None => {
-                let inventory = self.get_inventory_inner(&object_id)?;
-                self.id_path_cache.borrow_mut().insert(object_id.to_string(),
-                                                       inventory.object_root.clone());
-                Ok(inventory)
-            }
+        match self.get_object_root_path(object_id) {
+            Some(object_root) => self.get_inventory_by_path(object_id, &object_root),
+            None => self.scan_for_inventory(&object_id),
         }
     }
 
@@ -210,33 +276,33 @@ impl OcflStore for FsOcflStore {
 
         Ok(())
     }
-}
 
-impl FsOcflStore {
-    fn get_inventory_inner(&self, object_id: &str) -> Result<Inventory> {
-        if let Some(storage_layout) = &self.storage_layout {
-            let object_root = storage_layout.map_object_id(object_id);
-            self.get_inventory_by_path(object_id, &object_root)
-        } else {
-            info!("Storage layout not configured, scanning repository to locate object {}", &object_id);
-
-            let mut iter = InventoryIter::new_id_matching(&self.storage_root, &object_id)?;
-
-            match iter.next() {
-                Some(inventory) => Ok(inventory),
-                None => Err(not_found(&object_id, None))
-            }
-        }
-    }
-
-    fn get_inventory_by_path(&self, object_id: &str, object_root: &str) -> Result<Inventory> {
-        let object_root = self.storage_root.join(object_root);
+    fn write_new_object(&self,
+                        inventory: &Inventory,
+                        object_path: &Path) -> Result<(), RocflError> {
+        let object_root = match self.get_object_root_path(&inventory.id) {
+            Some(object_root) => PathBuf::from(object_root),
+            None => return Err(RocflError::IllegalState(
+                "Objects cannot be created in repositories lacking a defined storage layout.".to_string())),
+        };
 
         if object_root.exists() {
-            parse_inventory(&object_root, &self.storage_root)
-        } else {
-            Err(not_found(&object_id, None))
+            return Err(RocflError::IllegalState(
+                format!("Cannot create object {} because it already exists", inventory.id)));
         }
+
+        info!("Creating new object {}", inventory.id);
+
+        fs::create_dir_all(object_root.parent().unwrap())?;
+        fs::rename(object_path, &object_root)?;
+
+        Ok(())
+    }
+
+    fn write_new_version(&self,
+                         inventory: &Inventory,
+                         version_path: &Path) -> Result<(), RocflError> {
+        unimplemented!()
     }
 }
 

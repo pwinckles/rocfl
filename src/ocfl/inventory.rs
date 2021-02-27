@@ -91,6 +91,11 @@ impl Inventory {
         Ok(())
     }
 
+    /// Returns true if the HEAD version is equal to 1
+    pub fn is_new(&self) -> bool {
+        self.head.number == 1
+    }
+
     /// Returns a reference to the HEAD version
     pub fn head_version(&self) -> &Version {
         // The head version must exist because we look for it when the Inventory is deserialized
@@ -179,6 +184,48 @@ impl Inventory {
         };
 
         Ok(self.get_version(right)?.diff(left))
+    }
+
+    /// Dedups all of the content paths that were added in the most recent version. All of the
+    /// paths that are removed from the manifest are returned.
+    pub fn dedup_head(&mut self) -> Vec<Rc<InventoryPath>> {
+        let mut removed = Vec::new();
+        let prefix = format!("{}/", self.head.to_string());
+
+        let mut matches: HashMap<Rc<HexDigest>, HashSet<Rc<InventoryPath>>> = HashMap::new();
+
+        for (digest, paths) in self.manifest.iter_id_paths() {
+            if paths.len() > 1 {
+                for path in paths {
+                    if path.as_ref().as_ref().starts_with(&prefix) {
+                        matches.entry(digest.clone())
+                            .or_insert_with(HashSet::new)
+                            .insert(path.clone());
+                    }
+                }
+            }
+        }
+
+        for (_digest, paths) in matches {
+            if paths.len() == 1 {
+                // This means the content path is a dup of a file that existed before this version
+                let path = paths.into_iter().next().unwrap();
+                self.manifest.remove_path(&path);
+                removed.push(path);
+            } else {
+                // Otherwise, it is new content duplicated in the current version; remove all
+                // but one of the paths
+                let mut iter = paths.into_iter().peekable();
+                while let Some(path) = iter.next() {
+                    if iter.peek().is_some() {
+                        self.manifest.remove_path(&path);
+                        removed.push(path);
+                    }
+                }
+            }
+        }
+
+        removed
     }
 
     /// Adds a file to the manifest and version state of the HEAD version.
@@ -321,6 +368,18 @@ impl Version {
         }
     }
 
+    pub fn update_meta(&mut self,
+                       name: &Option<String>,
+                       address: &Option<String>,
+                       message: &Option<String>) {
+        self.message = message.clone();
+        self.user = match name {
+            Some(name) => Some(User::new(name.clone(), address.clone())),
+            None => None,
+        };
+        self.created = Local::now();
+    }
+
     /// Returns a consuming iterator for the version's state
     pub fn state_into_iter(&mut self) -> IntoIter {
         self.remove_state().into_iter()
@@ -332,7 +391,8 @@ impl Version {
     }
 
     /// Removes a logical path from the version's state
-    pub fn remove_file(&mut self, path: &InventoryPath) -> Option<(Rc<InventoryPath>, Rc<HexDigest>)> {
+    pub fn remove_file(&mut self, path: &InventoryPath)
+        -> Option<(Rc<InventoryPath>, Rc<HexDigest>)> {
         // must invalidate the virtual dirs
         self.virtual_dirs = OnceCell::default();
         self.state.remove_path(path)
@@ -486,6 +546,15 @@ impl Version {
             dirs.insert("/".try_into().unwrap());
             dirs
         })
+    }
+}
+
+impl User {
+    pub fn new(name: String, address: Option<String>) -> Self {
+        Self {
+            name: Some(name),
+            address,
+        }
     }
 }
 

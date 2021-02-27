@@ -273,13 +273,13 @@ impl OcflRepo {
 
         let version_num = VersionNum::new(1, padding_width);
 
-        let inventory = Inventory::builder(object_id)
+        let mut inventory = Inventory::builder(object_id)
             .with_digest_algorithm(digest_algorithm)
             .with_content_directory(content_dir)
             .with_head(version_num)
             .build()?;
 
-        self.get_staging()?.stage_object(&inventory)
+        self.get_staging()?.stage_object(&mut inventory)
     }
 
     /// Copies files from outside the OCFL repository into the specified OCFL object.
@@ -307,7 +307,7 @@ impl OcflRepo {
             Err(RocflError::NotFound(_)) => {
                 let mut inventory = self.store.get_inventory(&object_id)?;
                 inventory.create_staging_head()?;
-                staging.stage_object(&inventory)?;
+                staging.stage_object(&mut inventory)?;
                 inventory
             },
             Err(e) => return Err(e),
@@ -346,7 +346,45 @@ impl OcflRepo {
         }
 
         inventory.head_version_mut().created = Local::now();
-        staging.stage_inventory(&inventory)?;
+        staging.stage_inventory(&inventory, false)?;
+
+        Ok(())
+    }
+
+    /// Commits all of an object's staged changes
+    pub fn commit(&self,
+                  object_id: &str,
+                  user_name: &Option<String>,
+                  user_address: &Option<String>,
+                  message: &Option<String>) -> Result<()> {
+        let staging = self.get_staging()?;
+
+        let mut inventory = match staging.get_inventory(&object_id) {
+            Ok(inventory) => inventory,
+            Err(RocflError::NotFound(_)) => {
+                // TODO should this be an error?
+                return Err(RocflError::General("No staged changed found for the specified object".to_string()));
+            },
+            Err(e) => return Err(e),
+        };
+
+        let duplicates = inventory.dedup_head();
+
+        inventory.head_version_mut().update_meta(user_name, user_address, message);
+
+        staging.stage_inventory(&inventory, true)?;
+        staging.rm_staged_files(&inventory, &duplicates)?;
+
+        let staging_root = staging.staging_path(&inventory.object_root);
+
+        if inventory.is_new() {
+            self.store.write_new_object(&inventory, &staging_root.as_ref().to_path_buf())?;
+        } else {
+            // TODO install new version
+            // TODO install root inventory
+        }
+
+        // TODO cleanup staging directory tree
 
         Ok(())
     }
@@ -403,6 +441,21 @@ trait OcflStore {
                        path: &InventoryPath,
                        version_num: Option<VersionNum>,
                        sink: &mut dyn Write) -> Result<()>;
+
+    /// Writes a new OCFL object. The contents at `object_path` must be a fully formed OCFL
+    /// object that is able to be moved into place with no additional modifications.
+    ///
+    /// The object must not already exist.
+    fn write_new_object(&self, inventory: &Inventory,
+                        object_path: &Path) -> Result<()>;
+
+    /// Writes a new version to the OCFL object. The contents at `version_path` must be a fully
+    /// formed OCFL version that is able to be moved into place within the object, requiring
+    /// no additional modifications.
+    ///
+    /// The object must already exist, and the new version must not exist.
+    fn write_new_version(&self, inventory: &Inventory,
+                         version_path: &Path) -> Result<()>;
 }
 
 /// An iterator that adapts the output of a delegate `Inventory` iterator into another type.

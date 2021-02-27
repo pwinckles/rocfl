@@ -4,7 +4,7 @@ use std::io;
 use log::info;
 
 use crate::cmd::{Cmd, GlobalArgs, println};
-use crate::cmd::opts::{CatCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, NewCmd};
+use crate::cmd::opts::{CatCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, NewCmd, CommitCmd};
 use crate::cmd::opts::{InitCmd, Layout, RocflArgs, Storage};
 use crate::ocfl::{DigestAlgorithm, OcflRepo, Result};
 use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
@@ -76,6 +76,14 @@ impl Cmd for CopyCmd {
             // TODO copy within object
             // TODO copy between objects
         }
+
+        Ok(())
+    }
+}
+
+impl Cmd for CommitCmd {
+    fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
+        repo.commit(&self.object_id, &self.user_name, &self.user_address, &self.message)?;
 
         Ok(())
     }

@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io;
-use std::io::Read;
+use std::io::{Read, Write};
 
 use blake2::{Blake2b, VarBlake2b};
 use digest::{Digest, DynDigest, Update, VariableOutput};
@@ -51,6 +51,12 @@ pub enum DigestAlgorithm {
 pub struct DigestReader<R: Read> {
     digest: Box<dyn DynDigest>,
     inner: R,
+}
+
+/// Writer wrapper that calculates a digest while writing
+pub struct DigestWriter<W: Write> {
+    digest: Box<dyn DynDigest>,
+    inner: W,
 }
 
 /// A digest encoded as a hex string
@@ -115,16 +121,26 @@ impl DigestAlgorithm {
     /// Wraps the specified reader in a `DigestReader`. Does not support blake2b because of the
     /// DynDigest problem.
     pub fn reader<R: Read>(&self, reader: R) -> Result<DigestReader<R>> {
-        let digest: Box<dyn DynDigest> = match self {
-            DigestAlgorithm::Md5 => Box::new(Md5::new()),
-            DigestAlgorithm::Sha1 => Box::new(Sha1::new()),
-            DigestAlgorithm::Sha256 => Box::new(Sha256::new()),
-            DigestAlgorithm::Sha512 => Box::new(Sha512::new()),
-            DigestAlgorithm::Sha512_256 => Box::new(Sha512Trunc256::new()),
-            _ => return Err(RocflError::General("Blake2b is not supported for streaming digest.".to_string())),
-        };
-
+        let digest = self.new_digest()?;
         Ok(DigestReader::new(digest, reader))
+    }
+
+    /// Wraps the specified reader in a `DigestReader`. Does not support blake2b because of the
+    /// DynDigest problem.
+    pub fn writer<W: Write>(&self, writer: W) -> Result<DigestWriter<W>> {
+        let digest = self.new_digest()?;
+        Ok(DigestWriter::new(digest, writer))
+    }
+
+    fn new_digest(&self) -> Result<Box<dyn DynDigest>> {
+        match self {
+            DigestAlgorithm::Md5 => Ok(Box::new(Md5::new())),
+            DigestAlgorithm::Sha1 => Ok(Box::new(Sha1::new())),
+            DigestAlgorithm::Sha256 => Ok(Box::new(Sha256::new())),
+            DigestAlgorithm::Sha512 => Ok(Box::new(Sha512::new())),
+            DigestAlgorithm::Sha512_256 => Ok(Box::new(Sha512Trunc256::new())),
+            _ => Err(RocflError::General("Blake2b is not supported for streaming digest.".to_string())),
+        }
     }
 }
 
@@ -150,6 +166,35 @@ impl<R: Read> Read for DigestReader<R> {
         }
 
         Ok(result)
+    }
+}
+
+impl<W: Write> DigestWriter<W> {
+    pub fn new(digest: Box<dyn DynDigest>, writer: W) -> Self {
+        Self {
+            digest,
+            inner: writer,
+        }
+    }
+
+    pub fn finalize_hex(self) -> HexDigest {
+        self.digest.finalize().to_vec().into()
+    }
+}
+
+impl<W: Write> Write for DigestWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let result = self.inner.write(buf)?;
+
+        if result > 0 {
+            self.digest.update(&buf[0..result]);
+        }
+
+        Ok(result)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
     }
 }
 
@@ -257,6 +302,24 @@ mod tests {
 
         assert_eq!(input, String::from_utf8(output).unwrap());
         assert_eq!(DigestAlgorithm::Sha512.hash_hex(input.as_bytes()), actual);
+        assert_eq!(expected, actual.to_string());
+
+        Ok(())
+    }
+
+    #[test]
+    fn calculate_digest_while_writing() -> Result<()> {
+        let input = "testing\n".to_string();
+        let output: Vec<u8> = Vec::new();
+
+        let mut writer = DigestAlgorithm::Sha512.writer(output)?;
+
+        io::copy(&mut input.as_bytes(), &mut writer)?;
+
+        let expected = "24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7c\
+        acfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28".to_string();
+        let actual = writer.finalize_hex();
+
         assert_eq!(expected, actual.to_string());
 
         Ok(())
