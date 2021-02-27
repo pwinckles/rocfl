@@ -8,7 +8,7 @@ use log::error;
 use once_cell::unsync::OnceCell;
 use serde::{Deserialize, Serialize};
 
-use crate::ocfl::{InventoryPath, VersionNum};
+use crate::ocfl::{Diff, InventoryPath, VersionNum};
 use crate::ocfl::bimap::{IntoIter, Iter, PathBiMap};
 use crate::ocfl::consts::{DEFAULT_CONTENT_DIR, INVENTORY_TYPE};
 use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
@@ -155,6 +155,30 @@ impl Inventory {
         };
 
         self.content_path_for_digest(digest)
+    }
+
+    /// Returns the diffs of two versions. An error is returned if either of the specified versions
+    /// does not exist. If only one version is specified, then the diff is between the specified
+    /// version and the version before it.
+    pub fn diff_versions(&self, left: Option<VersionNum>, right: VersionNum) -> Result<Vec<Diff>> {
+        if let Some(left) = left {
+            if left == right {
+                return Ok(Vec::new())
+            }
+        }
+
+        let left = match left {
+            Some(left) => Some(self.get_version(left)?),
+            None => {
+                if right.number > 1 {
+                    Some(self.get_version(right.previous().unwrap())?)
+                } else {
+                    None
+                }
+            },
+        };
+
+        Ok(self.get_version(right)?.diff(left))
     }
 
     /// Adds a file to the manifest and version state of the HEAD version.
@@ -359,6 +383,75 @@ impl Version {
             }
             Ok(())
         })
+    }
+
+    /// Computes a diff between the versions. This version is the right-hand version and the
+    /// other version is the left hand version. If the other version is None, then all of
+    /// this version's paths are returned as Adds.
+    pub fn diff(&self, other: Option<&Version>) -> Vec<Diff> {
+        let mut diffs = Vec::new();
+        let mut deletes: HashMap<Rc<HexDigest>, Vec<Rc<InventoryPath>>> = HashMap::new();
+
+        if let Some(left) = other {
+            let mut seen = HashSet::with_capacity(left.state.len());
+
+            for (path, left_digest) in left.state_iter() {
+                match self.lookup_digest(&path) {
+                    None => {
+                        deletes.entry(left_digest.clone())
+                            .or_insert_with(Vec::new)
+                            .push(path.clone());
+                    },
+                    Some(right_digest) => {
+                        seen.insert(path.clone());
+                        if left_digest != right_digest {
+                            diffs.push(Diff::Modified(path.clone()))
+                        }
+                    }
+                }
+            }
+
+            let mut renames: HashMap<Rc<HexDigest>, Diff> = HashMap::new();
+
+            for (path, digest) in self.state_iter() {
+                if seen.contains(path) {
+                    continue;
+                }
+
+                if let Some(original) = deletes.remove(digest) {
+                    let mut renamed = Vec::new();
+                    renamed.push(path.clone());
+                    renames.insert(digest.clone(), Diff::Renamed {
+                        original,
+                        renamed,
+                    });
+                } else if let Some(Diff::Renamed { original: _, renamed }) = renames.get_mut(digest) {
+                    renamed.push(path.clone());
+                } else {
+                    diffs.push(Diff::Added(path.clone()));
+                }
+            }
+
+            for (_digest, deletes) in deletes {
+                for delete in deletes {
+                    diffs.push(Diff::Deleted(delete));
+                }
+            }
+
+            for (_digest, mut rename) in renames {
+                if let Diff::Renamed {original, renamed} = &mut rename {
+                    original.sort_unstable();
+                    renamed.sort_unstable();
+                }
+                diffs.push(rename);
+            }
+        } else {
+            for (path, _digest) in self.state_iter() {
+                diffs.push(Diff::Added(path.clone()));
+            }
+        }
+
+        diffs
     }
 
     /// Adds a new logical path to the version, and updates the virtual directory set, if needed.
