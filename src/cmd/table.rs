@@ -105,7 +105,7 @@ impl<'a> TableView<'a> {
     }
 
     pub fn write(&self, writer: &mut impl Write) -> Result<()> {
-        if self.display_header {
+        if self.display_header && !self.rows.is_empty() {
             self.write_header(writer)?;
         }
 
