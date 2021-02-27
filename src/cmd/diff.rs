@@ -115,17 +115,14 @@ impl Cmd for StatusCmd {
             if objects.is_empty() {
                 println("No objects with staged changes found.")?;
             } else {
-                // TODO add ls sort options?
                 objects.sort_unstable_by(|a, b| {
                     natord::compare(&a.id, &b.id)
                 });
 
                 let mut columns = Vec::new();
                 columns.push(Column::new(ColumnId::ObjectId, "Object ID", Alignment::Left));
-                // TODO add ls -l columns?
                 columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
                 columns.push(Column::new(ColumnId::Created, "Updated", Alignment::Left));
-                // TODO add header flag?
                 let mut table = TableView::new(columns, Separator::SPACE, true, !args.no_styles);
 
                 objects.iter().for_each(|object| table.add_row(object));
