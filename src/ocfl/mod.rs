@@ -219,6 +219,19 @@ impl OcflRepo {
         self.store.get_inventory(object_id)?.diff_versions(left_version, right_version)
     }
 
+    /// Returns all of the staged changes to the specified object, if there are any.
+    pub fn diff_staged(&self, object_id: &str) -> Result<Vec<Diff>> {
+        let staging = self.get_staging()?;
+
+        match staging.get_inventory(&object_id) {
+            Err(RocflError::NotFound(_)) => Ok(Vec::new()),
+            Err(e) => Err(e),
+            Ok(inventory) => {
+                inventory.diff_versions(None, inventory.head)
+            }
+        }
+    }
+
     /// Stages a new OCFL object if there is not an existing object with the same ID. The object
     /// is not inserted into the repository until it is committed.
     pub fn create_object(&self,
