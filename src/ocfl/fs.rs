@@ -175,18 +175,39 @@ impl FsOcflStore {
 
         if finalize {
             let version_path = object_root.join(inventory.head.to_string());
-            fs::copy(inventory_path, version_path.join(INVENTORY_FILE))?;
-            fs::copy(sidecar_path, version_path.join(sidecar_name))?;
+            self.copy_inventory_files(&inventory, &object_root, &version_path)?;
         }
 
         Ok(())
     }
 
-    /// Returns the given path joined to the path to the staging root
-    pub(super) fn staging_path(&self, path: impl AsRef<Path>) -> impl AsRef<Path> {
-        self.storage_root.join(path)
+    /// Returns the path to the object's root staging directory
+    pub(super) fn object_staging_path(&self, inventory: &Inventory) -> impl AsRef<Path> {
+        self.storage_root.join(&inventory.object_root)
     }
 
+    /// Returns the path to the object version staging directory
+    pub(super) fn version_staging_path(&self, inventory: &Inventory) -> impl AsRef<Path> {
+        self.object_staging_path(&inventory).as_ref().join(&inventory.head.to_string())
+    }
+
+    /// This method first attempts to locate the path to the object using the storage layout.
+    /// If it is not able to, then it scans the repository looking for the object.
+    fn lookup_or_find_object_root_path(&self, object_id: &str) -> Result<String> {
+        match self.get_object_root_path(object_id) {
+            Some(path) => Ok(path),
+            None => {
+                match self.scan_for_inventory(object_id) {
+                    Ok(inventory) => Ok(inventory.object_root),
+                    Err(e) => Err(e),
+                }
+            }
+        }
+    }
+
+    /// Returns the storage root relative path to the object by doing a cache look up. If
+    /// the mapping was not found in the cache, then it is computed using the configured
+    /// storage layout. If there is no storage layout, then `None` is returned.
     fn get_object_root_path(&self, object_id: &str) -> Option<String> {
         let mut cache = self.id_path_cache.borrow_mut();
         match cache.get(object_id) {
@@ -227,6 +248,20 @@ impl FsOcflStore {
         } else {
             Err(not_found(&object_id, None))
         }
+    }
+
+    fn copy_inventory_files(&self,
+                            inventory: &Inventory,
+                            from: impl AsRef<Path>,
+                            to: impl AsRef<Path>) -> Result<()> {
+        let from_path = from.as_ref();
+        let to_path = to.as_ref();
+        let sidecar_name = format!("{}.{}", INVENTORY_FILE, inventory.digest_algorithm.to_string());
+
+        fs::copy(from_path.join(INVENTORY_FILE), to_path.join(INVENTORY_FILE))?;
+        fs::copy(from_path.join(&sidecar_name), to_path.join(sidecar_name))?;
+
+        Ok(())
     }
 
     fn require_layout(&self) -> Result<&StorageLayout> {
@@ -281,30 +316,95 @@ impl OcflStore for FsOcflStore {
 
     fn write_new_object(&self,
                         inventory: &Inventory,
-                        object_path: &Path) -> Result<(), RocflError> {
-        let object_root = match self.get_object_root_path(&inventory.id) {
+                        object_path: &Path) -> Result<()> {
+        let destination = match self.get_object_root_path(&inventory.id) {
             Some(object_root) => PathBuf::from(object_root),
             None => return Err(RocflError::IllegalState(
                 "Objects cannot be created in repositories lacking a defined storage layout.".to_string())),
         };
 
-        if object_root.exists() {
+        if destination.exists() {
             return Err(RocflError::IllegalState(
                 format!("Cannot create object {} because it already exists", inventory.id)));
         }
 
         info!("Creating new object {}", inventory.id);
 
-        fs::create_dir_all(object_root.parent().unwrap())?;
-        fs::rename(object_path, &object_root)?;
+        fs::create_dir_all(destination.parent().unwrap())?;
+        fs::rename(object_path, &destination)?;
 
         Ok(())
     }
 
     fn write_new_version(&self,
                          inventory: &Inventory,
-                         version_path: &Path) -> Result<(), RocflError> {
-        unimplemented!()
+                         version_path: &Path) -> Result<()> {
+        if inventory.is_new() {
+            return Err(RocflError::IllegalState(
+                format!("Object {} must be created before adding new versions to it.", inventory.id)));
+        }
+
+        let existing_inventory = self.get_inventory(&inventory.id)?;
+        let version_str = inventory.head.to_string();
+
+        if existing_inventory.head != inventory.head.previous().unwrap() {
+            return Err(RocflError::IllegalState(
+                format!("Cannot create version {} in object {} because the HEAD is at {}",
+                        version_str, inventory.id, existing_inventory.head.to_string())));
+        }
+
+        let object_root = self.storage_root.join(&inventory.object_root);
+        let destination = object_root.join(&version_str);
+
+        if destination.exists() {
+            return Err(RocflError::IllegalState(
+                format!("Cannot create version {} in object {} because the version directory already exists.",
+                        version_str, inventory.id)));
+        }
+
+        info!("Creating {} {}", inventory.id, version_str);
+
+        fs::rename(version_path, &destination)?;
+        if let Err(e) = self.copy_inventory_files(&inventory, &destination, &object_root) {
+            error!("Error copying inventory to object root: {}", e);
+            return Err(RocflError::General(
+                format!("Failed to copy the {} for object {} into its root directory at {}",
+                        version_str, inventory.id, object_root.to_string_lossy())));
+        }
+
+        Ok(())
+    }
+
+    fn purge_object(&self, object_id: &str) -> Result<()> {
+        let object_root = match self.lookup_or_find_object_root_path(object_id) {
+            Err(RocflError::NotFound(_)) => None,
+            Err(e) => return Err(e),
+            Ok(object_root) => Some(object_root),
+        };
+
+        if let Some(object_root) = object_root {
+            let storage_path = self.storage_root.join(&object_root);
+            info!("Purging object {} at {}", object_id, storage_path.to_string_lossy());
+            match remove_dir_all::remove_dir_all(&storage_path) {
+                Err(e) => {
+                    error!("Failed to purge object {} at {}: {}",
+                           object_id, storage_path.to_string_lossy(), e);
+                    return Err(RocflError::CorruptObject {
+                        object_id: object_id.to_string(),
+                        message: format!("Failed to purge object at {}. This object may need to be removed manually.",
+                                         storage_path.to_string_lossy())
+                    })
+                },
+                Ok(_) => {
+                    if let Err(e) = util::clean_dirs_up(&storage_path.parent().unwrap()) {
+                        error!("Failed to cleanup dangling directories at {}: {}",
+                               storage_path.to_string_lossy(), e);
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
