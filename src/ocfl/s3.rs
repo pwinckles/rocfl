@@ -180,13 +180,20 @@ impl OcflStore for S3OcflStore {
 
     fn write_new_object(&self,
                         _inventory: &Inventory,
-                        _object_path: &Path) -> Result<(), RocflError> {
+                        _object_path: &Path) -> Result<()> {
+        // TODO s3
         unimplemented!()
     }
 
     fn write_new_version(&self,
                          _inventory: &Inventory,
-                         _version_path: &Path) -> Result<(), RocflError> {
+                         _version_path: &Path) -> Result<()> {
+        // TODO s3
+        unimplemented!()
+    }
+
+    fn purge_object(&self, _object_id: &str) -> Result<()> {
+        // TODO s3
         unimplemented!()
     }
 }
