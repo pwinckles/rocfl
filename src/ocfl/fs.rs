@@ -20,6 +20,7 @@ use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::layout::StorageLayout;
+use crate::ocfl::util;
 
 use super::OcflStore;
 
@@ -75,7 +76,7 @@ impl FsOcflStore {
     pub fn init_if_needed<P: AsRef<Path>>(root: P, layout: StorageLayout) -> Result<Self> {
         let root = root.as_ref().to_path_buf();
 
-        if root.exists() && root.is_dir() && fs::read_dir(&root)?.next().is_some() {
+        if root.exists() && root.is_dir() && !util::dir_is_empty(&root)? {
             Self::new(root)
         } else {
             Self::init(root, layout)
@@ -147,7 +148,8 @@ impl FsOcflStore {
         for path in paths.iter() {
             let full_path = object_root.join(&path.as_ref().as_ref());
             info!("Deleting duplicate staged file: {}", full_path.to_string_lossy());
-            fs::remove_file(full_path)?;
+            fs::remove_file(&full_path)?;
+            util::clean_dirs_up(full_path.parent().unwrap())?;
         }
 
         Ok(())
