@@ -300,9 +300,9 @@ impl From<InventoryPath> for String {
     }
 }
 
-impl AsRef<str> for InventoryPath {
-    fn as_ref(&self) -> &str {
-        self.0.as_str()
+impl AsRef<String> for InventoryPath {
+    fn as_ref(&self) -> &String {
+        &self.0
     }
 }
 

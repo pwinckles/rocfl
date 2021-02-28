@@ -228,9 +228,9 @@ impl DiffLine {
         match &self.diff {
             Diff::Renamed {original, renamed} => {
                 Cow::Owned(format!("{} -> {}",
-                        original.iter().map(|e| e.as_ref().as_ref())
+                        original.iter().map(|e| e.as_ref().as_ref().as_ref())
                             .collect::<Vec<&str>>().join(", "),
-                        renamed.iter().map(|e| e.as_ref().as_ref())
+                        renamed.iter().map(|e| e.as_ref().as_ref().as_ref())
                             .collect::<Vec<&str>>().join(", ")))
             }
             Diff::Added(path) => path.as_ref().as_ref().into(),

@@ -351,6 +351,40 @@ impl OcflRepo {
         Ok(())
     }
 
+    /// Commits all of an object's staged changes
+    pub fn commit(&self,
+                  object_id: &str,
+                  user_name: Option<String>,
+                  user_address: Option<String>,
+                  message: Option<String>) -> Result<()> {
+        let staging = self.get_staging()?;
+
+        let mut inventory = match staging.get_inventory(&object_id) {
+            Ok(inventory) => inventory,
+            Err(RocflError::NotFound(_)) => {
+                // TODO should this be an error?
+                return Err(RocflError::General("No staged changed found for the specified object".to_string()));
+            },
+            Err(e) => return Err(e),
+        };
+
+        // TODO verify that staging has not diverged?
+
+        let duplicates = inventory.dedup_head();
+
+        inventory.head_version_mut().update_meta(user_name, user_address, message);
+
+        staging.stage_inventory(&inventory)?;
+        staging.rm_staged_files(&inventory, &duplicates)?;
+        // TODO the inventory is not currently in the version
+
+        // TODO verify staging has not diverged
+        // TODO install new version
+        // TODO install root inventory
+
+        Ok(())
+    }
+
     fn copy_file(&self,
                  file: impl AsRef<Path>,
                  logical_path: InventoryPath,

@@ -112,6 +112,8 @@ impl FsOcflStore {
 
         // TODO should we fail if already exists?
         writeln!(File::create(storage_path.join(OBJECT_NAMASTE_FILE))?, "{}", OCFL_OBJECT_VERSION)?;
+
+        // TODO call stage inv
         serde_json::to_writer(File::create(storage_path.join(INVENTORY_FILE))?, &inventory)?;
 
         // TODO write inventory digest?
@@ -120,9 +122,9 @@ impl FsOcflStore {
     }
 
     pub(super) fn stage_file<R: Read>(&self,
-                           inventory: &Inventory,
-                           source: &mut R,
-                           logical_path: &InventoryPath) -> Result<()> {
+                                      inventory: &Inventory,
+                                      source: &mut R,
+                                      logical_path: &InventoryPath) -> Result<()> {
         // TODO any validation that the staged object exist?
 
         let content_path = inventory.new_content_path_head(&logical_path)?;
@@ -137,14 +139,38 @@ impl FsOcflStore {
         Ok(())
     }
 
+    pub(super) fn rm_staged_files(&self,
+                                  inventory: &Inventory,
+                                  // TODO fix other sigs: Rc<T> -> impl AsRef<T>
+                                  paths: &[impl AsRef<InventoryPath>]) -> Result<()> {
+
+        let object_root = self.storage_root
+            .join(&inventory.object_root);
+
+        for path in paths.iter() {
+            let full_path = object_root.join(&path.as_ref().as_ref());
+            info!("Deleting duplicate staged file: {}", full_path.to_string_lossy());
+            fs::remove_file(full_path)?;
+        }
+
+        Ok(())
+    }
+
     pub(super) fn stage_inventory(&self, inventory: &Inventory) -> Result<()> {
         // TODO any validation that the staged object exist?
 
-        let storage_path = self.storage_root.join(&inventory.object_root);
+        let object_root = self.storage_root.join(&inventory.object_root);
+        let inventory_path = object_root.join(INVENTORY_FILE);
+        let sidecar_path = object_root
+            .join(format!("{}.{}", INVENTORY_FILE, inventory.digest_algorithm.to_string()));
 
-        serde_json::to_writer(File::create(storage_path.join(INVENTORY_FILE))?, &inventory)?;
+        let mut inv_writer = inventory.digest_algorithm.writer(File::create(inventory_path)?)?;
+        serde_json::to_writer(&mut inv_writer, &inventory)?;
 
-        // TODO sidecar?
+        let digest = inv_writer.finalize_hex();
+
+        let mut sidecar_file = File::create(sidecar_path)?;
+        writeln!(&mut sidecar_file, "{}  inventory.json", digest)?;
 
         Ok(())
     }

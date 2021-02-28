@@ -9,6 +9,8 @@ use structopt::StructOpt;
 
 use crate::ocfl::VersionNum;
 
+// TODO review all of these docs so that the language agrees
+
 #[derive(Debug, StructOpt)]
 #[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
 #[structopt(setting(ColorAuto), setting(ColoredHelp))]
