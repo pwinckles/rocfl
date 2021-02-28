@@ -50,6 +50,7 @@ mod inventory;
 mod types;
 #[cfg(feature = "s3")]
 mod s3;
+mod util;
 
 // TODO consider moving the repo stuff to `repo.rs`
 
@@ -379,12 +380,12 @@ impl OcflRepo {
 
         if inventory.is_new() {
             self.store.write_new_object(&inventory, &staging_root.as_ref().to_path_buf())?;
+            util::clean_dirs_up(staging_root.as_ref().parent().unwrap())?;
         } else {
             // TODO install new version
             // TODO install root inventory
+            // TODO cleanup
         }
-
-        // TODO cleanup staging directory tree
 
         Ok(())
     }
