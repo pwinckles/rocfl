@@ -120,9 +120,9 @@ impl Cmd for StatusCmd {
                 });
 
                 let mut columns = Vec::new();
-                columns.push(Column::new(ColumnId::ObjectId, "Object ID", Alignment::Left));
                 columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
                 columns.push(Column::new(ColumnId::Created, "Updated", Alignment::Left));
+                columns.push(Column::new(ColumnId::ObjectId, "Object ID", Alignment::Left));
                 let mut table = TableView::new(columns, Separator::SPACE, true, !args.no_styles);
 
                 objects.iter().for_each(|object| table.add_row(object));

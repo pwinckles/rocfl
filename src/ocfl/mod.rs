@@ -376,16 +376,15 @@ impl OcflRepo {
         staging.stage_inventory(&inventory, true)?;
         staging.rm_staged_files(&inventory, &duplicates)?;
 
-        let staging_root = staging.staging_path(&inventory.object_root);
-
         if inventory.is_new() {
-            self.store.write_new_object(&inventory, &staging_root.as_ref().to_path_buf())?;
-            util::clean_dirs_up(staging_root.as_ref().parent().unwrap())?;
+            let object_root = staging.object_staging_path(&inventory);
+            self.store.write_new_object(&inventory, &object_root.as_ref().to_path_buf())?;
         } else {
-            // TODO install new version
-            // TODO install root inventory
-            // TODO cleanup
+            let version_root = staging.version_staging_path(&inventory);
+            self.store.write_new_version(&inventory, &version_root.as_ref().to_path_buf())?;
         }
+
+        staging.purge_object(object_id)?;
 
         Ok(())
     }
@@ -457,6 +456,11 @@ trait OcflStore {
     /// The object must already exist, and the new version must not exist.
     fn write_new_version(&self, inventory: &Inventory,
                          version_path: &Path) -> Result<()>;
+
+    /// Purges the specified object from the repository, if it exists. If it does not exist,
+    /// nothing happens. Any dangling directories that were created as a result of purging
+    /// the object are also removed.
+    fn purge_object(&self, object_id: &str) -> Result<()>;
 }
 
 /// An iterator that adapts the output of a delegate `Inventory` iterator into another type.
