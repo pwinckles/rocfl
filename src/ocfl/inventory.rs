@@ -91,6 +91,11 @@ impl Inventory {
         Ok(())
     }
 
+    /// Returns true if the HEAD version is equal to 1
+    pub fn is_new(&self) -> bool {
+        self.head.number == 1
+    }
+
     /// Returns a reference to the HEAD version
     pub fn head_version(&self) -> &Version {
         // The head version must exist because we look for it when the Inventory is deserialized
@@ -364,12 +369,12 @@ impl Version {
     }
 
     pub fn update_meta(&mut self,
-                       name: Option<String>,
-                       address: Option<String>,
-                       message: Option<String>) {
-        self.message = message;
+                       name: &Option<String>,
+                       address: &Option<String>,
+                       message: &Option<String>) {
+        self.message = message.clone();
         self.user = match name {
-            Some(name) => Some(User::new(name, address)),
+            Some(name) => Some(User::new(name.clone(), address.clone())),
             None => None,
         };
         self.created = Local::now();

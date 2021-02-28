@@ -82,8 +82,8 @@ impl Cmd for CopyCmd {
 }
 
 impl Cmd for CommitCmd {
-    fn exec(&self, _repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
-        // TODO implement commit
+    fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
+        repo.commit(&self.object_id, &self.user_name, &self.user_address, &self.message)?;
 
         Ok(())
     }
