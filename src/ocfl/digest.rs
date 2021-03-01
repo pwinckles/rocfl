@@ -139,7 +139,9 @@ impl DigestAlgorithm {
             DigestAlgorithm::Sha256 => Ok(Box::new(Sha256::new())),
             DigestAlgorithm::Sha512 => Ok(Box::new(Sha512::new())),
             DigestAlgorithm::Sha512_256 => Ok(Box::new(Sha512Trunc256::new())),
-            _ => Err(RocflError::General("Blake2b is not supported for streaming digest.".to_string())),
+            _ => Err(RocflError::General(
+                "Blake2b is not supported for streaming digest.".to_string(),
+            )),
         }
     }
 }
@@ -246,7 +248,10 @@ impl Ord for HexDigest {
         let rhs = &right[..l];
 
         for i in 0..l {
-            match lhs[i].to_ascii_lowercase().cmp(&rhs[i].to_ascii_lowercase()) {
+            match lhs[i]
+                .to_ascii_lowercase()
+                .cmp(&rhs[i].to_ascii_lowercase())
+            {
                 Ordering::Equal => (),
                 non_eq => return non_eq,
             }
@@ -284,8 +289,8 @@ impl Display for HexDigest {
 mod tests {
     use std::io;
 
-    use crate::ocfl::DigestAlgorithm;
     use crate::ocfl::error::Result;
+    use crate::ocfl::DigestAlgorithm;
 
     #[test]
     fn calculate_digest_while_reading() -> Result<()> {
@@ -296,8 +301,10 @@ mod tests {
 
         io::copy(&mut reader, &mut output)?;
 
-        let expected = "24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7c\
-        acfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28".to_string();
+        let expected =
+            "24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7c\
+        acfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28"
+                .to_string();
         let actual = reader.finalize_hex();
 
         assert_eq!(input, String::from_utf8(output).unwrap());
@@ -316,13 +323,14 @@ mod tests {
 
         io::copy(&mut input.as_bytes(), &mut writer)?;
 
-        let expected = "24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7c\
-        acfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28".to_string();
+        let expected =
+            "24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7c\
+        acfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28"
+                .to_string();
         let actual = writer.finalize_hex();
 
         assert_eq!(expected, actual.to_string());
 
         Ok(())
     }
-
 }

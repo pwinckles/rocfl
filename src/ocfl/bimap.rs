@@ -3,8 +3,8 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::rc::Rc;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::{MapAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::ocfl::digest::HexDigest;
 use crate::ocfl::InventoryPath;
@@ -50,8 +50,7 @@ impl PathBiMap {
         let entry = self.id_to_paths.entry(id_ref);
         let id_ref = entry.key().clone();
 
-        entry.or_insert_with(HashSet::new)
-            .insert(path_ref.clone());
+        entry.or_insert_with(HashSet::new).insert(path_ref.clone());
 
         self.path_to_id.insert(path_ref, id_ref);
     }
@@ -59,12 +58,14 @@ impl PathBiMap {
     /// Inserts all of the path mappings for an id. This is used for deserialization.
     fn insert_multiple(&mut self, id: HexDigest, paths: Vec<InventoryPath>) {
         if paths.is_empty() {
-            return
+            return;
         }
 
         let id_ref = Rc::new(id);
 
-        let set = self.id_to_paths.entry(id_ref.clone())
+        let set = self
+            .id_to_paths
+            .entry(id_ref.clone())
             .or_insert_with(HashSet::new);
 
         for path in paths {
@@ -88,7 +89,7 @@ impl PathBiMap {
     pub fn get_id_rc(&self, id: &HexDigest) -> Option<&Rc<HexDigest>> {
         match self.id_to_paths.get_key_value(id) {
             Some((id, _)) => Some(id),
-            None => None
+            None => None,
         }
     }
 
@@ -96,7 +97,7 @@ impl PathBiMap {
     pub fn get_path_rc(&self, path: &InventoryPath) -> Option<&Rc<InventoryPath>> {
         match self.path_to_id.get_key_value(path) {
             Some((path, _)) => Some(path),
-            None => None
+            None => None,
         }
     }
 
@@ -115,8 +116,10 @@ impl PathBiMap {
     }
 
     /// Removes a path mapping
-    pub fn remove_path(&mut self, path: &InventoryPath)
-        -> Option<(Rc<InventoryPath>, Rc<HexDigest>)> {
+    pub fn remove_path(
+        &mut self,
+        path: &InventoryPath,
+    ) -> Option<(Rc<InventoryPath>, Rc<HexDigest>)> {
         if let Some((path, id)) = self.path_to_id.remove_entry(path) {
             let mut remove = false;
             if let Some(paths) = self.id_to_paths.get_mut(&id) {
@@ -135,14 +138,14 @@ impl PathBiMap {
     /// Returns an iterator that iterates over references to all path-id pairs
     pub fn iter(&self) -> Iter {
         Iter {
-            iter: self.path_to_id.iter()
+            iter: self.path_to_id.iter(),
         }
     }
 
     /// Returns an iterator that iterates over id-paths pairs
     pub fn iter_id_paths(&self) -> IterIdPaths {
         IterIdPaths {
-            iter: self.id_to_paths.iter()
+            iter: self.id_to_paths.iter(),
         }
     }
 
@@ -164,7 +167,7 @@ impl IntoIterator for PathBiMap {
 
     fn into_iter(self) -> Self::IntoIter {
         IntoIter {
-            iter: self.path_to_id.into_iter()
+            iter: self.path_to_id.into_iter(),
         }
     }
 }
@@ -205,9 +208,7 @@ impl<'a> Iterator for IterIdPaths<'a> {
     }
 }
 
-struct PathBiMapVisitor {
-
-}
+struct PathBiMapVisitor {}
 
 impl<'a> Visitor<'a> for PathBiMapVisitor {
     type Value = PathBiMap;
@@ -229,7 +230,7 @@ impl<'a> Visitor<'a> for PathBiMapVisitor {
 
 impl<'a> Deserialize<'a> for PathBiMap {
     fn deserialize<D: Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_map(PathBiMapVisitor{})
+        deserializer.deserialize_map(PathBiMapVisitor {})
     }
 }
 
@@ -257,11 +258,15 @@ mod tests {
         map.insert("efgh".into(), path("foo/baz"));
         map.insert("abcd".into(), path("2"));
 
-        assert_eq!(&set(vec![path_rc("foo/bar"), path_rc("2")]),
-                   map.get_paths(&"abcd".into()).unwrap());
+        assert_eq!(
+            &set(vec![path_rc("foo/bar"), path_rc("2")]),
+            map.get_paths(&"abcd".into()).unwrap()
+        );
 
-        assert_eq!(&set(vec![path_rc("foo/baz")]),
-                   map.get_paths(&"efgh".into()).unwrap());
+        assert_eq!(
+            &set(vec![path_rc("foo/baz")]),
+            map.get_paths(&"efgh".into()).unwrap()
+        );
 
         assert_eq!(&hex_rc("abcd"), map.get_id(&path("2")).unwrap());
         assert_eq!(&hex_rc("efgh"), map.get_id(&path("foo/baz")).unwrap());
@@ -286,8 +291,10 @@ mod tests {
 
         map.remove_path(&path("foo/bar"));
 
-        assert_eq!(&set(vec![path_rc("2")]),
-                   map.get_paths(&"abcd".into()).unwrap());
+        assert_eq!(
+            &set(vec![path_rc("2")]),
+            map.get_paths(&"abcd".into()).unwrap()
+        );
     }
 
     #[test]
@@ -312,7 +319,8 @@ mod tests {
         if !(json.eq(r#"{"abcd":["foo/bar","2"],"efgh":["foo/baz"]}"#)
             || json.eq(r#"{"abcd":["2","foo/bar"],"efgh":["foo/baz"]}"#)
             || json.eq(r#"{"efgh":["foo/baz"],"abcd":["foo/bar","2"]}"#)
-            || json.eq(r#"{"efgh":["foo/baz"],"abcd":["2","foo/bar"]}"#)) {
+            || json.eq(r#"{"efgh":["foo/baz"],"abcd":["2","foo/bar"]}"#))
+        {
             panic!("Unexpected JSON: {}", json);
         }
 

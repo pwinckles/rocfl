@@ -7,14 +7,14 @@ use rusoto_core::Region;
 
 use crate::cmd::cmds::init_repo;
 use crate::cmd::opts::*;
-use crate::ocfl::{OcflRepo, Result};
 #[cfg(not(feature = "s3"))]
 use crate::ocfl::RocflError;
+use crate::ocfl::{OcflRepo, Result};
 
-pub mod opts;
 mod cmds;
 mod diff;
 mod list;
+pub mod opts;
 mod style;
 mod table;
 
@@ -29,7 +29,10 @@ pub fn exec_command(args: &RocflArgs) -> Result<()> {
         }
         _ => {
             let repo = create_repo(&args)?;
-            args.command.exec(&repo, GlobalArgs::new(args.quiet, args.verbose, args.no_styles))
+            args.command.exec(
+                &repo,
+                GlobalArgs::new(args.quiet, args.verbose, args.no_styles),
+            )
         }
     }
 }
@@ -73,10 +76,12 @@ fn create_repo(args: &RocflArgs) -> Result<OcflRepo> {
         Storage::FileSystem => OcflRepo::new_fs_repo(args.root.clone()),
         Storage::S3 => {
             #[cfg(not(feature = "s3"))]
-                return Err(RocflError::General("This binary was not compiled with S3 support."));
+            return Err(RocflError::General(
+                "This binary was not compiled with S3 support.",
+            ));
 
             #[cfg(feature = "s3")]
-                create_s3_repo(args)
+            create_s3_repo(args)
         }
     }
 }
@@ -85,21 +90,16 @@ fn create_repo(args: &RocflArgs) -> Result<OcflRepo> {
 fn create_s3_repo(args: &RocflArgs) -> Result<OcflRepo> {
     let prefix = match args.root.as_str() {
         "." => None,
-        prefix => Some(prefix)
+        prefix => Some(prefix),
     };
 
     let region = match args.endpoint.is_some() {
-        true => {
-            Region::Custom {
-                name: args.region.as_ref().unwrap().to_owned(),
-                endpoint: args.endpoint.as_ref().unwrap().to_owned(),
-            }
-        }
-        false => args.region.as_ref().unwrap().parse()?
+        true => Region::Custom {
+            name: args.region.as_ref().unwrap().to_owned(),
+            endpoint: args.endpoint.as_ref().unwrap().to_owned(),
+        },
+        false => args.region.as_ref().unwrap().parse()?,
     };
 
-    OcflRepo::new_s3_repo(
-        region,
-        args.bucket.as_ref().unwrap(),
-        prefix)
+    OcflRepo::new_s3_repo(region, args.bucket.as_ref().unwrap(), prefix)
 }
