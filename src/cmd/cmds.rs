@@ -72,19 +72,16 @@ impl Cmd for NewCmd {
 
 impl Cmd for CopyCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
-        if self.source_object.is_none() {
-            // external copy
+        if self.internal {
+            // TODO copy within object
+        } else {
             repo.copy_files_external(
-                self.destination_object.as_ref().unwrap(),
+                &self.destination_object,
                 &self.source,
                 &self.destination,
                 self.recursive,
                 self.force,
             )?;
-        } else {
-            // internal copy
-            // TODO copy within object
-            // TODO copy between objects
         }
 
         Ok(())

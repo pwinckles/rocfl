@@ -120,10 +120,12 @@ pub struct ListCmd {
     #[structopt(short, long)]
     pub objects: bool,
 
+    // TODO make this default? display virtual dirs?
     /// Wildcards in path glob expressions will not match '/'
     #[structopt(short, long)]
     pub glob_literal_separator: bool,
 
+    // TODO add --staged flag
     /// ID of the object to list. May be a glob when used with '-o'.
     #[structopt(name = "OBJ_ID")]
     pub object_id: Option<String>,
@@ -256,12 +258,12 @@ pub struct NewCmd {
     pub object_id: String,
 }
 
-/// Copies files into objects, between objects, and within objects. These changes are staged and
-/// must be `committed` before they are reflected in a new OCFL object version.
+/// Copies external files into objects or internal files to new locations. These changes are staged
+/// and must be `committed` before they are reflected in a new OCFL object version.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct CopyCmd {
-    /// Indicates that SRC directories should be copied recursively.
+    /// Indicates that source directories should be copied recursively.
     #[structopt(short, long)]
     pub recursive: bool,
 
@@ -269,32 +271,25 @@ pub struct CopyCmd {
     #[structopt(short, long)]
     pub force: bool,
 
-    /// The object ID of the object to copy files from. Do not specify this option when copying
-    /// files from the local filesystem.
-    #[structopt(short, long, value_name = "SRC_OBJ_ID")]
-    pub source_object: Option<String>,
+    /// Specifies that the source paths should be interpreted as logical paths internal to the
+    /// object, and not as paths on the filesystem.
+    #[structopt(short, long)]
+    pub internal: bool,
 
-    /// The version of the source object to copy files from. The most recent version is used if
-    /// not specified
-    #[structopt(short = "v", long, value_name = "VERSION")]
-    pub source_version: Option<VersionNum>,
+    /// When '--internal' is used, this option specifies the version of the object the source
+    /// paths are for. If not specified, the most recent version is used.
+    #[structopt(short, long, value_name = "VERSION")]
+    pub version: Option<VersionNum>,
 
-    /// The object ID of the object to copy files into. This option is required when SRC_OBJ_ID is
-    /// not specified. If not specified, the files are copied within the source object.
-    #[structopt(
-        short,
-        long,
-        value_name = "DST_OBJ_ID",
-        required_unless = "source-object"
-    )]
-    pub destination_object: Option<String>,
+    /// The object ID of the object to copy files into
+    #[structopt(name = "OBJ_ID")]
+    pub destination_object: String,
 
-    /// The files to copy. This may be a glob pattern. When copying files within an OCFL object,
-    /// these paths are logical paths
+    /// The files to copy. Glob patterns are supported.
     #[structopt(name = "SRC")]
     pub source: Vec<String>,
 
-    /// The logical path to copy SRC to. Specify '/' to copy into object's root.
+    /// The logical path to copy the source files to. Specify '/' to copy into object's root.
     #[structopt(name = "DST", last = true)]
     pub destination: String,
 }
