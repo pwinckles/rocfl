@@ -1,6 +1,6 @@
 use core::fmt;
-use std::{error, io};
 use std::fmt::{Debug, Display, Formatter};
+use std::{error, io};
 
 #[cfg(feature = "s3")]
 use rusoto_core::region::ParseRegionError;
@@ -16,10 +16,7 @@ pub type Result<T, E = RocflError> = core::result::Result<T, E>;
 #[derive(Error)]
 pub enum RocflError {
     #[error("Object {object_id} is corrupt: {message}")]
-    CorruptObject {
-        object_id: String,
-        message: String,
-    },
+    CorruptObject { object_id: String, message: String },
 
     #[error("Not found: {0}")]
     NotFound(String),
@@ -50,7 +47,7 @@ pub enum RocflError {
 pub fn not_found(object_id: &str, version_num: Option<VersionNum>) -> RocflError {
     match version_num {
         Some(version) => RocflError::NotFound(format!("Object {} version {}", object_id, version)),
-        None => RocflError::NotFound(format!("Object {}", object_id))
+        None => RocflError::NotFound(format!("Object {}", object_id)),
     }
 }
 

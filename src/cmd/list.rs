@@ -2,11 +2,11 @@ use std::cmp::Ordering;
 
 use globset::GlobBuilder;
 
-use crate::cmd::{Cmd, DATE_FORMAT, GlobalArgs};
-use crate::cmd::opts::*;
 use crate::cmd::opts::ListCmd;
+use crate::cmd::opts::*;
 use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, Separator, TableView, TextCell};
+use crate::cmd::{Cmd, GlobalArgs, DATE_FORMAT};
 use crate::ocfl::{FileDetails, ObjectVersionDetails, OcflRepo, Result};
 
 impl Cmd for ListCmd {
@@ -44,24 +44,28 @@ impl ListCmd {
 
         // TODO this should remove any leading slashes
         let glob = match self.path.as_ref() {
-            Some(path) => Some(GlobBuilder::new(path)
-                .literal_separator(self.glob_literal_separator)
-                .backslash_escape(true).build()?.compile_matcher()),
-            None => None
+            Some(path) => Some(
+                GlobBuilder::new(path)
+                    .literal_separator(self.glob_literal_separator)
+                    .backslash_escape(true)
+                    .build()?
+                    .compile_matcher(),
+            ),
+            None => None,
         };
 
-        let mut listings: Vec<ContentListing> = object.state.into_iter()
-            .map(move |(path, details)| {
-                ContentListing {
-                    logical_path: path.to_string(),
-                    details
-                }
-            }).filter(|listing| {
-            match &glob {
+        let mut listings: Vec<ContentListing> = object
+            .state
+            .into_iter()
+            .map(move |(path, details)| ContentListing {
+                logical_path: path.to_string(),
+                details,
+            })
+            .filter(|listing| match &glob {
                 Some(glob) => glob.is_match(&listing.logical_path),
-                None => true
-            }
-        }).collect();
+                None => true,
+            })
+            .collect();
 
         listings.sort_unstable_by(|a, b| {
             if self.reverse {
@@ -84,10 +88,18 @@ impl ListCmd {
             columns.push(Column::new(ColumnId::Created, "Updated", Alignment::Left));
         }
 
-        columns.push(Column::new(ColumnId::ObjectId, "Object ID", Alignment::Left));
+        columns.push(Column::new(
+            ColumnId::ObjectId,
+            "Object ID",
+            Alignment::Left,
+        ));
 
         if self.physical {
-            columns.push(Column::new(ColumnId::PhysicalPath, "Physical Path", Alignment::Left));
+            columns.push(Column::new(
+                ColumnId::PhysicalPath,
+                "Physical Path",
+                Alignment::Left,
+            ));
         }
 
         TableView::new(columns, self.separator(), self.header, !args.no_styles)
@@ -101,10 +113,18 @@ impl ListCmd {
             columns.push(Column::new(ColumnId::Created, "Updated", Alignment::Left));
         }
 
-        columns.push(Column::new(ColumnId::LogicalPath, "Logical Path", Alignment::Left));
+        columns.push(Column::new(
+            ColumnId::LogicalPath,
+            "Logical Path",
+            Alignment::Left,
+        ));
 
         if self.physical {
-            columns.push(Column::new(ColumnId::PhysicalPath, "Physical Path", Alignment::Left));
+            columns.push(Column::new(
+                ColumnId::PhysicalPath,
+                "Physical Path",
+                Alignment::Left,
+            ));
         }
 
         if self.digest {
@@ -126,7 +146,10 @@ impl ListCmd {
 fn cmp_objects(field: &Field, a: &ObjectVersionDetails, b: &ObjectVersionDetails) -> Ordering {
     match field {
         Field::Name => natord::compare(&a.id, &b.id),
-        Field::Version => a.version_details.version_num.cmp(&b.version_details.version_num),
+        Field::Version => a
+            .version_details
+            .version_num
+            .cmp(&b.version_details.version_num),
         Field::Updated => a.version_details.created.cmp(&b.version_details.created),
         Field::Physical => a.object_root.cmp(&b.object_root),
         Field::Digest => Ordering::Equal,
@@ -137,8 +160,16 @@ fn cmp_objects(field: &Field, a: &ObjectVersionDetails, b: &ObjectVersionDetails
 fn cmp_object_contents(field: &Field, a: &ContentListing, b: &ContentListing) -> Ordering {
     match field {
         Field::Name => natord::compare(&a.logical_path, &b.logical_path),
-        Field::Version => a.details.last_update.version_num.cmp(&b.details.last_update.version_num),
-        Field::Updated => a.details.last_update.created.cmp(&b.details.last_update.created),
+        Field::Version => a
+            .details
+            .last_update
+            .version_num
+            .cmp(&b.details.last_update.version_num),
+        Field::Updated => a
+            .details
+            .last_update
+            .created
+            .cmp(&b.details.last_update.created),
         Field::Physical => natord::compare(&a.details.storage_path, &b.details.storage_path),
         Field::Digest => a.details.digest.cmp(&b.details.digest),
         Field::None => Ordering::Equal,
@@ -156,19 +187,28 @@ impl<'a> AsRow<'a> for ContentListing {
 
         for column in columns {
             let cell = match column.id {
-                ColumnId::Version => TextCell::new(
-                    self.details.last_update.version_num.to_string())
-                    .with_style(&*style::GREEN),
+                ColumnId::Version => {
+                    TextCell::new(self.details.last_update.version_num.to_string())
+                        .with_style(&*style::GREEN)
+                }
                 ColumnId::Created => TextCell::new(
-                    self.details.last_update.created.format(DATE_FORMAT).to_string())
-                    .with_style(&*style::YELLOW),
-                ColumnId::LogicalPath =>TextCell::new(&self.logical_path)
-                    .with_style(&*style::BOLD),
+                    self.details
+                        .last_update
+                        .created
+                        .format(DATE_FORMAT)
+                        .to_string(),
+                )
+                .with_style(&*style::YELLOW),
+                ColumnId::LogicalPath => {
+                    TextCell::new(&self.logical_path).with_style(&*style::BOLD)
+                }
                 ColumnId::PhysicalPath => TextCell::new(&self.details.storage_path),
-                ColumnId::Digest => TextCell::new(format!("{}:{}",
-                                                          self.details.digest_algorithm.to_string(),
-                                                          self.details.digest)),
-                _ => TextCell::blank()
+                ColumnId::Digest => TextCell::new(format!(
+                    "{}:{}",
+                    self.details.digest_algorithm.to_string(),
+                    self.details.digest
+                )),
+                _ => TextCell::blank(),
             };
 
             cells.push(cell);
@@ -184,16 +224,15 @@ impl<'a> AsRow<'a> for ObjectVersionDetails {
 
         for column in columns {
             let cell = match column.id {
-                ColumnId::Version => TextCell::new(
-                    self.version_details.version_num.to_string())
+                ColumnId::Version => TextCell::new(self.version_details.version_num.to_string())
                     .with_style(&*style::GREEN),
-                ColumnId::Created => TextCell::new(
-                    self.version_details.created.format(DATE_FORMAT).to_string())
-                    .with_style(&*style::YELLOW),
-                ColumnId::ObjectId =>TextCell::new(&self.id)
-                    .with_style(&*style::BOLD),
+                ColumnId::Created => {
+                    TextCell::new(self.version_details.created.format(DATE_FORMAT).to_string())
+                        .with_style(&*style::YELLOW)
+                }
+                ColumnId::ObjectId => TextCell::new(&self.id).with_style(&*style::BOLD),
                 ColumnId::PhysicalPath => TextCell::new(&self.object_root),
-                _ => TextCell::blank()
+                _ => TextCell::blank(),
             };
 
             cells.push(cell);

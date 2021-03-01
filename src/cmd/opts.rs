@@ -228,7 +228,6 @@ pub struct InitCmd {
     default_value = "HashedNTuple",
     case_insensitive = true)]
     pub layout: Layout,
-
     // TODO add option for passing a layout file
 }
 
@@ -282,7 +281,12 @@ pub struct CopyCmd {
 
     /// The object ID of the object to copy files into. This option is required when SRC_OBJ_ID is
     /// not specified. If not specified, the files are copied within the source object.
-    #[structopt(short, long, value_name = "DST_OBJ_ID", required_unless = "source-object")]
+    #[structopt(
+        short,
+        long,
+        value_name = "DST_OBJ_ID",
+        required_unless = "source-object"
+    )]
     pub destination_object: Option<String>,
 
     /// The files to copy. This may be a glob pattern. When copying files within an OCFL object,
@@ -322,7 +326,6 @@ pub struct CommitCmd {
     pub message: Option<String>,
 
     // TODO allow setting the `created` timestamp?
-
     /// The ID of the object to commit changes for
     #[structopt(name = "OBJ_ID")]
     pub object_id: String,
@@ -397,9 +400,7 @@ impl RocflArgs {
 
 impl Default for Num {
     fn default() -> Self {
-        Self {
-            0: usize::MAX
-        }
+        Self { 0: usize::MAX }
     }
 }
 

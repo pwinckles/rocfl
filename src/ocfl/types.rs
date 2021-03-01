@@ -15,9 +15,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::ocfl::bimap::PathBiMap;
 use crate::ocfl::digest::HexDigest;
-use crate::ocfl::DigestAlgorithm;
 use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::{Inventory, Version};
+use crate::ocfl::DigestAlgorithm;
 
 static VERSION_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^v\d+$"#).unwrap());
 
@@ -107,16 +107,15 @@ pub enum Diff {
 impl VersionNum {
     /// Creates a new VersionNum
     pub fn new(number: u32, width: u32) -> Self {
-        Self {
-            number,
-            width,
-        }
+        Self { number, width }
     }
 
     /// Returns the previous version, or an Error if the previous version is invalid (less than 1).
     pub fn previous(&self) -> Result<VersionNum> {
         if self.number - 1 < 1 {
-            return Err(RocflError::IllegalState("Versions cannot be less than 1".to_string()));
+            return Err(RocflError::IllegalState(
+                "Versions cannot be less than 1".to_string(),
+            ));
         }
 
         Ok(Self {
@@ -130,11 +129,14 @@ impl VersionNum {
     pub fn next(&self) -> Result<VersionNum> {
         let max = match self.width {
             0 => u32::MAX,
-            _ => (10 * (self.width - 1)) - 1
+            _ => (10 * (self.width - 1)) - 1,
         };
 
         if self.number + 1 > max as u32 {
-            return Err(RocflError::IllegalState(format!("Version cannot be greater than {}", max)));
+            return Err(RocflError::IllegalState(format!(
+                "Version cannot be greater than {}",
+                max
+            )));
         }
 
         Ok(Self {
@@ -151,18 +153,24 @@ impl TryFrom<&str> for VersionNum {
     /// the version string is invalid.
     fn try_from(version: &str) -> Result<Self, Self::Error> {
         if !VERSION_REGEX.is_match(version) {
-            return Err(RocflError::IllegalArgument(format!("Invalid version {}", version)));
+            return Err(RocflError::IllegalArgument(format!(
+                "Invalid version {}",
+                version
+            )));
         }
 
         match version[1..].parse::<u32>() {
             Ok(num) => {
                 if num < 1 {
-                    return Err(RocflError::IllegalArgument(format!("Invalid version {}", version)));
+                    return Err(RocflError::IllegalArgument(format!(
+                        "Invalid version {}",
+                        version
+                    )));
                 }
 
                 let width = match version.starts_with("v0") {
                     true => version.len() - 1,
-                    false => 0
+                    false => 0,
                 };
 
                 Ok(Self {
@@ -170,7 +178,10 @@ impl TryFrom<&str> for VersionNum {
                     width: width as u32,
                 })
             }
-            Err(_) => Err(RocflError::IllegalArgument(format!("Invalid version {}", version)))
+            Err(_) => Err(RocflError::IllegalArgument(format!(
+                "Invalid version {}",
+                version
+            ))),
         }
     }
 }
@@ -181,7 +192,10 @@ impl TryFrom<u32> for VersionNum {
     /// Parses a positive integer into a `VersionNum`. An error is returned if it is invalid.
     fn try_from(version: u32) -> Result<Self, Self::Error> {
         if version < 1 {
-            return Err(RocflError::IllegalArgument(format!("Invalid version number {}", version)));
+            return Err(RocflError::IllegalArgument(format!(
+                "Invalid version number {}",
+                version
+            )));
         }
 
         Ok(Self {
@@ -199,11 +213,12 @@ impl FromStr for VersionNum {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match VersionNum::try_from(s) {
             Ok(v) => Ok(v),
-            Err(_) => {
-                match u32::from_str(s) {
-                    Ok(parsed) => Ok(VersionNum::try_from(parsed)?),
-                    Err(_) => Err(RocflError::IllegalArgument(format!("Invalid version number {}", s)))
-                }
+            Err(_) => match u32::from_str(s) {
+                Ok(parsed) => Ok(VersionNum::try_from(parsed)?),
+                Err(_) => Err(RocflError::IllegalArgument(format!(
+                    "Invalid version number {}",
+                    s
+                ))),
             },
         }
     }
@@ -263,14 +278,15 @@ impl TryFrom<&str> for InventoryPath {
         let trimmed = value.trim_start_matches('/').trim_end_matches('/');
 
         if !trimmed.is_empty() {
-            let has_illegal_part = trimmed.split('/').any(|part| {
-                part == "." || part == ".." || part.is_empty()
-            });
+            let has_illegal_part = trimmed
+                .split('/')
+                .any(|part| part == "." || part == ".." || part.is_empty());
 
             if has_illegal_part {
-                return Err(RocflError::IllegalArgument(
-                    format!("Paths may not contain '.', '..', or '' parts. Found: {} ",
-                            value)));
+                return Err(RocflError::IllegalArgument(format!(
+                    "Paths may not contain '.', '..', or '' parts. Found: {} ",
+                    value
+                )));
             }
         }
 
@@ -314,7 +330,10 @@ impl Display for InventoryPath {
 
 impl ObjectVersion {
     /// Creates an `ObjectVersion` by consuming the supplied `Inventory`.
-    pub fn from_inventory(mut inventory: Inventory, version_num: Option<VersionNum>) -> Result<Self> {
+    pub fn from_inventory(
+        mut inventory: Inventory,
+        version_num: Option<VersionNum>,
+    ) -> Result<Self> {
         let version_num = match version_num {
             Some(version) => version,
             None => inventory.head,
@@ -330,12 +349,14 @@ impl ObjectVersion {
             object_root: inventory.object_root,
             digest_algorithm: inventory.digest_algorithm,
             version_details,
-            state
+            state,
         })
     }
 
-    fn construct_state(target: VersionNum,
-                       inventory: &mut Inventory) -> Result<HashMap<Rc<InventoryPath>, FileDetails>> {
+    fn construct_state(
+        target: VersionNum,
+        inventory: &mut Inventory,
+    ) -> Result<HashMap<Rc<InventoryPath>, FileDetails>> {
         let mut state = HashMap::new();
 
         let mut current_version_num = target;
@@ -344,17 +365,25 @@ impl ObjectVersion {
 
         while !target_path_map.is_empty() {
             let mut not_found = PathBiMap::new();
-            let version_details = Rc::new(VersionDetails::from_version(current_version_num, current_version));
+            let version_details = Rc::new(VersionDetails::from_version(
+                current_version_num,
+                current_version,
+            ));
 
             // No versions left to compare to; any remaining files were last updated here
             if version_details.version_num.number == 1 {
                 for (target_path, target_digest) in target_path_map {
                     let content_path = inventory.content_path_for_digest(&target_digest)?;
-                    state.insert(target_path, FileDetails::new(content_path.clone(),
-                                                               target_digest,
-                                                               inventory.digest_algorithm,
-                                                               &inventory.object_root,
-                                                               version_details.clone()));
+                    state.insert(
+                        target_path,
+                        FileDetails::new(
+                            content_path.clone(),
+                            target_digest,
+                            inventory.digest_algorithm,
+                            &inventory.object_root,
+                            version_details.clone(),
+                        ),
+                    );
                 }
 
                 break;
@@ -369,11 +398,16 @@ impl ObjectVersion {
 
                 if entry.is_none() || entry.unwrap().1 != target_digest {
                     let content_path = inventory.content_path_for_digest(&target_digest)?;
-                    state.insert(target_path, FileDetails::new(content_path.clone(),
-                                                               target_digest,
-                                                               inventory.digest_algorithm,
-                                                               &inventory.object_root,
-                                                               version_details.clone()));
+                    state.insert(
+                        target_path,
+                        FileDetails::new(
+                            content_path.clone(),
+                            target_digest,
+                            inventory.digest_algorithm,
+                            &inventory.object_root,
+                            version_details.clone(),
+                        ),
+                    );
                 } else {
                     not_found.insert_rc(target_digest, target_path);
                 }
@@ -390,12 +424,15 @@ impl ObjectVersion {
 }
 
 impl FileDetails {
-    pub fn new(content_path: Rc<InventoryPath>,
-           digest: Rc<HexDigest>,
-           digest_algorithm: DigestAlgorithm,
-           object_root: &str,
-           version_details: Rc<VersionDetails>) -> Self {
-        let storage_path = convert_path_separator(join(object_root, content_path.as_ref().as_ref()));
+    pub fn new(
+        content_path: Rc<InventoryPath>,
+        digest: Rc<HexDigest>,
+        digest_algorithm: DigestAlgorithm,
+        object_root: &str,
+        version_details: Rc<VersionDetails>,
+    ) -> Self {
+        let storage_path =
+            convert_path_separator(join(object_root, content_path.as_ref().as_ref()));
 
         Self {
             content_path,
@@ -412,7 +449,7 @@ impl VersionDetails {
     pub fn new(version_num: VersionNum, version: &Version) -> Self {
         let (user, address) = match &version.user {
             Some(user) => (user.name.clone(), user.address.clone()),
-            None => (None, None)
+            None => (None, None),
         };
 
         Self {
@@ -420,7 +457,7 @@ impl VersionDetails {
             created: version.created,
             user_name: user,
             user_address: address,
-            message: version.message.clone()
+            message: version.message.clone(),
         }
     }
 
@@ -428,7 +465,7 @@ impl VersionDetails {
     pub fn from_version(version_num: VersionNum, version: Version) -> Self {
         let (user, address) = match version.user {
             Some(user) => (user.name, user.address),
-            None => (None, None)
+            None => (None, None),
         };
 
         Self {
@@ -443,7 +480,10 @@ impl VersionDetails {
 
 impl ObjectVersionDetails {
     /// Creates `ObjectVersionDetails` by consuming the `Inventory`.
-    pub fn from_inventory(mut inventory: Inventory, version_num: Option<VersionNum>) -> Result<Self> {
+    pub fn from_inventory(
+        mut inventory: Inventory,
+        version_num: Option<VersionNum>,
+    ) -> Result<Self> {
         let version_num = match version_num {
             Some(version) => version,
             None => inventory.head,
@@ -469,8 +509,9 @@ impl Diff {
             Diff::Added(path) => path,
             Diff::Modified(path) => path,
             Diff::Deleted(path) => path,
-            Diff::Renamed { original, ..} =>
-                original.first().expect("At least one renamed path should have existed"),
+            Diff::Renamed { original, .. } => original
+                .first()
+                .expect("At least one renamed path should have existed"),
         }
     }
 }

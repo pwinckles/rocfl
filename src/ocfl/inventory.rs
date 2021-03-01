@@ -8,11 +8,11 @@ use log::error;
 use once_cell::unsync::OnceCell;
 use serde::{Deserialize, Serialize};
 
-use crate::ocfl::{Diff, InventoryPath, VersionNum};
 use crate::ocfl::bimap::{IntoIter, Iter, PathBiMap};
 use crate::ocfl::consts::{DEFAULT_CONTENT_DIR, INVENTORY_TYPE};
 use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
 use crate::ocfl::error::{not_found, Result, RocflError};
+use crate::ocfl::{Diff, InventoryPath, VersionNum};
 
 const STAGING_MESSAGE: &str = "Staging new version";
 const ROCFL_USER: &str = "rocfl";
@@ -72,7 +72,7 @@ pub struct Version {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct User {
     pub name: Option<String>,
-    pub address: Option<String>
+    pub address: Option<String>,
 }
 
 impl Inventory {
@@ -112,7 +112,7 @@ impl Inventory {
     pub fn get_version(&self, version_num: VersionNum) -> Result<&Version> {
         match self.versions.get(&version_num) {
             Some(v) => Ok(v),
-            None => Err(not_found(&self.id, Some(version_num)))
+            None => Err(not_found(&self.id, Some(version_num))),
         }
     }
 
@@ -120,7 +120,7 @@ impl Inventory {
     pub fn remove_version(&mut self, version_num: VersionNum) -> Result<Version> {
         match self.versions.remove(&version_num) {
             Some(v) => Ok(v),
-            None => Err(not_found(&self.id, Some(version_num)))
+            None => Err(not_found(&self.id, Some(version_num))),
         }
     }
 
@@ -128,35 +128,38 @@ impl Inventory {
     /// not exist.
     pub fn content_path_for_digest(&self, digest: &HexDigest) -> Result<&Rc<InventoryPath>> {
         match self.manifest.get_paths(digest) {
-            Some(paths) => {
-                match paths.iter().next() {
-                    Some(path) => Ok(path),
-                    None => Err(RocflError::CorruptObject {
-                        object_id: self.id.clone(),
-                        message: format!("Digest {} is not mapped to any content paths", digest)
-                    })
-                }
-            }
+            Some(paths) => match paths.iter().next() {
+                Some(path) => Ok(path),
+                None => Err(RocflError::CorruptObject {
+                    object_id: self.id.clone(),
+                    message: format!("Digest {} is not mapped to any content paths", digest),
+                }),
+            },
             None => Err(RocflError::CorruptObject {
                 object_id: self.id.clone(),
-                message: format!("Digest {} not found in manifest", digest)
-            })
+                message: format!("Digest {} not found in manifest", digest),
+            }),
         }
     }
 
     /// Returns the content path for the logical path, or a `NotFound` error if the path
     /// is not found.
-    pub fn content_path_for_logical_path(&self,
-                                         logical_path: &InventoryPath,
-                                         version_num: Option<VersionNum>) -> Result<&Rc<InventoryPath>> {
+    pub fn content_path_for_logical_path(
+        &self,
+        logical_path: &InventoryPath,
+        version_num: Option<VersionNum>,
+    ) -> Result<&Rc<InventoryPath>> {
         let version_num = version_num.unwrap_or(self.head);
         let version = self.get_version(version_num)?;
 
         let digest = match version.lookup_digest(&logical_path) {
             Some(digest) => digest,
-            None => return Err(RocflError::NotFound(
-                format!("Path {} not found in object {} version {}",
-                        logical_path, self.id, version_num)))
+            None => {
+                return Err(RocflError::NotFound(format!(
+                    "Path {} not found in object {} version {}",
+                    logical_path, self.id, version_num
+                )))
+            }
         };
 
         self.content_path_for_digest(digest)
@@ -168,7 +171,7 @@ impl Inventory {
     pub fn diff_versions(&self, left: Option<VersionNum>, right: VersionNum) -> Result<Vec<Diff>> {
         if let Some(left) = left {
             if left == right {
-                return Ok(Vec::new())
+                return Ok(Vec::new());
             }
         }
 
@@ -180,7 +183,7 @@ impl Inventory {
                 } else {
                     None
                 }
-            },
+            }
         };
 
         Ok(self.get_version(right)?.diff(left))
@@ -198,7 +201,8 @@ impl Inventory {
             if paths.len() > 1 {
                 for path in paths {
                     if path.as_ref().as_ref().starts_with(&prefix) {
-                        matches.entry(digest.clone())
+                        matches
+                            .entry(digest.clone())
                             .or_insert_with(HashSet::new)
                             .insert(path.clone());
                     }
@@ -234,20 +238,23 @@ impl Inventory {
     /// Content paths are NOT deduped until the version is committed.
     ///
     /// If the logical path already exists in the version, then the existing file is overwritten.
-    pub fn add_file_to_head(&mut self,
-                            digest: HexDigest,
-                            logical_path: InventoryPath) -> Result<()> {
+    pub fn add_file_to_head(
+        &mut self,
+        digest: HexDigest,
+        logical_path: InventoryPath,
+    ) -> Result<()> {
         let digest_rc = match self.manifest.get_id_rc(&digest) {
             Some(digest_rc) => digest_rc.clone(),
             None => Rc::new(digest),
         };
 
         let content_path = self.new_content_path_head(&logical_path)?;
-        self.manifest.insert_rc(digest_rc.clone(), Rc::new(content_path));
+        self.manifest
+            .insert_rc(digest_rc.clone(), Rc::new(content_path));
 
         let version = match self.versions.get_mut(&self.head) {
             Some(version) => version,
-            None => return Err(not_found(&self.id, Some(self.head)))
+            None => return Err(not_found(&self.id, Some(self.head))),
         };
 
         version.add_file(digest_rc, logical_path);
@@ -263,15 +270,20 @@ impl Inventory {
 
     /// Returns a new content path for the specified logical path, assuming a direct one-to-one
     /// mapping of logical path to content path.
-    pub fn new_content_path(&self,
-                            version_num: VersionNum,
-                            logical_path: &InventoryPath) -> Result<InventoryPath> {
+    pub fn new_content_path(
+        &self,
+        version_num: VersionNum,
+        logical_path: &InventoryPath,
+    ) -> Result<InventoryPath> {
         // TODO this is not correct for the mutable HEAD
         // TODO should any other path cleanup be performed?
-        format!("{}/{}/{}",
-                version_num.to_string(),
-                self.defaulted_content_dir(),
-                logical_path.as_ref()).try_into()
+        format!(
+            "{}/{}/{}",
+            version_num.to_string(),
+            self.defaulted_content_dir(),
+            logical_path.as_ref()
+        )
+        .try_into()
     }
 
     pub fn defaulted_content_dir(&self) -> &str {
@@ -288,7 +300,7 @@ impl Inventory {
             return Err(RocflError::CorruptObject {
                 object_id: self.id.clone(),
                 message: format!("HEAD version {} was not found", self.head),
-            })
+            });
         }
         Ok(())
     }
@@ -335,7 +347,7 @@ impl InventoryBuilder {
             manifest: self.manifest,
             versions: self.versions,
             fixity: None,
-            object_root: self.object_root
+            object_root: self.object_root,
         };
 
         inventory.validate()?;
@@ -368,10 +380,12 @@ impl Version {
         }
     }
 
-    pub fn update_meta(&mut self,
-                       name: &Option<String>,
-                       address: &Option<String>,
-                       message: &Option<String>) {
+    pub fn update_meta(
+        &mut self,
+        name: &Option<String>,
+        address: &Option<String>,
+        message: &Option<String>,
+    ) {
         self.message = message.clone();
         self.user = match name {
             Some(name) => Some(User::new(name.clone(), address.clone())),
@@ -391,8 +405,10 @@ impl Version {
     }
 
     /// Removes a logical path from the version's state
-    pub fn remove_file(&mut self, path: &InventoryPath)
-        -> Option<(Rc<InventoryPath>, Rc<HexDigest>)> {
+    pub fn remove_file(
+        &mut self,
+        path: &InventoryPath,
+    ) -> Option<(Rc<InventoryPath>, Rc<HexDigest>)> {
         // must invalidate the virtual dirs
         self.virtual_dirs = OnceCell::default();
         self.state.remove_path(path)
@@ -430,16 +446,18 @@ impl Version {
     /// and a file.
     pub fn validate_non_conflicting(&self, path: &InventoryPath) -> Result<()> {
         if self.is_dir(&path) {
-            return Err(RocflError::IllegalState(
-                format!("Conflicting logical path {}: This path is already in use as a directory",
-                        path)))
+            return Err(RocflError::IllegalState(format!(
+                "Conflicting logical path {}: This path is already in use as a directory",
+                path
+            )));
         }
 
         foreach_dir(&path, |dir| {
             if self.is_file(&dir) {
-                return Err(RocflError::IllegalState(
-                    format!("Conflicting logical path {}: The path part {} is an existing logical file",
-                            path, dir)))
+                return Err(RocflError::IllegalState(format!(
+                    "Conflicting logical path {}: The path part {} is an existing logical file",
+                    path, dir
+                )));
             }
             Ok(())
         })
@@ -458,10 +476,11 @@ impl Version {
             for (path, left_digest) in left.state_iter() {
                 match self.lookup_digest(&path) {
                     None => {
-                        deletes.entry(left_digest.clone())
+                        deletes
+                            .entry(left_digest.clone())
                             .or_insert_with(Vec::new)
                             .push(path.clone());
-                    },
+                    }
                     Some(right_digest) => {
                         seen.insert(path.clone());
                         if left_digest != right_digest {
@@ -481,11 +500,12 @@ impl Version {
                 if let Some(original) = deletes.remove(digest) {
                     let mut renamed = Vec::new();
                     renamed.push(path.clone());
-                    renames.insert(digest.clone(), Diff::Renamed {
-                        original,
-                        renamed,
-                    });
-                } else if let Some(Diff::Renamed { original: _, renamed }) = renames.get_mut(digest) {
+                    renames.insert(digest.clone(), Diff::Renamed { original, renamed });
+                } else if let Some(Diff::Renamed {
+                    original: _,
+                    renamed,
+                }) = renames.get_mut(digest)
+                {
                     renamed.push(path.clone());
                 } else {
                     diffs.push(Diff::Added(path.clone()));
@@ -499,7 +519,7 @@ impl Version {
             }
 
             for (_digest, mut rename) in renames {
-                if let Diff::Renamed {original, renamed} = &mut rename {
+                if let Diff::Renamed { original, renamed } = &mut rename {
                     original.sort_unstable();
                     renamed.sort_unstable();
                 }
@@ -559,7 +579,10 @@ impl User {
 }
 
 /// Executes the `consumer` on every virtual directory that is part of the input path.
-fn foreach_dir<F: FnMut(InventoryPath) -> Result<()>>(path: &InventoryPath, mut consumer: F) -> Result<()> {
+fn foreach_dir<F: FnMut(InventoryPath) -> Result<()>>(
+    path: &InventoryPath,
+    mut consumer: F,
+) -> Result<()> {
     let mut parts = path.parts();
     let mut dir = String::new();
     let mut current = parts.next();

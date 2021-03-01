@@ -10,15 +10,18 @@ use globset::GlobBuilder;
 use log::{error, info};
 use once_cell::sync::Lazy;
 use rusoto_core::{Region, RusotoError};
-use rusoto_s3::{GetObjectError, GetObjectRequest, ListObjectsV2Output, ListObjectsV2Request, S3, S3Client as RusotoS3Client};
+use rusoto_s3::{
+    GetObjectError, GetObjectRequest, ListObjectsV2Output, ListObjectsV2Request,
+    S3Client as RusotoS3Client, S3,
+};
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
 
-use crate::ocfl::{InventoryPath, OcflLayout, VersionNum};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::layout::StorageLayout;
+use crate::ocfl::{InventoryPath, OcflLayout, VersionNum};
 
 use super::OcflStore;
 use std::path::Path;
@@ -51,13 +54,16 @@ impl S3OcflStore {
             let object_root = storage_layout.map_object_id(object_id);
             self.parse_inventory_required(object_id, &object_root)
         } else {
-            info!("Storage layout not configured, scanning repository to locate object {}", &object_id);
+            info!(
+                "Storage layout not configured, scanning repository to locate object {}",
+                &object_id
+            );
 
             let mut iter = InventoryIter::new_id_matching(&self, &object_id);
 
             match iter.next() {
                 Some(inventory) => Ok(inventory),
-                None => Err(not_found(&object_id, None))
+                None => Err(not_found(&object_id, None)),
             }
         }
     }
@@ -75,7 +81,7 @@ impl S3OcflStore {
     fn parse_inventory_required(&self, object_id: &str, object_root: &str) -> Result<Inventory> {
         match self.parse_inventory(object_root)? {
             Some(inventory) => Ok(inventory),
-            None => Err(not_found(object_id, None))
+            None => Err(not_found(object_id, None)),
         }
     }
 
@@ -89,10 +95,15 @@ impl S3OcflStore {
         if let Some(bytes) = bytes {
             let mut inventory = match self.parse_inventory_bytes(&bytes) {
                 Ok(inventory) => inventory,
-                Err(e) => return Err(RocflError::General(
-                    format!("Failed to parse inventory in object at {}: {}", object_root, e)))
+                Err(e) => {
+                    return Err(RocflError::General(format!(
+                        "Failed to parse inventory in object at {}: {}",
+                        object_root, e
+                    )))
+                }
             };
-            inventory.object_root = strip_leading_slash(strip_trailing_slash(object_root).as_ref()).into();
+            inventory.object_root =
+                strip_leading_slash(strip_trailing_slash(object_root).as_ref()).into();
             Ok(Some(inventory))
         } else {
             Ok(None)
@@ -112,12 +123,12 @@ impl S3OcflStore {
             Some(bytes) => {
                 info!("Found mutable HEAD at {}", &mutable_head_inv);
                 Ok(Some(bytes))
-            },
+            }
             None => {
                 let inv_path = join(object_root, INVENTORY_FILE);
                 match self.s3_client.get_object(&inv_path)? {
                     Some(bytes) => Ok(Some(bytes)),
-                    None => Ok(None)
+                    None => Ok(None),
                 }
             }
         }
@@ -135,17 +146,16 @@ impl OcflStore for S3OcflStore {
     fn get_inventory(&self, object_id: &str) -> Result<Inventory> {
         let object_root = match self.id_path_cache.borrow().get(object_id) {
             Some(object_root) => Some(object_root.clone()),
-            None => None
+            None => None,
         };
 
         match object_root {
-            Some(object_root) => {
-                self.parse_inventory_required(object_id, &object_root)
-            }
+            Some(object_root) => self.parse_inventory_required(object_id, &object_root),
             None => {
                 let inventory = self.get_inventory_inner(&object_id)?;
-                self.id_path_cache.borrow_mut().insert(object_id.to_string(),
-                                                       inventory.object_root.clone());
+                self.id_path_cache
+                    .borrow_mut()
+                    .insert(object_id.to_string(), inventory.object_root.clone());
                 Ok(inventory)
             }
         }
@@ -154,22 +164,26 @@ impl OcflStore for S3OcflStore {
     /// Returns an iterator that iterates over every object in an OCFL repository, returning
     /// the most recent inventory of each. Optionally, a glob pattern may be provided that filters
     /// the objects that are returned by OCFL ID.
-    fn iter_inventories<'a>(&'a self, filter_glob: Option<&str>)
-        -> Result<Box<dyn Iterator<Item=Inventory> + 'a>> {
+    fn iter_inventories<'a>(
+        &'a self,
+        filter_glob: Option<&str>,
+    ) -> Result<Box<dyn Iterator<Item = Inventory> + 'a>> {
         Ok(Box::new(match filter_glob {
             Some(glob) => InventoryIter::new_glob_matching(&self, glob)?,
-            None => InventoryIter::new(&self, None)
+            None => InventoryIter::new(&self, None),
         }))
     }
 
     /// Writes the specified file to the sink.
     ///
     /// If the file cannot be found, then a `RocflError::NotFound` error is returned.
-    fn get_object_file(&self,
-                       object_id: &str,
-                       path: &InventoryPath,
-                       version_num: Option<VersionNum>,
-                       sink: &mut dyn Write) -> Result<()> {
+    fn get_object_file(
+        &self,
+        object_id: &str,
+        path: &InventoryPath,
+        version_num: Option<VersionNum>,
+        sink: &mut dyn Write,
+    ) -> Result<()> {
         let inventory = self.get_inventory(object_id)?;
 
         let content_path = inventory.content_path_for_logical_path(path, version_num)?;
@@ -178,16 +192,12 @@ impl OcflStore for S3OcflStore {
         self.s3_client.stream_object(&storage_path, sink)
     }
 
-    fn write_new_object(&self,
-                        _inventory: &Inventory,
-                        _object_path: &Path) -> Result<()> {
+    fn write_new_object(&self, _inventory: &Inventory, _object_path: &Path) -> Result<()> {
         // TODO s3
         unimplemented!()
     }
 
-    fn write_new_version(&self,
-                         _inventory: &Inventory,
-                         _version_path: &Path) -> Result<()> {
+    fn write_new_version(&self, _inventory: &Inventory, _version_path: &Path) -> Result<()> {
         // TODO s3
         unimplemented!()
     }
@@ -235,14 +245,16 @@ impl S3Client {
         let mut continuation = None;
 
         loop {
-            let result: ListObjectsV2Output = self.runtime.borrow_mut().block_on(
-                self.s3_client.list_objects_v2(ListObjectsV2Request {
-                    bucket: self.bucket.clone(),
-                    prefix: Some(prefix.clone()),
-                    delimiter: Some("/".to_owned()),
-                    continuation_token: continuation.clone(),
-                    ..Default::default()
-                }))?;
+            let result: ListObjectsV2Output =
+                self.runtime
+                    .borrow_mut()
+                    .block_on(self.s3_client.list_objects_v2(ListObjectsV2Request {
+                        bucket: self.bucket.clone(),
+                        prefix: Some(prefix.clone()),
+                        delimiter: Some("/".to_owned()),
+                        continuation_token: continuation.clone(),
+                        ..Default::default()
+                    }))?;
 
             if let Some(contents) = &result.contents {
                 for object in contents {
@@ -252,7 +264,8 @@ impl S3Client {
 
             if let Some(prefixes) = &result.common_prefixes {
                 for prefix in prefixes {
-                    directories.push(prefix.prefix.as_ref().unwrap()[self.prefix.len()..].to_owned());
+                    directories
+                        .push(prefix.prefix.as_ref().unwrap()[self.prefix.len()..].to_owned());
                 }
             }
 
@@ -265,7 +278,7 @@ impl S3Client {
 
         Ok(ListResult {
             objects,
-            directories
+            directories,
         })
     }
 
@@ -274,22 +287,28 @@ impl S3Client {
 
         info!("Getting object from S3: {}", &key);
 
-        let result = self.runtime.borrow_mut().block_on(self.s3_client.get_object(GetObjectRequest {
-            bucket: self.bucket.clone(),
-            key,
-            ..Default::default()
-        }));
+        let result = self
+            .runtime
+            .borrow_mut()
+            .block_on(self.s3_client.get_object(GetObjectRequest {
+                bucket: self.bucket.clone(),
+                key,
+                ..Default::default()
+            }));
 
         match result {
-            Ok(result) => {
-                self.runtime.borrow_mut().block_on(async move {
-                    let mut buffer = Vec::new();
-                    result.body.unwrap().into_async_read().read_to_end(&mut buffer).await?;
-                    Ok(Some(buffer))
-                })
-            }
+            Ok(result) => self.runtime.borrow_mut().block_on(async move {
+                let mut buffer = Vec::new();
+                result
+                    .body
+                    .unwrap()
+                    .into_async_read()
+                    .read_to_end(&mut buffer)
+                    .await?;
+                Ok(Some(buffer))
+            }),
             Err(RusotoError::Service(GetObjectError::NoSuchKey(_e))) => Ok(None),
-            Err(e) => Err(e.into())
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -298,28 +317,29 @@ impl S3Client {
 
         info!("Streaming object from S3: {}", &key);
 
-        let result = self.runtime.borrow_mut().block_on(self.s3_client.get_object(GetObjectRequest {
-            bucket: self.bucket.clone(),
-            key,
-            ..Default::default()
-        }));
+        let result = self
+            .runtime
+            .borrow_mut()
+            .block_on(self.s3_client.get_object(GetObjectRequest {
+                bucket: self.bucket.clone(),
+                key,
+                ..Default::default()
+            }));
 
         match result {
-            Ok(result) => {
-                self.runtime.borrow_mut().block_on(async move {
-                    let mut reader = result.body.unwrap().into_async_read();
-                    let mut buf = [0; 8192];
-                    loop {
-                        let read = reader.read(&mut buf).await?;
-                        if read == 0 {
-                            break;
-                        }
-                        sink.write_all(&buf[..read])?;
+            Ok(result) => self.runtime.borrow_mut().block_on(async move {
+                let mut reader = result.body.unwrap().into_async_read();
+                let mut buf = [0; 8192];
+                loop {
+                    let read = reader.read(&mut buf).await?;
+                    if read == 0 {
+                        break;
                     }
-                    Ok(())
-                })
-            }
-            Err(e) => Err(e.into())
+                    sink.write_all(&buf[..read])?;
+                }
+                Ok(())
+            }),
+            Err(e) => Err(e.into()),
         }
     }
 }
@@ -334,8 +354,14 @@ impl<'a> InventoryIter<'a> {
     /// Creates a new iterator that only returns objects with IDs that match the specified glob
     /// pattern.
     fn new_glob_matching(store: &'a S3OcflStore, glob: &str) -> Result<Self> {
-        let matcher = GlobBuilder::new(glob).backslash_escape(true).build()?.compile_matcher();
-        Ok(InventoryIter::new(store, Some(Box::new(move |id| matcher.is_match(id)))))
+        let matcher = GlobBuilder::new(glob)
+            .backslash_escape(true)
+            .build()?
+            .compile_matcher();
+        Ok(InventoryIter::new(
+            store,
+            Some(Box::new(move |id| matcher.is_match(id))),
+        ))
     }
 
     /// Creates a new iterator that returns all objects if no `id_matcher` is provided, or only
@@ -363,7 +389,10 @@ impl<'a> InventoryIter<'a> {
                 }
             }
             None => {
-                error!("Expected object to exist at {}, but none found.", object_root);
+                error!(
+                    "Expected object to exist at {}, but none found.",
+                    object_root
+                );
                 None
             }
         }
@@ -376,7 +405,7 @@ impl<'a> Iterator for InventoryIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if self.current.borrow().is_none() && self.dir_iters.is_empty() {
-                return None
+                return None;
             } else if self.current.borrow().is_none() {
                 self.current.replace(self.dir_iters.pop());
             }
@@ -395,7 +424,7 @@ impl<'a> Iterator for InventoryIter<'a> {
                     match self.store.list_dir(&entry) {
                         Ok(listing) => {
                             if is_object_dir(&listing.objects) {
-                                if let Some(inventory) =  self.create_if_matches(&entry) {
+                                if let Some(inventory) = self.create_if_matches(&entry) {
                                     return Some(inventory);
                                 }
                             } else {
@@ -403,7 +432,7 @@ impl<'a> Iterator for InventoryIter<'a> {
                                 self.current.replace(Some(listing.directories.into_iter()));
                             }
                         }
-                        Err(e) => error!("{:#}", e)
+                        Err(e) => error!("{:#}", e),
                     }
                 }
             }
@@ -414,20 +443,20 @@ impl<'a> Iterator for InventoryIter<'a> {
 /// Reads `ocfl_layout.json` and attempts to load the specified storage layout extension
 fn load_storage_layout(s3_client: &S3Client) -> Option<StorageLayout> {
     match s3_client.get_object(OCFL_LAYOUT_FILE) {
-        Ok(Some(layout)) => {
-            match serde_json::from_slice::<OcflLayout>(layout.as_slice()) {
-                Ok(layout) => load_layout_extension(layout, s3_client),
-                Err(e) => {
-                    error!("Failed to load OCFL layout: {:#}", e);
-                    None
-                }
+        Ok(Some(layout)) => match serde_json::from_slice::<OcflLayout>(layout.as_slice()) {
+            Ok(layout) => load_layout_extension(layout, s3_client),
+            Err(e) => {
+                error!("Failed to load OCFL layout: {:#}", e);
+                None
             }
         },
         Ok(None) => {
-            info!("The OCFL repository at {}/{} does not contain an ocfl_layout.json file.",
-                  s3_client.bucket, s3_client.prefix);
+            info!(
+                "The OCFL repository at {}/{} does not contain an ocfl_layout.json file.",
+                s3_client.bucket, s3_client.prefix
+            );
             None
-        },
+        }
         Err(e) => {
             error!("Failed to load OCFL layout: {:#}", e);
             None
@@ -437,27 +466,35 @@ fn load_storage_layout(s3_client: &S3Client) -> Option<StorageLayout> {
 
 /// Attempts to read a storage layout extension config and return configured `StorageLayout`
 fn load_layout_extension(layout: OcflLayout, s3_client: &S3Client) -> Option<StorageLayout> {
-    let config_path = join(&join(EXTENSIONS_DIR, &layout.extension.to_string()),
-                           EXTENSIONS_CONFIG_FILE);
+    let config_path = join(
+        &join(EXTENSIONS_DIR, &layout.extension.to_string()),
+        EXTENSIONS_CONFIG_FILE,
+    );
 
     match s3_client.get_object(&config_path) {
-        Ok(config) => {
-            match StorageLayout::new(layout.extension, config.as_deref()) {
-                Ok(storage_layout) => {
-                    info!("Loaded storage layout extension {}",
-                          layout.extension.to_string());
-                    Some(storage_layout)
-                },
-                Err(e) => {
-                    error!("Failed to load storage layout extension {}: {:#}",
-                           layout.extension.to_string(), e);
-                    None
-                }
+        Ok(config) => match StorageLayout::new(layout.extension, config.as_deref()) {
+            Ok(storage_layout) => {
+                info!(
+                    "Loaded storage layout extension {}",
+                    layout.extension.to_string()
+                );
+                Some(storage_layout)
+            }
+            Err(e) => {
+                error!(
+                    "Failed to load storage layout extension {}: {:#}",
+                    layout.extension.to_string(),
+                    e
+                );
+                None
             }
         },
         Err(e) => {
-            error!("Failed to load storage layout extension {}: {:#}",
-                   layout.extension.to_string(), e);
+            error!(
+                "Failed to load storage layout extension {}: {:#}",
+                layout.extension.to_string(),
+                e
+            );
             None
         }
     }
@@ -475,12 +512,11 @@ fn is_object_dir(objects: &[String]) -> bool {
 fn join(part1: &str, part2: &str) -> String {
     let mut joined = match part1.ends_with('/') {
         true => part1[..part1.len() - 1].to_string(),
-        false => part1.to_string()
+        false => part1.to_string(),
     };
 
     if !part2.is_empty() {
-        if (!joined.is_empty() || part1 == "/")
-            && !part2.starts_with('/') {
+        if (!joined.is_empty() || part1 == "/") && !part2.starts_with('/') {
             joined.push('/');
         }
         joined.push_str(part2);
@@ -570,7 +606,10 @@ mod tests {
 
     #[test]
     fn is_root_when_has_object_marker_key() {
-        let objects = vec!["foo/bar.txt".to_string(), "foo/0=ocfl_object_1.0".to_string()];
+        let objects = vec![
+            "foo/bar.txt".to_string(),
+            "foo/0=ocfl_object_1.0".to_string(),
+        ];
         assert!(is_object_dir(&objects));
     }
 
