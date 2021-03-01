@@ -68,6 +68,8 @@ pub enum Command {
     New(NewCmd),
     #[structopt(name = "cp")]
     Copy(CopyCmd),
+    #[structopt(name = "rm")]
+    Remove(RemoveCmd),
     #[structopt(name = "status")]
     Status(StatusCmd),
     #[structopt(name = "commit")]
@@ -255,7 +257,8 @@ pub struct NewCmd {
     pub object_id: String,
 }
 
-/// Copies files into objects, between objects, and within objects.
+/// Copies files into objects, between objects, and within objects. These changes are staged and
+/// must be `committed` before they are reflected in a new OCFL object version.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct CopyCmd {
@@ -323,6 +326,25 @@ pub struct CommitCmd {
     /// The ID of the object to commit changes for
     #[structopt(name = "OBJ_ID")]
     pub object_id: String,
+}
+
+/// Removes files from an object. The removed files still exist in previous versions, but are
+/// no longer referenced in the current version. These changes are staged and must be `committed`
+/// before they are reflected in a new OCFL object version.
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+pub struct RemoveCmd {
+    /// Indicates that virtual directories should be removed recursively
+    #[structopt(short, long)]
+    pub recursive: bool,
+
+    /// The ID of the object to remove files from
+    #[structopt(name = "OBJ_ID")]
+    pub object_id: String,
+
+    /// The logical paths of the files to remove. This may be a glob pattern
+    #[structopt(name = "SRC")]
+    pub source: Vec<String>,
 }
 
 #[derive(Debug)]

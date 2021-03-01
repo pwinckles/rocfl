@@ -58,6 +58,7 @@ mod util;
 pub struct OcflRepo {
     /// For local filesystem repos, this is the storage root. TBD for S3.
     root: PathBuf,
+    // TODO experiment changing this to a generic
     store: Box<dyn OcflStore>,
     staging: OnceCell<FsOcflStore>,
 }

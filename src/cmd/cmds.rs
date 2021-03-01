@@ -4,7 +4,7 @@ use std::io;
 use log::info;
 
 use crate::cmd::{Cmd, GlobalArgs, println};
-use crate::cmd::opts::{CatCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, NewCmd, CommitCmd};
+use crate::cmd::opts::{CatCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, NewCmd, CommitCmd, RemoveCmd};
 use crate::cmd::opts::{InitCmd, Layout, RocflArgs, Storage};
 use crate::ocfl::{DigestAlgorithm, OcflRepo, Result};
 use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
@@ -86,6 +86,12 @@ impl Cmd for CommitCmd {
         repo.commit(&self.object_id, &self.user_name, &self.user_address, &self.message)?;
 
         Ok(())
+    }
+}
+
+impl Cmd for RemoveCmd {
+    fn exec(&self, _repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
+        unimplemented!()
     }
 }
 
