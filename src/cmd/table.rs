@@ -1,6 +1,6 @@
 use core::iter;
-use std::{cmp, io};
 use std::io::{ErrorKind, Result, Write};
+use std::{cmp, io};
 
 use ansi_term::Style;
 use unicode_width::UnicodeWidthStr;
@@ -64,10 +64,12 @@ pub struct TableView<'a> {
 }
 
 impl<'a> TableView<'a> {
-    pub fn new(columns: Vec<Column>,
-               separator: Separator,
-               display_header: bool,
-               enable_styling: bool) -> Self {
+    pub fn new(
+        columns: Vec<Column>,
+        separator: Separator,
+        display_header: bool,
+        enable_styling: bool,
+    ) -> Self {
         let mut table = Self {
             display_header,
             columns,
@@ -125,7 +127,9 @@ impl<'a> TableView<'a> {
 
             let width = if next.is_some() { column.width } else { 0 };
 
-            column.heading_cell().write(writer, width, Alignment::Left, self.enable_styling)?;
+            column
+                .heading_cell()
+                .write(writer, width, Alignment::Left, self.enable_styling)?;
 
             if next.is_some() {
                 write!(writer, "{}", self.separator)?;
@@ -165,16 +169,16 @@ impl Column {
 
 impl<'a> Row<'a> {
     pub fn new(cells: Vec<TextCell<'a>>) -> Self {
-        Row {
-            cells
-        }
+        Row { cells }
     }
 
-    fn write(&self,
-             writer: &mut impl Write,
-             columns: &[Column],
-             separator: Separator,
-             enable_styling: bool) -> Result<()> {
+    fn write(
+        &self,
+        writer: &mut impl Write,
+        columns: &[Column],
+        separator: Separator,
+        enable_styling: bool,
+    ) -> Result<()> {
         let mut iter = self.cells.iter().zip(columns);
         let mut next = iter.next();
 
@@ -220,12 +224,13 @@ impl<'a> TextCell<'a> {
         self.width
     }
 
-    fn write(&self,
-             writer: &mut impl Write,
-             width: usize,
-             alignment: Alignment,
-             enable_style: bool) -> Result<()> {
-
+    fn write(
+        &self,
+        writer: &mut impl Write,
+        width: usize,
+        alignment: Alignment,
+        enable_style: bool,
+    ) -> Result<()> {
         let spaces: String = if width == 0 {
             "".to_owned()
         } else {
@@ -242,7 +247,7 @@ impl<'a> TextCell<'a> {
 
         match alignment {
             Alignment::Left => write!(writer, "{}{}", style.paint(value), spaces),
-            Alignment::Right => write!(writer, "{}{}", spaces, style.paint(value))
+            Alignment::Right => write!(writer, "{}{}", spaces, style.paint(value)),
         }
     }
 }

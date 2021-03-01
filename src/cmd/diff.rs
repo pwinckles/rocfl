@@ -4,10 +4,10 @@ use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::fmt::Formatter;
 
-use crate::cmd::{Cmd, DATE_FORMAT, GlobalArgs, println};
 use crate::cmd::opts::{DiffCmd, LogCmd, ShowCmd, StatusCmd};
 use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, Separator, TableView, TextCell};
+use crate::cmd::{println, Cmd, GlobalArgs, DATE_FORMAT};
 use crate::ocfl::{Diff, ObjectVersionDetails, OcflRepo, Result, VersionDetails};
 
 const DEFAULT_USER: &str = "NA";
@@ -115,14 +115,16 @@ impl Cmd for StatusCmd {
             if objects.is_empty() {
                 println("No objects with staged changes found.")?;
             } else {
-                objects.sort_unstable_by(|a, b| {
-                    natord::compare(&a.id, &b.id)
-                });
+                objects.sort_unstable_by(|a, b| natord::compare(&a.id, &b.id));
 
                 let mut columns = Vec::new();
                 columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
                 columns.push(Column::new(ColumnId::Created, "Updated", Alignment::Left));
-                columns.push(Column::new(ColumnId::ObjectId, "Object ID", Alignment::Left));
+                columns.push(Column::new(
+                    ColumnId::ObjectId,
+                    "Object ID",
+                    Alignment::Left,
+                ));
                 let mut table = TableView::new(columns, Separator::SPACE, true, !args.no_styles);
 
                 objects.iter().for_each(|object| table.add_row(object));
@@ -135,15 +137,21 @@ impl Cmd for StatusCmd {
 }
 
 fn display_diffs(diffs: Vec<Diff>, args: &GlobalArgs) -> Result<()> {
-    let mut diffs: Vec<DiffLine> = diffs.into_iter()
-        .map(DiffLine::new)
-        .collect();
+    let mut diffs: Vec<DiffLine> = diffs.into_iter().map(DiffLine::new).collect();
 
     diffs.sort_unstable();
 
     let mut columns = Vec::new();
-    columns.push(Column::new(ColumnId::Operation, "Operation", Alignment::Left));
-    columns.push(Column::new(ColumnId::LogicalPath, "Logical Path", Alignment::Left));
+    columns.push(Column::new(
+        ColumnId::Operation,
+        "Operation",
+        Alignment::Left,
+    ));
+    columns.push(Column::new(
+        ColumnId::LogicalPath,
+        "Logical Path",
+        Alignment::Left,
+    ));
     let mut table = TableView::new(columns, Separator::SPACE, true, !args.no_styles);
 
     diffs.iter().for_each(|diff| table.add_row(diff));
@@ -179,22 +187,25 @@ impl fmt::Display for FormatVersion<'_> {
             &*style::DEFAULT
         };
 
-        write!(f, "{}\n{:width$} {} <{}>\n{:width$} {}\n{:width$} {}\n",
-               style.paint(version),
-               "Author:",
-                defaulted_str(&self.details.user_name, DEFAULT_USER),
-                defaulted_str(&self.details.user_address, DEFAULT_USER),
-               "Date:", self.details.created.to_rfc2822(),
-               "Message:", self.details.message.as_ref().unwrap_or(&"".to_owned()),
-               width = 8)
+        write!(
+            f,
+            "{}\n{:width$} {} <{}>\n{:width$} {}\n{:width$} {}\n",
+            style.paint(version),
+            "Author:",
+            defaulted_str(&self.details.user_name, DEFAULT_USER),
+            defaulted_str(&self.details.user_address, DEFAULT_USER),
+            "Date:",
+            self.details.created.to_rfc2822(),
+            "Message:",
+            self.details.message.as_ref().unwrap_or(&"".to_owned()),
+            width = 8
+        )
     }
 }
 
 impl DiffLine {
     fn new(diff: Diff) -> Self {
-        Self {
-            diff,
-        }
+        Self { diff }
     }
 }
 
@@ -204,16 +215,14 @@ impl<'a> AsRow<'a> for DiffLine {
 
         for column in columns {
             let cell = match column.id {
-                ColumnId::Operation => {
-                    match &self.diff {
-                        Diff::Added(_) => TextCell::new(ADDED).with_style(&*style::GREEN),
-                        Diff::Modified(_) => TextCell::new(MODIFIED).with_style(&*style::CYAN),
-                        Diff::Deleted(_) => TextCell::new(DELETED).with_style(&*style::RED),
-                        Diff::Renamed { .. } => TextCell::new(RENAMED).with_style(&*style::CYAN),
-                    }
-                }
+                ColumnId::Operation => match &self.diff {
+                    Diff::Added(_) => TextCell::new(ADDED).with_style(&*style::GREEN),
+                    Diff::Modified(_) => TextCell::new(MODIFIED).with_style(&*style::CYAN),
+                    Diff::Deleted(_) => TextCell::new(DELETED).with_style(&*style::RED),
+                    Diff::Renamed { .. } => TextCell::new(RENAMED).with_style(&*style::CYAN),
+                },
                 ColumnId::LogicalPath => TextCell::new(self.path_display()),
-                _ => TextCell::blank()
+                _ => TextCell::blank(),
             };
 
             cells.push(cell);
@@ -226,13 +235,19 @@ impl<'a> AsRow<'a> for DiffLine {
 impl DiffLine {
     fn path_display(&self) -> Cow<str> {
         match &self.diff {
-            Diff::Renamed {original, renamed} => {
-                Cow::Owned(format!("{} -> {}",
-                        original.iter().map(|e| e.as_ref().as_ref().as_ref())
-                            .collect::<Vec<&str>>().join(", "),
-                        renamed.iter().map(|e| e.as_ref().as_ref().as_ref())
-                            .collect::<Vec<&str>>().join(", ")))
-            }
+            Diff::Renamed { original, renamed } => Cow::Owned(format!(
+                "{} -> {}",
+                original
+                    .iter()
+                    .map(|e| e.as_ref().as_ref().as_ref())
+                    .collect::<Vec<&str>>()
+                    .join(", "),
+                renamed
+                    .iter()
+                    .map(|e| e.as_ref().as_ref().as_ref())
+                    .collect::<Vec<&str>>()
+                    .join(", ")
+            )),
             Diff::Added(path) => path.as_ref().as_ref().into(),
             Diff::Modified(path) => path.as_ref().as_ref().into(),
             Diff::Deleted(path) => path.as_ref().as_ref().into(),
@@ -266,20 +281,19 @@ impl<'a> AsRow<'a> for VersionDetails {
 
         for column in columns {
             let cell = match column.id {
-                ColumnId::Version => TextCell::new(self.version_num.to_string())
-                    .with_style(&*style::GREEN),
+                ColumnId::Version => {
+                    TextCell::new(self.version_num.to_string()).with_style(&*style::GREEN)
+                }
                 ColumnId::Author => TextCell::new(defaulted_str(&self.user_name, DEFAULT_USER))
                     .with_style(&*style::BOLD),
                 ColumnId::Address => TextCell::new(defaulted_str(&self.user_address, DEFAULT_USER)),
                 ColumnId::Created => TextCell::new(self.created.format(DATE_FORMAT).to_string())
                     .with_style(&*style::YELLOW),
-                ColumnId::Message => {
-                    match &self.message {
-                        Some(message) => TextCell::new(message),
-                        None => TextCell::blank(),
-                    }
+                ColumnId::Message => match &self.message {
+                    Some(message) => TextCell::new(message),
+                    None => TextCell::blank(),
                 },
-                _ => TextCell::blank()
+                _ => TextCell::blank(),
             };
 
             cells.push(cell);
@@ -292,6 +306,6 @@ impl<'a> AsRow<'a> for VersionDetails {
 fn defaulted_str<'a>(value: &'a Option<String>, default: &'a str) -> &'a str {
     match value {
         Some(value) => value.as_ref(),
-        None => default
+        None => default,
     }
 }

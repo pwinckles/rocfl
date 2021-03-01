@@ -3,18 +3,22 @@ use std::io;
 
 use log::info;
 
-use crate::cmd::{Cmd, GlobalArgs, println};
-use crate::cmd::opts::{CatCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, NewCmd, CommitCmd, RemoveCmd};
+use crate::cmd::opts::{
+    CatCmd, CommitCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, NewCmd, RemoveCmd,
+};
 use crate::cmd::opts::{InitCmd, Layout, RocflArgs, Storage};
-use crate::ocfl::{DigestAlgorithm, OcflRepo, Result};
+use crate::cmd::{println, Cmd, GlobalArgs};
 use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
+use crate::ocfl::{DigestAlgorithm, OcflRepo, Result};
 
 impl Cmd for CatCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
-        repo.get_object_file(&self.object_id,
-                             &self.path.as_str().try_into()?,
-                             self.version,
-                             &mut io::stdout())
+        repo.get_object_file(
+            &self.object_id,
+            &self.path.as_str().try_into()?,
+            self.version,
+            &mut io::stdout(),
+        )
     }
 }
 
@@ -24,7 +28,7 @@ pub fn init_repo(cmd: &InitCmd, args: &RocflArgs) -> Result<()> {
             let _ = OcflRepo::init_fs_repo(&args.root, create_layout(cmd.layout)?)?;
         }
         // TODO S3
-        Storage::S3 => unimplemented!()
+        Storage::S3 => unimplemented!(),
     }
 
     if !args.quiet {
@@ -38,7 +42,9 @@ fn create_layout(layout: Layout) -> Result<StorageLayout> {
     match layout {
         Layout::FlatDirect => StorageLayout::new(LayoutExtensionName::FlatDirectLayout, None),
         Layout::HashedNTuple => StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None),
-        Layout::HashedNTupleObjectId => StorageLayout::new(LayoutExtensionName::HashedNTupleObjectIdLayout, None),
+        Layout::HashedNTupleObjectId => {
+            StorageLayout::new(LayoutExtensionName::HashedNTupleObjectIdLayout, None)
+        }
     }
 }
 
@@ -51,10 +57,12 @@ impl Cmd for InitCmd {
 
 impl Cmd for NewCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
-        repo.create_object(&self.object_id,
-                           algorithm(self.digest_algorithm),
-                           &self.content_directory,
-                           self.zero_padding)?;
+        repo.create_object(
+            &self.object_id,
+            algorithm(self.digest_algorithm),
+            &self.content_directory,
+            self.zero_padding,
+        )?;
 
         info!("Staged new OCFL object {}", self.object_id);
 
@@ -66,11 +74,13 @@ impl Cmd for CopyCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
         if self.source_object.is_none() {
             // external copy
-            repo.copy_files_external(self.destination_object.as_ref().unwrap(),
-                                     &self.source,
-                                     &self.destination,
-                                     self.recursive,
-                                     self.force)?;
+            repo.copy_files_external(
+                self.destination_object.as_ref().unwrap(),
+                &self.source,
+                &self.destination,
+                self.recursive,
+                self.force,
+            )?;
         } else {
             // internal copy
             // TODO copy within object
@@ -83,7 +93,12 @@ impl Cmd for CopyCmd {
 
 impl Cmd for CommitCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
-        repo.commit(&self.object_id, &self.user_name, &self.user_address, &self.message)?;
+        repo.commit(
+            &self.object_id,
+            &self.user_name,
+            &self.user_address,
+            &self.message,
+        )?;
 
         Ok(())
     }
