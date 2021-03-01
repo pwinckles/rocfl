@@ -210,6 +210,7 @@ impl Inventory {
             }
         }
 
+        // TODO there seems to be a bug here with the manifest not entirely deduping
         for (_digest, paths) in matches {
             if paths.len() == 1 {
                 // This means the content path is a dup of a file that existed before this version
