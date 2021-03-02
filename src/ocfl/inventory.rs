@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use chrono::{DateTime, Local};
 use globset::GlobBuilder;
-use log::error;
+use log::{error, info};
 use once_cell::unsync::OnceCell;
 use serde::{Deserialize, Serialize};
 
@@ -123,6 +123,11 @@ impl Inventory {
             Some(v) => Ok(v),
             None => Err(not_found(&self.id, Some(version_num))),
         }
+    }
+
+    /// Returns true if the path exists in the manifest
+    pub fn contains_content_path(&self, content_path: &InventoryPath) -> bool {
+        self.manifest.contains_path(content_path)
     }
 
     /// Returns the first content path associated with the specified digest, or an error if it does
@@ -265,6 +270,33 @@ impl Inventory {
         Ok(())
     }
 
+    /// Removes the specified path from the HEAD version's state. If the HEAD version has
+    /// no more references to the removed file's digest, then any content paths that were
+    /// introduced with that digest are removed from the manifest.
+    pub fn remove_logical_path_from_head(&mut self, logical_path: &InventoryPath) {
+        let head = self.head_version_mut();
+
+        if let Some((_path, digest)) = head.remove_file(logical_path) {
+            if !head.contains_digest(&digest) {
+                let prefix = format!("{}/", self.head.to_string());
+                let mut to_remove = Vec::new();
+
+                if let Some(content_paths) = self.manifest.get_paths(&digest) {
+                    for content_path in content_paths {
+                        if content_path.as_ref().as_ref().starts_with(&prefix) {
+                            to_remove.push(content_path.clone());
+                        }
+                    }
+                }
+
+                for content_path in to_remove {
+                    info!("Removing orphaned path from manifest: {}", content_path);
+                    self.manifest.remove_path(&content_path);
+                }
+            }
+        }
+    }
+
     /// Returns a new content path for the specified logical path, assuming a direct one-to-one
     /// mapping of logical path to content path.
     pub fn new_content_path_head(&self, logical_path: &InventoryPath) -> Result<InventoryPath> {
@@ -280,6 +312,7 @@ impl Inventory {
     ) -> Result<InventoryPath> {
         // TODO this is not correct for the mutable HEAD
         // TODO should any other path cleanup be performed?
+        // TODO I think this is wrong for windows
         format!(
             "{}/{}/{}",
             version_num.to_string(),
@@ -407,18 +440,6 @@ impl Version {
         self.state.iter()
     }
 
-    /// Removes a logical path from the version's state
-    pub fn remove_file(
-        &mut self,
-        path: &InventoryPath,
-    ) -> Option<(Rc<InventoryPath>, Rc<HexDigest>)> {
-        // must invalidate the virtual dirs
-        if self.virtual_dirs.get().is_some() {
-            self.virtual_dirs = OnceCell::default();
-        }
-        self.state.remove_path(path)
-    }
-
     /// Moves the current state map out, replacing it when an empty state
     pub fn remove_state(&mut self) -> PathBiMap {
         if self.virtual_dirs.get().is_some() {
@@ -438,14 +459,19 @@ impl Version {
         self.is_file(&path) || self.is_dir(path)
     }
 
-    /// Returns true if the specified path is a logical file
+    /// Returns true if the specified path exists and is a logical file
     pub fn is_file(&self, path: &InventoryPath) -> bool {
         self.state.contains_path(path)
     }
 
-    // Returns true if the specified path is a virtual directory
+    // Returns true if the specified path exists and is a virtual directory
     pub fn is_dir(&self, path: &InventoryPath) -> bool {
         self.get_virtual_dirs().contains(path)
+    }
+
+    /// Returns true if the version's state contains an entry for the digest
+    pub fn contains_digest(&self, digest: &HexDigest) -> bool {
+        self.state.contains_id(digest)
     }
 
     /// Returns an error if the specified path conflicts with the existing state.
@@ -593,6 +619,15 @@ impl Version {
             }
         }
         self.state.insert_rc(digest, Rc::new(logical_path));
+    }
+
+    /// Removes a logical path from the version's state
+    fn remove_file(&mut self, path: &InventoryPath) -> Option<(Rc<InventoryPath>, Rc<HexDigest>)> {
+        // must invalidate the virtual dirs
+        if self.virtual_dirs.get().is_some() {
+            self.virtual_dirs = OnceCell::default();
+        }
+        self.state.remove_path(path)
     }
 
     /// Initializes a HashSet containing all of the virtual directories within a version.

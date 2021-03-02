@@ -23,6 +23,8 @@ use crate::ocfl::util;
 use crate::ocfl::{InventoryPath, OcflLayout, VersionNum};
 
 use super::OcflStore;
+use std::convert::TryFrom;
+use walkdir::WalkDir;
 
 static OBJECT_ID_MATCHER: Lazy<RegexMatcher> =
     Lazy::new(|| RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap());
@@ -166,6 +168,31 @@ impl FsOcflStore {
             );
             fs::remove_file(&full_path)?;
             util::clean_dirs_up(full_path.parent().unwrap())?;
+        }
+
+        Ok(())
+    }
+
+    pub(super) fn rm_orphaned_files(&self, inventory: &Inventory) -> Result<()> {
+        // TODO need to centralize all of this path wrangling
+        let object_root = self.storage_root.join(&inventory.object_root);
+
+        let content_dir = object_root
+            .join(inventory.head.to_string())
+            .join(inventory.defaulted_content_dir());
+
+        for file in WalkDir::new(&content_dir) {
+            let file = file?;
+            if file.path().is_file() {
+                let content_path = pathdiff::diff_paths(file.path(), &object_root).unwrap();
+                if !inventory.contains_content_path(&InventoryPath::try_from(
+                    content_path.to_string_lossy(),
+                )?) {
+                    info!("Deleting orphaned file: {}", file.path().to_string_lossy());
+                    fs::remove_file(file.path())?;
+                    util::clean_dirs_up(file.path().parent().unwrap())?;
+                }
+            }
         }
 
         Ok(())

@@ -10,6 +10,7 @@
 //! ```
 
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::convert::TryInto;
 use std::fmt::Debug;
 use std::fs::File;
@@ -39,7 +40,6 @@ use self::layout::LayoutExtensionName;
 #[cfg(feature = "s3")]
 use self::s3::S3OcflStore;
 pub use self::types::*;
-use std::collections::HashSet;
 
 mod bimap;
 mod consts;
@@ -356,7 +356,7 @@ impl OcflRepo {
             } else if recursive {
                 let dst_dir_exists = inventory.head_version().is_dir(&dst_path);
 
-                for file in WalkDir::new(&path).into_iter() {
+                for file in WalkDir::new(&path) {
                     let file = file?;
                     if file.path().is_file() {
                         let logical_path = logical_path_for_file(
@@ -396,7 +396,7 @@ impl OcflRepo {
         }
 
         let mut inventory = self.get_staged_inventory(object_id)?;
-        let version = inventory.head_version_mut();
+        let version = inventory.head_version();
 
         let mut paths_to_remove = HashSet::new();
 
@@ -405,8 +405,8 @@ impl OcflRepo {
         }
 
         for path in paths_to_remove {
-            info!("Removing {} from staged version", path);
-            version.remove_file(&path);
+            info!("Removing path from staged version: {}", path);
+            inventory.remove_logical_path_from_head(&path);
         }
 
         self.get_staging()?.stage_inventory(&inventory, false)?;
@@ -443,6 +443,7 @@ impl OcflRepo {
 
         staging.stage_inventory(&inventory, true)?;
         staging.rm_staged_files(&inventory, &duplicates)?;
+        staging.rm_orphaned_files(&inventory)?;
 
         if inventory.is_new() {
             let object_root = staging.object_staging_path(&inventory);
