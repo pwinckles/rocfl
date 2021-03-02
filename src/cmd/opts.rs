@@ -286,7 +286,7 @@ pub struct CopyCmd {
     pub destination_object: String,
 
     /// The files to copy. Glob patterns are supported.
-    #[structopt(name = "SRC")]
+    #[structopt(name = "SRC", required = true)]
     pub source: Vec<String>,
 
     /// The logical path to copy the source files to. Specify '/' to copy into object's root.
@@ -341,8 +341,8 @@ pub struct RemoveCmd {
     pub object_id: String,
 
     /// The logical paths of the files to remove. This may be a glob pattern
-    #[structopt(name = "SRC")]
-    pub source: Vec<String>,
+    #[structopt(name = "PATH", required = true)]
+    pub paths: Vec<String>,
 }
 
 #[derive(Debug)]
