@@ -39,6 +39,7 @@ use self::layout::LayoutExtensionName;
 #[cfg(feature = "s3")]
 use self::s3::S3OcflStore;
 pub use self::types::*;
+use std::collections::HashSet;
 
 mod bimap;
 mod consts;
@@ -394,16 +395,21 @@ impl OcflRepo {
             return Ok(());
         }
 
-        let inventory = self.get_staged_inventory(object_id)?;
-        let version = inventory.head_version();
+        let mut inventory = self.get_staged_inventory(object_id)?;
+        let version = inventory.head_version_mut();
+
+        let mut paths_to_remove = HashSet::new();
 
         for path in paths {
-            let result = version.resolve_glob(path.as_ref(), recursive)?;
-            println!("{:?}", result);
-            // TODO collect all to dedup
-            // TODO remove files
-            // TODO write inv
+            paths_to_remove.extend(version.resolve_glob(path.as_ref(), recursive)?);
         }
+
+        for path in paths_to_remove {
+            info!("Removing {} from staged version", path);
+            version.remove_file(&path);
+        }
+
+        self.get_staging()?.stage_inventory(&inventory, false)?;
 
         Ok(())
     }

@@ -197,6 +197,7 @@ impl FsOcflStore {
 
         if finalize {
             let version_path = object_root.join(inventory.head.to_string());
+            fs::create_dir_all(&version_path)?;
             self.copy_inventory_files(&inventory, &object_root, &version_path)?;
         }
 
