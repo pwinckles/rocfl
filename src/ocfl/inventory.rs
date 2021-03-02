@@ -4,6 +4,7 @@ use std::mem;
 use std::rc::Rc;
 
 use chrono::{DateTime, Local};
+use globset::GlobBuilder;
 use log::error;
 use once_cell::unsync::OnceCell;
 use serde::{Deserialize, Serialize};
@@ -412,13 +413,17 @@ impl Version {
         path: &InventoryPath,
     ) -> Option<(Rc<InventoryPath>, Rc<HexDigest>)> {
         // must invalidate the virtual dirs
-        self.virtual_dirs = OnceCell::default();
+        if self.virtual_dirs.get().is_some() {
+            self.virtual_dirs = OnceCell::default();
+        }
         self.state.remove_path(path)
     }
 
     /// Moves the current state map out, replacing it when an empty state
     pub fn remove_state(&mut self) -> PathBiMap {
-        self.virtual_dirs = OnceCell::default();
+        if self.virtual_dirs.get().is_some() {
+            self.virtual_dirs = OnceCell::default();
+        }
         mem::replace(&mut self.state, PathBiMap::new())
     }
 
@@ -463,6 +468,45 @@ impl Version {
             }
             Ok(())
         })
+    }
+
+    pub fn resolve_glob(&self, glob: &str, recursive: bool) -> Result<HashSet<Rc<InventoryPath>>> {
+        let mut matches = HashSet::new();
+
+        // Logical paths do not have leading slashes
+        let mut glob = glob.trim_start_matches('/');
+
+        // Select the object root directory
+        if glob.is_empty() {
+            glob = "*";
+        }
+
+        let matcher = GlobBuilder::new(glob)
+            .literal_separator(true)
+            .backslash_escape(true)
+            .build()?
+            .compile_matcher();
+
+        for (path, _digest) in self.state.iter() {
+            if matcher.is_match(path.as_ref().as_ref()) {
+                matches.insert(path.clone());
+            }
+        }
+
+        if recursive {
+            for dir in self.get_virtual_dirs() {
+                if matcher.is_match(dir.as_ref()) {
+                    let prefix = format!("{}/", dir);
+                    for (path, _digest) in self.state.iter() {
+                        if path.as_ref().as_ref().starts_with(&prefix) {
+                            matches.insert(path.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(matches)
     }
 
     /// Computes a diff between the versions. This version is the right-hand version and the

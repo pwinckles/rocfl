@@ -102,8 +102,8 @@ impl Cmd for CommitCmd {
 }
 
 impl Cmd for RemoveCmd {
-    fn exec(&self, _repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
-        unimplemented!()
+    fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
+        repo.remove_files(&self.object_id, &self.paths, self.recursive)
     }
 }
 
