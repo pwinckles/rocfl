@@ -326,26 +326,13 @@ impl OcflRepo {
         force: bool,
     ) -> Result<()> {
         if src.is_empty() {
-            return Err(RocflError::IllegalArgument(
-                "Must provide at least one source".to_string(),
-            ));
+            return Ok(());
         }
-
-        let staging = self.get_staging()?;
 
         // TODO even though this is not supposed to be used concurrently, it's not a bad idea
         //      to get some sort of file lock here so that an object cannot be updated concurrently
 
-        let mut inventory = match staging.get_inventory(&object_id) {
-            Ok(inventory) => inventory,
-            Err(RocflError::NotFound(_)) => {
-                let mut inventory = self.store.get_inventory(&object_id)?;
-                inventory.create_staging_head()?;
-                staging.stage_object(&mut inventory)?;
-                inventory
-            }
-            Err(e) => return Err(e),
-        };
+        let mut inventory = self.get_staged_inventory(object_id)?;
 
         let dst_path: InventoryPath = dst.try_into()?;
 
@@ -392,7 +379,31 @@ impl OcflRepo {
         }
 
         inventory.head_version_mut().created = Local::now();
-        staging.stage_inventory(&inventory, false)?;
+        self.get_staging()?.stage_inventory(&inventory, false)?;
+
+        Ok(())
+    }
+
+    pub fn remove_files<P: AsRef<str>>(
+        &self,
+        object_id: &str,
+        paths: &[P],
+        recursive: bool,
+    ) -> Result<()> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+
+        let inventory = self.get_staged_inventory(object_id)?;
+        let version = inventory.head_version();
+
+        for path in paths {
+            let result = version.resolve_glob(path.as_ref(), recursive)?;
+            println!("{:?}", result);
+            // TODO collect all to dedup
+            // TODO remove files
+            // TODO write inv
+        }
 
         Ok(())
     }
@@ -440,6 +451,24 @@ impl OcflRepo {
         staging.purge_object(object_id)?;
 
         Ok(())
+    }
+
+    /// Attempts to get the inventory from staging. If it is not found, it is loaded from the
+    /// main repo, and moved into staging. If it is not found in staging, then an error is
+    /// returned.
+    fn get_staged_inventory(&self, object_id: &str) -> Result<Inventory> {
+        let staging = self.get_staging()?;
+
+        match staging.get_inventory(&object_id) {
+            Ok(inventory) => Ok(inventory),
+            Err(RocflError::NotFound(_)) => {
+                let mut inventory = self.store.get_inventory(&object_id)?;
+                inventory.create_staging_head()?;
+                staging.stage_object(&mut inventory)?;
+                Ok(inventory)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     fn copy_file(
