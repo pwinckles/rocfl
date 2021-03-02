@@ -210,22 +210,23 @@ impl Inventory {
             }
         }
 
-        // TODO there seems to be a bug here with the manifest not entirely deduping
-        for (_digest, paths) in matches {
-            if paths.len() == 1 {
-                // This means the content path is a dup of a file that existed before this version
-                let path = paths.into_iter().next().unwrap();
-                self.manifest.remove_path(&path);
-                removed.push(path);
-            } else {
-                // Otherwise, it is new content duplicated in the current version; remove all
-                // but one of the paths
+        for (digest, paths) in matches {
+            let total = self.manifest.get_paths(&digest).unwrap().len();
+
+            if total == paths.len() {
+                // All of the paths were added in this version; remove all but one
                 let mut iter = paths.into_iter().peekable();
                 while let Some(path) = iter.next() {
                     if iter.peek().is_some() {
                         self.manifest.remove_path(&path);
                         removed.push(path);
                     }
+                }
+            } else {
+                // There's a copy in an earlier version; remove them all
+                for path in paths {
+                    self.manifest.remove_path(&path);
+                    removed.push(path);
                 }
             }
         }
