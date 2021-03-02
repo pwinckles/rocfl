@@ -18,6 +18,7 @@ use crate::ocfl::digest::HexDigest;
 use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::{Inventory, Version};
 use crate::ocfl::DigestAlgorithm;
+use std::borrow::Cow;
 
 static VERSION_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^v\d+$"#).unwrap());
 
@@ -307,6 +308,14 @@ impl TryFrom<&String> for InventoryPath {
 
     fn try_from(value: &String) -> Result<Self, Self::Error> {
         value.as_str().try_into()
+    }
+}
+
+impl TryFrom<Cow<'_, str>> for InventoryPath {
+    type Error = RocflError;
+
+    fn try_from(value: Cow<'_, str>) -> Result<Self, Self::Error> {
+        value.as_ref().try_into()
     }
 }
 
