@@ -6,7 +6,7 @@ use std::io;
 use std::io::{Read, Write};
 
 use blake2::{Blake2b, VarBlake2b};
-use digest::{Digest, DynDigest, Update, VariableOutput};
+use digest::{Digest, DynDigest, VariableOutput};
 use md5::Md5;
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
@@ -65,57 +65,57 @@ pub struct HexDigest(String);
 
 impl DigestAlgorithm {
     /// Hashes the input and returns its hex encoded digest
-    pub fn hash_hex(&self, data: impl AsRef<[u8]>) -> HexDigest {
+    pub fn hash_hex(&self, data: &mut impl Read) -> Result<HexDigest> {
         // This ugliness is because the variable length blake2b algorithms don't work with DynDigest
         let bytes = match self {
             DigestAlgorithm::Md5 => {
                 let mut hasher = Md5::new();
-                Digest::update(&mut hasher, data);
+                io::copy(data, &mut hasher)?;
                 hasher.finalize().to_vec()
             }
             DigestAlgorithm::Sha1 => {
                 let mut hasher = Sha1::new();
-                Digest::update(&mut hasher, data);
+                io::copy(data, &mut hasher)?;
                 hasher.finalize().to_vec()
             }
             DigestAlgorithm::Sha256 => {
                 let mut hasher = Sha256::new();
-                Digest::update(&mut hasher, data);
+                io::copy(data, &mut hasher)?;
                 hasher.finalize().to_vec()
             }
             DigestAlgorithm::Sha512 => {
                 let mut hasher = Sha512::new();
-                Digest::update(&mut hasher, data);
+                io::copy(data, &mut hasher)?;
                 hasher.finalize().to_vec()
             }
             DigestAlgorithm::Sha512_256 => {
                 let mut hasher = Sha512Trunc256::new();
-                Digest::update(&mut hasher, data);
+                io::copy(data, &mut hasher)?;
                 hasher.finalize().to_vec()
             }
             DigestAlgorithm::Blake2b512 => {
                 let mut hasher = Blake2b::new();
-                Digest::update(&mut hasher, data);
+                io::copy(data, &mut hasher)?;
                 hasher.finalize().to_vec()
             }
             DigestAlgorithm::Blake2b160 => {
                 let mut hasher = VarBlake2b::new(20).unwrap();
-                hasher.update(data);
+                io::copy(data, &mut hasher)?;
                 hasher.finalize_boxed().to_vec()
             }
             DigestAlgorithm::Blake2b256 => {
                 let mut hasher = VarBlake2b::new(32).unwrap();
-                hasher.update(data);
+                io::copy(data, &mut hasher)?;
                 hasher.finalize_boxed().to_vec()
             }
             DigestAlgorithm::Blake2b384 => {
                 let mut hasher = VarBlake2b::new(48).unwrap();
-                hasher.update(data);
+                io::copy(data, &mut hasher)?;
                 hasher.finalize_boxed().to_vec()
             }
         };
 
-        bytes.into()
+        Ok(bytes.into())
     }
 
     /// Wraps the specified reader in a `DigestReader`. Does not support blake2b because of the
@@ -308,7 +308,10 @@ mod tests {
         let actual = reader.finalize_hex();
 
         assert_eq!(input, String::from_utf8(output).unwrap());
-        assert_eq!(DigestAlgorithm::Sha512.hash_hex(input.as_bytes()), actual);
+        assert_eq!(
+            DigestAlgorithm::Sha512.hash_hex(&mut input.as_bytes())?,
+            actual
+        );
         assert_eq!(expected, actual.to_string());
 
         Ok(())
