@@ -4,7 +4,7 @@ use std::io;
 use log::info;
 
 use crate::cmd::opts::{
-    CatCmd, CommitCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, NewCmd, RemoveCmd,
+    CatCmd, CommitCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, MoveCmd, NewCmd, RemoveCmd,
 };
 use crate::cmd::opts::{InitCmd, Layout, RocflArgs, Storage};
 use crate::cmd::{println, Cmd, GlobalArgs};
@@ -76,7 +76,7 @@ impl Cmd for CopyCmd {
             // TODO copy within object
         } else {
             repo.copy_files_external(
-                &self.destination_object,
+                &self.object_id,
                 &self.source,
                 &self.destination,
                 self.recursive,
@@ -85,6 +85,24 @@ impl Cmd for CopyCmd {
         }
 
         Ok(())
+    }
+}
+
+impl Cmd for MoveCmd {
+    fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
+        if self.internal {
+            // TODO copy within object
+        } else {
+            repo.move_files_external(&self.object_id, &self.source, &self.destination, self.force)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Cmd for RemoveCmd {
+    fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
+        repo.remove_files(&self.object_id, &self.paths, self.recursive)
     }
 }
 
@@ -98,12 +116,6 @@ impl Cmd for CommitCmd {
         )?;
 
         Ok(())
-    }
-}
-
-impl Cmd for RemoveCmd {
-    fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
-        repo.remove_files(&self.object_id, &self.paths, self.recursive)
     }
 }
 

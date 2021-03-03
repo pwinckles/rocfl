@@ -31,8 +31,9 @@ pub struct VersionNum {
     pub width: u32,
 }
 
-#[derive(Deserialize, Serialize, Debug, Eq, Ord, PartialOrd, PartialEq, Hash, Clone)]
+// TODO model this as LogicalPath and ContentPath -- biggest impact will be on the PathBiMap
 /// Represents a logical or content path.
+#[derive(Deserialize, Serialize, Debug, Eq, Ord, PartialOrd, PartialEq, Hash, Clone)]
 pub struct InventoryPath(String);
 
 /// Represents a version of an OCFL object

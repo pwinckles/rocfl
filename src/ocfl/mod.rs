@@ -318,10 +318,10 @@ impl OcflRepo {
     ///
     /// If `force` is `false` and the copy operation attempts to write a file to a logical
     /// path where there is already a file, then the new file will **not** be copied.
-    pub fn copy_files_external<P: AsRef<Path>>(
+    pub fn copy_files_external(
         &self,
         object_id: &str,
-        src: &[P],
+        src: &[impl AsRef<Path>],
         dst: &str,
         recursive: bool,
         force: bool,
@@ -342,7 +342,7 @@ impl OcflRepo {
 
             if path.is_file() {
                 // TODO need to continue on error ?
-                let parent = path.parent().unwrap_or_else(|| &Path::new(""));
+                let parent = path.parent().unwrap();
                 let logical_path = logical_path_for_file(
                     &path,
                     parent,
@@ -378,6 +378,78 @@ impl OcflRepo {
                 );
             }
         }
+
+        inventory.head_version_mut().created = Local::now();
+        self.get_staging()?.stage_inventory(&inventory, false)?;
+
+        Ok(())
+    }
+
+    /// Moves files from outside the OCFL repository into the specified OCFL object.
+    /// A destination of `/` specifies the object's root.
+    ///
+    /// If `force` is `false` and the copy operation attempts to write a file to a logical
+    /// path where there is already a file, then the new file will **not** be copied.
+    pub fn move_files_external(
+        &self,
+        object_id: &str,
+        src: &[impl AsRef<Path>],
+        dst: &str,
+        force: bool,
+    ) -> Result<()> {
+        // TODO figure out how to combine this with copy
+        if src.is_empty() {
+            return Ok(());
+        }
+
+        // TODO even though this is not supposed to be used concurrently, it's not a bad idea
+        //      to get some sort of file lock here so that an object cannot be updated concurrently
+
+        let mut inventory = self.get_staged_inventory(object_id)?;
+
+        let dst_path: InventoryPath = dst.try_into()?;
+
+        for path in src.iter() {
+            let path = path.as_ref();
+
+            if path.is_file() {
+                // TODO need to continue on error ?
+                let parent = path.parent().unwrap();
+                let logical_path = logical_path_for_file(
+                    &path,
+                    parent,
+                    &dst,
+                    src.len() > 1,
+                    false,
+                    &inventory.head_version(),
+                )?;
+
+                // TODO I think the above logic is correct change to mv
+
+                self.move_file(&path, logical_path, force, &mut inventory)?;
+            } else {
+                let dst_dir_exists = inventory.head_version().is_dir(&dst_path);
+
+                for file in WalkDir::new(&path) {
+                    let file = file?;
+                    if file.path().is_file() {
+                        let logical_path = logical_path_for_file(
+                            &file.path(),
+                            &path,
+                            &dst,
+                            true,
+                            dst_dir_exists,
+                            &inventory.head_version(),
+                        )?;
+
+                        // TODO need to continue on error ?
+                        self.move_file(file.path(), logical_path, force, &mut inventory)?;
+                    }
+                }
+            }
+        }
+
+        // TODO cleanup empty directories in source?
 
         inventory.head_version_mut().created = Local::now();
         self.get_staging()?.stage_inventory(&inventory, false)?;
@@ -486,25 +558,58 @@ impl OcflRepo {
         inventory: &mut Inventory,
     ) -> Result<()> {
         let version = inventory.head_version();
-        let mut reader = inventory.digest_algorithm.reader(File::open(&file)?)?;
 
         if version.is_file(&logical_path) {
             if force {
-                info!("Overwriting existing file at {}", &logical_path);
+                info!("Overwriting existing file at {}", logical_path);
+            } else {
+                return Err(RocflError::AlreadyExists(logical_path));
+            }
+        }
+
+        let mut reader = inventory.digest_algorithm.reader(File::open(&file)?)?;
+
+        info!(
+            "Copying file {} into object at {}",
+            file.as_ref().to_string_lossy(),
+            logical_path
+        );
+
+        self.get_staging()?
+            .stage_file_copy(&inventory, &mut reader, &logical_path)?;
+        let digest = reader.finalize_hex();
+        inventory.add_file_to_head(digest, logical_path)
+    }
+
+    fn move_file(
+        &self,
+        file: impl AsRef<Path>,
+        logical_path: InventoryPath,
+        force: bool,
+        inventory: &mut Inventory,
+    ) -> Result<()> {
+        let version = inventory.head_version();
+
+        if version.is_file(&logical_path) {
+            if force {
+                info!("Overwriting existing file at {}", logical_path);
             } else {
                 return Err(RocflError::AlreadyExists(logical_path));
             }
         }
 
         info!(
-            "Copying file {} into object at {}",
+            "Moving file {} into object at {}",
             file.as_ref().to_string_lossy(),
-            &logical_path
+            logical_path
         );
 
+        let digest = inventory
+            .digest_algorithm
+            .hash_hex(&mut File::open(file.as_ref())?)?;
+
         self.get_staging()?
-            .stage_file(&inventory, &mut reader, &logical_path)?;
-        let digest = reader.finalize_hex();
+            .stage_file_move(&inventory, &file, &logical_path)?;
         inventory.add_file_to_head(digest, logical_path)
     }
 
@@ -623,7 +728,7 @@ where
     let logical_path = if src_is_many {
         if dst_dir_exists {
             // When multiple src and dst is existing dir, then copy into dir; x -> y/x
-            let parent = base.as_ref().parent().unwrap_or_else(|| &Path::new(""));
+            let parent = base.as_ref().parent().unwrap_or_else(|| base.as_ref());
             logical_path_in_dst_dir(file, parent, dst)?
         } else {
             // When multiple src and dst not exists, then copy to dir; x -> y

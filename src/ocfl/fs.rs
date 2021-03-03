@@ -130,10 +130,11 @@ impl FsOcflStore {
         Ok(())
     }
 
-    pub(super) fn stage_file<R: Read>(
+    /// Copies a file in the staging area
+    pub(super) fn stage_file_copy(
         &self,
         inventory: &Inventory,
-        source: &mut R,
+        source: &mut impl Read,
         logical_path: &InventoryPath,
     ) -> Result<()> {
         // TODO any validation that the staged object exist?
@@ -147,6 +148,29 @@ impl FsOcflStore {
 
         fs::create_dir_all(storage_path.parent().unwrap())?;
         io::copy(source, &mut File::create(&storage_path)?)?;
+
+        Ok(())
+    }
+
+    /// Moves a file in the staging area
+    pub(super) fn stage_file_move(
+        &self,
+        inventory: &Inventory,
+        source: &impl AsRef<Path>,
+        logical_path: &InventoryPath,
+    ) -> Result<()> {
+        // TODO any validation that the staged object exist?
+
+        // TODO cleanup pathing
+        let content_path = inventory.new_content_path_head(&logical_path)?;
+
+        let storage_path = self
+            .storage_root
+            .join(&inventory.object_root)
+            .join(&content_path.as_ref());
+
+        fs::create_dir_all(storage_path.parent().unwrap())?;
+        fs::rename(source, &storage_path)?;
 
         Ok(())
     }
@@ -464,8 +488,9 @@ impl OcflStore for FsOcflStore {
                 object_id,
                 storage_path.to_string_lossy()
             );
-            match remove_dir_all::remove_dir_all(&storage_path) {
-                Err(e) => {
+
+            if storage_path.exists() {
+                if let Err(e) = remove_dir_all::remove_dir_all(&storage_path) {
                     error!(
                         "Failed to purge object {} at {}: {}",
                         object_id,
@@ -478,15 +503,14 @@ impl OcflStore for FsOcflStore {
                                          storage_path.to_string_lossy())
                     });
                 }
-                Ok(_) => {
-                    if let Err(e) = util::clean_dirs_up(&storage_path.parent().unwrap()) {
-                        error!(
-                            "Failed to cleanup dangling directories at {}: {}",
-                            storage_path.to_string_lossy(),
-                            e
-                        );
-                    }
-                }
+            }
+
+            if let Err(e) = util::clean_dirs_up(&storage_path.parent().unwrap()) {
+                error!(
+                    "Failed to cleanup dangling directories at {}: {}",
+                    storage_path.to_string_lossy(),
+                    e
+                );
             }
         }
 
