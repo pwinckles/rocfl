@@ -68,6 +68,8 @@ pub enum Command {
     New(NewCmd),
     #[structopt(name = "cp")]
     Copy(CopyCmd),
+    #[structopt(name = "mv")]
+    Move(MoveCmd),
     #[structopt(name = "rm")]
     Remove(RemoveCmd),
     #[structopt(name = "status")]
@@ -258,7 +260,7 @@ pub struct NewCmd {
     pub object_id: String,
 }
 
-/// Copies external files into objects or internal files to new locations. These changes are staged
+/// Copies external files into an object or internal files to new locations. These changes are staged
 /// and must be `committed` before they are reflected in a new OCFL object version.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
@@ -267,6 +269,7 @@ pub struct CopyCmd {
     #[structopt(short, long)]
     pub recursive: bool,
 
+    // TODO invert this flag
     /// Allows existing files to be overwritten.
     #[structopt(short, long)]
     pub force: bool,
@@ -283,15 +286,66 @@ pub struct CopyCmd {
 
     /// The object ID of the object to copy files into
     #[structopt(name = "OBJ_ID")]
-    pub destination_object: String,
+    pub object_id: String,
 
     /// The files to copy. Glob patterns are supported.
     #[structopt(name = "SRC", required = true)]
     pub source: Vec<String>,
 
-    /// The logical path to copy the source files to. Specify '/' to copy into object's root.
+    /// The logical path to copy the source files to. Specify '/' to copy into the object's root.
     #[structopt(name = "DST", last = true)]
     pub destination: String,
+}
+
+/// Moves external files into an object or internal files to new locations. These changes are staged
+/// and must be `committed` before they are reflected in a new OCFL object version.
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+pub struct MoveCmd {
+    /// Allows existing files to be overwritten.
+    #[structopt(short, long)]
+    pub force: bool,
+
+    /// Specifies that the source paths should be interpreted as logical paths internal to the
+    /// object, and not as paths on the filesystem.
+    #[structopt(short, long)]
+    pub internal: bool,
+
+    /// When '--internal' is used, this option specifies the version of the object the source
+    /// paths are for. If not specified, the most recent version is used.
+    #[structopt(short, long, value_name = "VERSION")]
+    pub version: Option<VersionNum>,
+
+    /// The object ID of the object to move files into
+    #[structopt(name = "OBJ_ID")]
+    pub object_id: String,
+
+    /// The files to move. Glob patterns are supported.
+    #[structopt(name = "SRC", required = true)]
+    pub source: Vec<String>,
+
+    /// The logical path to move the source files to. Specify '/' to copy into the object's root.
+    #[structopt(name = "DST", last = true)]
+    pub destination: String,
+}
+
+/// Removes files from an object. The removed files still exist in previous versions, but are
+/// no longer referenced in the current version. These changes are staged and must be `committed`
+/// before they are reflected in a new OCFL object version.
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+pub struct RemoveCmd {
+    /// Indicates that virtual directories should be removed recursively
+    #[structopt(short, long)]
+    pub recursive: bool,
+
+    /// The ID of the object to remove files from
+    #[structopt(name = "OBJ_ID")]
+    pub object_id: String,
+
+    /// The logical paths of the files to remove. This may be a glob pattern
+    #[structopt(name = "PATH", required = true)]
+    pub paths: Vec<String>,
 }
 
 /// Displays a summary of staged objects or staged changes within an object
@@ -324,25 +378,6 @@ pub struct CommitCmd {
     /// The ID of the object to commit changes for
     #[structopt(name = "OBJ_ID")]
     pub object_id: String,
-}
-
-/// Removes files from an object. The removed files still exist in previous versions, but are
-/// no longer referenced in the current version. These changes are staged and must be `committed`
-/// before they are reflected in a new OCFL object version.
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
-pub struct RemoveCmd {
-    /// Indicates that virtual directories should be removed recursively
-    #[structopt(short, long)]
-    pub recursive: bool,
-
-    /// The ID of the object to remove files from
-    #[structopt(name = "OBJ_ID")]
-    pub object_id: String,
-
-    /// The logical paths of the files to remove. This may be a glob pattern
-    #[structopt(name = "PATH", required = true)]
-    pub paths: Vec<String>,
 }
 
 #[derive(Debug)]

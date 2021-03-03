@@ -273,7 +273,8 @@ impl HashedNTupleLayoutExtension {
         let digest: String = self
             .config
             .digest_algorithm
-            .hash_hex(&object_id.as_bytes())
+            .hash_hex(&mut object_id.as_bytes())
+            .unwrap()
             .into();
 
         if self.config.tuple_size == 0 {
@@ -318,7 +319,8 @@ impl HashedNTupleObjectIdLayoutExtension {
         let digest: String = self
             .config
             .digest_algorithm
-            .hash_hex(&object_id.as_bytes())
+            .hash_hex(&mut object_id.as_bytes())
+            .unwrap()
             .into();
 
         if self.config.tuple_size == 0 {
@@ -427,7 +429,7 @@ fn validate_digest_algorithm(
     tuple_size: usize,
     number_of_tuples: usize,
 ) -> Result<()> {
-    let digest: String = algorithm.hash_hex("test".as_bytes()).into();
+    let digest: String = algorithm.hash_hex(&mut "test".as_bytes()).unwrap().into();
     let total_tuples_length = tuple_size * number_of_tuples;
 
     if digest.len() < total_tuples_length {
