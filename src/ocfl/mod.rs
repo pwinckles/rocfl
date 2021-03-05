@@ -326,63 +326,14 @@ impl OcflRepo {
         recursive: bool,
         force: bool,
     ) -> Result<()> {
-        if src.is_empty() {
-            return Ok(());
-        }
-
-        // TODO even though this is not supposed to be used concurrently, it's not a bad idea
-        //      to get some sort of file lock here so that an object cannot be updated concurrently
-
-        let mut inventory = self.get_staged_inventory(object_id)?;
-
-        let dst_path: InventoryPath = dst.try_into()?;
-
-        for path in src.iter() {
-            let path = path.as_ref();
-
-            if path.is_file() {
-                // TODO need to continue on error ?
-                let parent = path.parent().unwrap();
-                let logical_path = logical_path_for_file(
-                    &path,
-                    parent,
-                    &dst,
-                    src.len() > 1,
-                    false,
-                    &inventory.head_version(),
-                )?;
-
-                self.copy_file(&path, logical_path, force, &mut inventory)?;
-            } else if recursive {
-                let dst_dir_exists = inventory.head_version().is_dir(&dst_path);
-
-                for file in WalkDir::new(&path) {
-                    let file = file?;
-                    if file.path().is_file() {
-                        let logical_path = logical_path_for_file(
-                            &file.path(),
-                            &path,
-                            &dst,
-                            true,
-                            dst_dir_exists,
-                            &inventory.head_version(),
-                        )?;
-                        // TODO need to continue on error ?
-                        self.copy_file(file.path(), logical_path, force, &mut inventory)?;
-                    }
-                }
-            } else {
-                error!(
-                    "Skipping directory {} because recursive copy is not enabled",
-                    path.to_string_lossy()
-                );
-            }
-        }
-
-        inventory.head_version_mut().created = Local::now();
-        self.get_staging()?.stage_inventory(&inventory, false)?;
-
-        Ok(())
+        self.operate_on_external_source(
+            object_id,
+            src,
+            dst,
+            recursive,
+            force,
+            |file, logical_path, f, inventory| self.copy_file(file, logical_path, f, inventory),
+        )
     }
 
     /// Moves files from outside the OCFL repository into the specified OCFL object.
@@ -397,66 +348,27 @@ impl OcflRepo {
         dst: &str,
         force: bool,
     ) -> Result<()> {
-        // TODO figure out how to combine this with copy
-        if src.is_empty() {
-            return Ok(());
-        }
+        self.operate_on_external_source(
+            object_id,
+            src,
+            dst,
+            true,
+            force,
+            |file, logical_path, f, inventory| self.move_file(file, logical_path, f, inventory),
+        )?;
 
-        // TODO even though this is not supposed to be used concurrently, it's not a bad idea
-        //      to get some sort of file lock here so that an object cannot be updated concurrently
-
-        let mut inventory = self.get_staged_inventory(object_id)?;
-
-        let dst_path: InventoryPath = dst.try_into()?;
-
-        for path in src.iter() {
+        for path in src {
             let path = path.as_ref();
-
-            if path.is_file() {
-                // TODO need to continue on error ?
-                let parent = path.parent().unwrap();
-                let logical_path = logical_path_for_file(
-                    &path,
-                    parent,
-                    &dst,
-                    src.len() > 1,
-                    false,
-                    &inventory.head_version(),
-                )?;
-
-                // TODO I think the above logic is correct change to mv
-
-                self.move_file(&path, logical_path, force, &mut inventory)?;
-            } else {
-                let dst_dir_exists = inventory.head_version().is_dir(&dst_path);
-
-                for file in WalkDir::new(&path) {
-                    let file = file?;
-                    if file.path().is_file() {
-                        let logical_path = logical_path_for_file(
-                            &file.path(),
-                            &path,
-                            &dst,
-                            true,
-                            dst_dir_exists,
-                            &inventory.head_version(),
-                        )?;
-
-                        // TODO need to continue on error ?
-                        self.move_file(file.path(), logical_path, force, &mut inventory)?;
-                    }
-                }
+            if path.exists() && path.is_dir() {
+                util::clean_dirs_down(path)?;
             }
         }
-
-        // TODO cleanup empty directories in source?
-
-        inventory.head_version_mut().created = Local::now();
-        self.get_staging()?.stage_inventory(&inventory, false)?;
 
         Ok(())
     }
 
+    /// Removes the specified files from the staged version of the object. The files still
+    /// exist in prior versions.
     pub fn remove_files<P: AsRef<str>>(
         &self,
         object_id: &str,
@@ -548,6 +460,77 @@ impl OcflRepo {
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// Iterates over every file in an input source and applies the operator to the file. This
+    /// is intended to be used to copy/move files from the filesystem into staging.
+    fn operate_on_external_source(
+        &self,
+        object_id: &str,
+        src: &[impl AsRef<Path>],
+        dst: &str,
+        recursive: bool,
+        force: bool,
+        operator: impl Fn(&Path, InventoryPath, bool, &mut Inventory) -> Result<()>,
+    ) -> Result<()> {
+        if src.is_empty() {
+            return Ok(());
+        }
+
+        // TODO even though this is not supposed to be used concurrently, it's not a bad idea
+        //      to get some sort of file lock here so that an object cannot be updated concurrently
+        // TODO will also need to handle ctrlc https://github.com/Detegr/rust-ctrlc
+
+        let mut inventory = self.get_staged_inventory(object_id)?;
+
+        let dst_path: InventoryPath = dst.try_into()?;
+
+        for path in src.iter() {
+            let path = path.as_ref();
+
+            if path.is_file() {
+                // TODO need to continue on error ?
+                let parent = path.parent().unwrap();
+                let logical_path = logical_path_for_file(
+                    path,
+                    parent,
+                    dst,
+                    src.len() > 1,
+                    false,
+                    inventory.head_version(),
+                )?;
+
+                operator(path, logical_path, force, &mut inventory)?;
+            } else if recursive {
+                let dst_dir_exists = inventory.head_version().is_dir(&dst_path);
+
+                for file in WalkDir::new(path) {
+                    let file = file?;
+                    if file.file_type().is_file() {
+                        let logical_path = logical_path_for_file(
+                            file.path(),
+                            path,
+                            dst,
+                            true,
+                            dst_dir_exists,
+                            inventory.head_version(),
+                        )?;
+                        // TODO need to continue on error ?
+                        operator(file.path(), logical_path, force, &mut inventory)?;
+                    }
+                }
+            } else {
+                error!(
+                    "Skipping directory {} because recursion is not enabled",
+                    path.to_string_lossy()
+                );
+            }
+        }
+
+        inventory.head_version_mut().created = Local::now();
+        self.get_staging()?.stage_inventory(&inventory, false)?;
+
+        Ok(())
     }
 
     fn copy_file(

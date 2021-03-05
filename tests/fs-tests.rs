@@ -10,6 +10,13 @@ use rocfl::ocfl::{
     OcflRepo, Result, VersionDetails, VersionNum,
 };
 
+// TODO testing crates:
+//  - https://crates.io/crates/proptest
+//  - https://crates.io/crates/quickcheck
+//  - https://crates.io/crates/assert_cmd
+//  - https://crates.io/crates/assert_fs
+//  - https://crates.io/crates/dir-diff
+
 #[test]
 fn list_all_objects() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
