@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::Path;
 
+use walkdir::WalkDir;
+
 use crate::ocfl::error::Result;
 
 /// Walks up the directory hierarchy deleting directories until it finds a non-empty directory.
@@ -10,6 +12,19 @@ pub fn clean_dirs_up(start_dir: impl AsRef<Path>) -> Result<()> {
     while dir_is_empty(current)? {
         fs::remove_dir(current)?;
         current = current.parent().unwrap();
+    }
+
+    Ok(())
+}
+/// Walks down the directory hierarchy deleting all non-empty directories
+pub fn clean_dirs_down(start_dir: impl AsRef<Path>) -> Result<()> {
+    let start_dir = start_dir.as_ref();
+
+    for entry in WalkDir::new(start_dir).contents_first(true) {
+        let path = entry?;
+        if path.file_type().is_dir() && dir_is_empty(path.path())? {
+            fs::remove_dir(path.path())?;
+        }
     }
 
     Ok(())

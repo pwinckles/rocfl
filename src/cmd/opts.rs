@@ -380,6 +380,10 @@ pub struct CommitCmd {
     pub object_id: String,
 }
 
+// TODO Reset
+
+// TODO Purge
+
 #[derive(Debug)]
 pub struct Num(pub usize);
 
