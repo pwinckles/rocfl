@@ -10,7 +10,7 @@
 //! ```
 
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::fmt::Debug;
 use std::fs::File;
@@ -31,7 +31,7 @@ use walkdir::WalkDir;
 use crate::ocfl::consts::*;
 use crate::ocfl::digest::HexDigest;
 pub use crate::ocfl::error::{Result, RocflError};
-use crate::ocfl::inventory::{Inventory, Version};
+use crate::ocfl::inventory::Inventory;
 use crate::ocfl::layout::StorageLayout;
 
 pub use self::digest::DigestAlgorithm;
@@ -336,6 +336,97 @@ impl OcflRepo {
         )
     }
 
+    /// Copies files within an OCFL object. The source paths may be glob patterns.
+    pub fn copy_files_internal(
+        &self,
+        object_id: &str,
+        version_num: Option<VersionNum>,
+        src: &[impl AsRef<str>],
+        dst: &str,
+        recursive: bool,
+        force: bool,
+    ) -> Result<()> {
+        if src.is_empty() {
+            return Ok(());
+        }
+
+        // TODO abstract the before and after?
+        let mut inventory = self.get_staged_inventory(object_id)?;
+
+        let src_version_num = version_num.unwrap_or(inventory.head);
+
+        let dst_path = dst.try_into()?;
+        let dst_dir_exists = inventory.head_version().is_dir(&dst_path);
+        let src_is_many = src.len() > 1;
+        let dst_has_slash = dst.ends_with('/');
+
+        for path in src {
+            let version = inventory.get_version(src_version_num)?;
+            let mut to_copy = HashMap::new();
+
+            let files = version.resolve_glob(path.as_ref(), false)?;
+            let many_files = files.len() > 1;
+
+            if recursive {
+                let dirs = version.resolve_glob_to_dirs(path.as_ref())?;
+                let many_dirs = dirs.len() > 1;
+
+                for dir in dirs {
+                    let children = version.paths_with_prefix(dir.as_ref());
+                    let many_children = children.len() > 1;
+
+                    for file in children {
+                        let logical_path = if dst_dir_exists
+                            || src_is_many
+                            || many_children
+                            || many_dirs
+                            || !files.is_empty()
+                        {
+                            logical_path_in_dst_dir_internal(&file, &dir.parent(), dst)?
+                        } else {
+                            logical_path_in_dst_dir_internal(&file, &dir, dst)?
+                        };
+
+                        to_copy.insert(file.clone(), logical_path);
+                    }
+                }
+            }
+
+            for file in files {
+                let logical_path = if dst_dir_exists
+                    || src_is_many
+                    || dst_has_slash
+                    || many_files
+                    || !to_copy.is_empty()
+                {
+                    dst_path.resolve(&file.filename().try_into()?)
+                } else {
+                    dst_path.clone()
+                };
+
+                to_copy.insert(file.clone(), logical_path);
+            }
+
+            if to_copy.is_empty() {
+                error!(
+                    "Object {} version {} does not contain: {}",
+                    object_id,
+                    src_version_num,
+                    path.as_ref()
+                );
+            }
+
+            for (src, dst) in to_copy {
+                self.copy_file_internal(src_version_num, &src, dst, &mut inventory, force)?;
+            }
+        }
+
+        inventory.head_version_mut().created = Local::now();
+        self.get_staging()?.stage_inventory(&inventory, false)?;
+
+        Ok(())
+    }
+
     /// Moves files from outside the OCFL repository into the specified OCFL object.
     /// A destination of `/` specifies the object's root.
     ///
@@ -483,39 +574,49 @@ impl OcflRepo {
 
         let mut inventory = self.get_staged_inventory(object_id)?;
 
-        let dst_path: InventoryPath = dst.try_into()?;
+        let dst_path = dst.try_into()?;
+
+        let dst_dir_exists = inventory.head_version().is_dir(&dst_path);
+        let src_is_many = src.len() > 1;
+        let dst_has_slash = dst.ends_with('/');
 
         for path in src.iter() {
             let path = path.as_ref();
 
+            if !path.exists() {
+                error!("{} does not exist", path.to_string_lossy());
+                continue;
+            }
+
             if path.is_file() {
                 // TODO need to continue on error ?
                 let parent = path.parent().unwrap();
-                let logical_path = logical_path_for_file(
-                    path,
-                    parent,
-                    dst,
-                    src.len() > 1,
-                    false,
-                    inventory.head_version(),
-                )?;
 
+                let logical_path = if dst_dir_exists || src_is_many || dst_has_slash {
+                    logical_path_in_dst_dir(path, parent, dst)?
+                } else {
+                    dst_path.clone()
+                };
+
+                inventory
+                    .head_version()
+                    .validate_non_conflicting(&logical_path)?;
                 operator(path, logical_path, force, &mut inventory)?;
             } else if recursive {
-                let dst_dir_exists = inventory.head_version().is_dir(&dst_path);
-
                 for file in WalkDir::new(path) {
                     let file = file?;
                     if file.file_type().is_file() {
-                        let logical_path = logical_path_for_file(
-                            file.path(),
-                            path,
-                            dst,
-                            true,
-                            dst_dir_exists,
-                            inventory.head_version(),
-                        )?;
+                        let logical_path = if dst_dir_exists || src_is_many {
+                            let grandparent = path.parent().unwrap_or(path);
+                            logical_path_in_dst_dir(file.path(), grandparent, dst)?
+                        } else {
+                            logical_path_in_dst_dir(file.path(), path, dst)?
+                        };
+
                         // TODO need to continue on error ?
+                        inventory
+                            .head_version()
+                            .validate_non_conflicting(&logical_path)?;
                         operator(file.path(), logical_path, force, &mut inventory)?;
                     }
                 }
@@ -594,6 +695,30 @@ impl OcflRepo {
         self.get_staging()?
             .stage_file_move(&inventory, &file, &logical_path)?;
         inventory.add_file_to_head(digest, logical_path)
+    }
+
+    fn copy_file_internal(
+        &self,
+        src_version_num: VersionNum,
+        src_path: &InventoryPath,
+        dst_path: InventoryPath,
+        inventory: &mut Inventory,
+        force: bool,
+    ) -> Result<()> {
+        if inventory.head_version().is_file(&dst_path) {
+            if force {
+                info!("Overwriting existing file at {}", dst_path);
+            } else {
+                return Err(RocflError::AlreadyExists(dst_path));
+            }
+        }
+
+        info!(
+            "Copying file {} from {} to {}",
+            src_path, src_version_num, dst_path
+        );
+
+        inventory.copy_file_to_head(src_version_num, src_path, dst_path)
     }
 
     fn get_staging(&self) -> Result<&FsOcflStore> {
@@ -695,62 +820,12 @@ struct OcflLayout {
     description: String,
 }
 
-/// Creates a logical path for a source file based on its destination.
-fn logical_path_for_file<F, B>(
-    file: F,
-    base: B,
-    dst: &str,
-    src_is_many: bool,
-    dst_dir_exists: bool,
-    version: &Version,
-) -> Result<InventoryPath>
-where
-    F: AsRef<Path>,
-    B: AsRef<Path>,
-{
-    let logical_path = if src_is_many {
-        if dst_dir_exists {
-            // When multiple src and dst is existing dir, then copy into dir; x -> y/x
-            let parent = base.as_ref().parent().unwrap_or_else(|| base.as_ref());
-            logical_path_in_dst_dir(file, parent, dst)?
-        } else {
-            // When multiple src and dst not exists, then copy to dir; x -> y
-            logical_path_in_dst_dir(file, base, dst)?
-        }
-    } else if !src_is_many && dst.ends_with('/') {
-        // When there's a single source and the destination ends with `/`, then it must be a dir
-        logical_path_in_dst_dir(file, base, dst)?
-    } else {
-        let dst_path: InventoryPath = dst.try_into()?;
-
-        if version.exists(&dst_path) {
-            if version.is_file(&dst_path) {
-                // There's a single src and the destination is an existing logical path,
-                // use the destination as is
-                dst_path
-            } else {
-                // There's a single source and the destination is an existing virtual dir,
-                // interpret the destination as a directory
-                logical_path_in_dst_dir(file, base, dst)?
-            }
-        } else {
-            // Single source to a non-existent destination that does not end with a '/',
-            // interpret destination as logical path
-            dst_path
-        }
-    };
-
-    version.validate_non_conflicting(&logical_path)?;
-
-    Ok(logical_path)
-}
-
 /// Creates a logical path that combines `dst` with the relativized `src` path.
-fn logical_path_in_dst_dir<F, B>(src: F, base: B, dst: &str) -> Result<InventoryPath>
-where
-    F: AsRef<Path>,
-    B: AsRef<Path>,
-{
+fn logical_path_in_dst_dir(
+    src: impl AsRef<Path>,
+    base: impl AsRef<Path>,
+    dst: &str,
+) -> Result<InventoryPath> {
     let mut logical_path = dst.to_string();
     if !logical_path.ends_with('/') {
         logical_path.push('/');
@@ -764,5 +839,26 @@ where
     }
 
     logical_path.push_str(relative.as_ref());
+    logical_path.try_into()
+}
+
+/// Same as `logical_path_in_dst_dir()` but operates on `InventoryPath`s
+fn logical_path_in_dst_dir_internal(
+    src: &InventoryPath,
+    base: &InventoryPath,
+    dst: &str,
+) -> Result<InventoryPath> {
+    let mut logical_path = dst.to_string();
+    if !logical_path.ends_with('/') {
+        logical_path.push('/');
+    }
+
+    let base_length = if base.as_ref().is_empty() {
+        0
+    } else {
+        base.as_ref().len() + 1
+    };
+
+    logical_path.push_str(&src.as_ref().as_str()[base_length..]);
     logical_path.try_into()
 }
