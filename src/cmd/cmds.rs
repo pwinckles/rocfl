@@ -73,6 +73,14 @@ impl Cmd for NewCmd {
 impl Cmd for CopyCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
         if self.internal {
+            repo.copy_files_internal(
+                &self.object_id,
+                self.version,
+                &self.source,
+                &self.destination,
+                self.recursive,
+                self.force,
+            )?;
             // TODO copy within object
         } else {
             repo.copy_files_external(
@@ -91,7 +99,7 @@ impl Cmd for CopyCmd {
 impl Cmd for MoveCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
         if self.internal {
-            // TODO copy within object
+            // TODO move within object
         } else {
             repo.move_files_external(&self.object_id, &self.source, &self.destination, self.force)?;
         }

@@ -12,8 +12,9 @@ use serde::{Deserialize, Serialize};
 use crate::ocfl::bimap::{IntoIter, Iter, PathBiMap};
 use crate::ocfl::consts::{DEFAULT_CONTENT_DIR, INVENTORY_TYPE};
 use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
-use crate::ocfl::error::{not_found, Result, RocflError};
+use crate::ocfl::error::{not_found, not_found_path, Result, RocflError};
 use crate::ocfl::{Diff, InventoryPath, VersionNum};
+use std::borrow::Cow;
 
 const STAGING_MESSAGE: &str = "Staging new version";
 const ROCFL_USER: &str = "rocfl";
@@ -260,14 +261,24 @@ impl Inventory {
         self.manifest
             .insert_rc(digest_rc.clone(), Rc::new(content_path));
 
-        let version = match self.versions.get_mut(&self.head) {
-            Some(version) => version,
-            None => return Err(not_found(&self.id, Some(self.head))),
+        self.head_version_mut().add_file(digest_rc, logical_path)
+    }
+
+    /// Copies the specified logical path to a new path in the head version. The destination
+    /// path is validated prior to the copy.
+    pub fn copy_file_to_head(
+        &mut self,
+        src_version_num: VersionNum,
+        src_path: &InventoryPath,
+        dst_path: InventoryPath,
+    ) -> Result<()> {
+        let src_version = self.get_version(src_version_num)?;
+        let digest = match src_version.lookup_digest(src_path) {
+            Some(digest) => digest.clone(),
+            None => return Err(not_found_path(&self.id, src_version_num, src_path)),
         };
 
-        version.add_file(digest_rc, logical_path);
-
-        Ok(())
+        self.head_version_mut().add_file(digest, dst_path)
     }
 
     /// Removes the specified path from the HEAD version's state. If the HEAD version has
@@ -496,6 +507,7 @@ impl Version {
         })
     }
 
+    /// Returns a set of all of the logical paths that match the provided glob pattern
     pub fn resolve_glob(&self, glob: &str, recursive: bool) -> Result<HashSet<Rc<InventoryPath>>> {
         let mut matches = HashSet::new();
 
@@ -522,17 +534,55 @@ impl Version {
         if recursive {
             for dir in self.get_virtual_dirs() {
                 if matcher.is_match(dir.as_ref()) {
-                    let prefix = format!("{}/", dir);
-                    for (path, _digest) in self.state.iter() {
-                        if path.as_ref().as_ref().starts_with(&prefix) {
-                            matches.insert(path.clone());
-                        }
-                    }
+                    matches.extend(self.paths_with_prefix(dir.as_ref()));
                 }
             }
         }
 
         Ok(matches)
+    }
+
+    /// Returns a set of all of the virtual dirs that match the glob
+    pub fn resolve_glob_to_dirs(&self, glob: &str) -> Result<HashSet<&InventoryPath>> {
+        let mut matches = HashSet::new();
+
+        // Logical paths do not have leading slashes
+        let glob = glob.trim_start_matches('/');
+
+        // TODO check root copy
+
+        let matcher = GlobBuilder::new(glob)
+            .literal_separator(true)
+            .backslash_escape(true)
+            .build()?
+            .compile_matcher();
+
+        for dir in self.get_virtual_dirs() {
+            if matcher.is_match(dir.as_ref()) {
+                matches.insert(dir);
+            }
+        }
+
+        Ok(matches)
+    }
+
+    /// Returns a list of all of the paths that beging with the specified prefix
+    pub fn paths_with_prefix(&self, prefix: &str) -> Vec<Rc<InventoryPath>> {
+        let mut matches = Vec::new();
+
+        let prefix = if !prefix.ends_with('/') && !prefix.is_empty() {
+            Cow::Owned(format!("{}/", prefix))
+        } else {
+            prefix.into()
+        };
+
+        for (path, _digest) in self.state.iter() {
+            if path.as_ref().as_ref().starts_with(prefix.as_ref()) {
+                matches.push(path.clone());
+            }
+        }
+
+        matches
     }
 
     /// Computes a diff between the versions. This version is the right-hand version and the
@@ -608,7 +658,8 @@ impl Version {
 
     /// Adds a new logical path to the version, and updates the virtual directory set, if needed.
     /// This path MUST be added to the inventory manifest separately for the inventory to be valid.
-    fn add_file(&mut self, digest: Rc<HexDigest>, logical_path: InventoryPath) {
+    fn add_file(&mut self, digest: Rc<HexDigest>, logical_path: InventoryPath) -> Result<()> {
+        self.validate_non_conflicting(&logical_path)?;
         if let Some(dirs) = self.virtual_dirs.get_mut() {
             if let Err(e) = foreach_dir(&logical_path, |dir| {
                 dirs.insert(dir);
@@ -619,6 +670,8 @@ impl Version {
             }
         }
         self.state.insert_rc(digest, Rc::new(logical_path));
+
+        Ok(())
     }
 
     /// Removes a logical path from the version's state
