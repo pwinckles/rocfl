@@ -1,4 +1,4 @@
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::io;
 
 use log::info;
@@ -9,7 +9,7 @@ use crate::cmd::opts::{
 use crate::cmd::opts::{InitCmd, Layout, RocflArgs, Storage};
 use crate::cmd::{println, Cmd, GlobalArgs};
 use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
-use crate::ocfl::{DigestAlgorithm, OcflRepo, Result};
+use crate::ocfl::{DigestAlgorithm, InventoryPath, OcflRepo, Result};
 
 impl Cmd for CatCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
@@ -73,12 +73,20 @@ impl Cmd for NewCmd {
 impl Cmd for CopyCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
         if self.internal {
+            repo.copy_files_internal(
+                &self.object_id,
+                self.version,
+                &self.source,
+                &InventoryPath::try_from(&self.destination)?,
+                self.recursive,
+                self.force,
+            )?;
             // TODO copy within object
         } else {
             repo.copy_files_external(
                 &self.object_id,
                 &self.source,
-                &self.destination,
+                &InventoryPath::try_from(&self.destination)?,
                 self.recursive,
                 self.force,
             )?;
@@ -93,7 +101,12 @@ impl Cmd for MoveCmd {
         if self.internal {
             // TODO copy within object
         } else {
-            repo.move_files_external(&self.object_id, &self.source, &self.destination, self.force)?;
+            repo.move_files_external(
+                &self.object_id,
+                &self.source,
+                &InventoryPath::try_from(&self.destination)?,
+                self.force,
+            )?;
         }
 
         Ok(())

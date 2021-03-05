@@ -265,8 +265,35 @@ impl Ord for VersionNum {
 }
 
 impl InventoryPath {
+    /// Returns an iterable containing each segment of the path split on the `/` separator
     pub fn parts(&self) -> Split<char> {
         self.0.split('/')
+    }
+
+    /// Returns the parent path of this path.
+    pub fn parent(&self) -> InventoryPath {
+        match self.0.rfind('/') {
+            Some(last_slash) => InventoryPath(self.0.as_str()[0..last_slash].into()),
+            None => InventoryPath("".to_string()),
+        }
+    }
+
+    /// Returns the part of the logical path that's after the final `/` or the entire path if
+    /// there is no `/`
+    pub fn filename(&self) -> &str {
+        match self.0.rfind('/') {
+            Some(last_slash) => &self.0.as_str()[last_slash + 1..],
+            None => self.0.as_str(),
+        }
+    }
+
+    /// Creates a new path by joining this path with another
+    pub fn resolve(&self, other: &InventoryPath) -> InventoryPath {
+        if self.0.is_empty() {
+            other.clone()
+        } else {
+            InventoryPath(format!("{}/{}", self.0, other.0))
+        }
     }
 }
 

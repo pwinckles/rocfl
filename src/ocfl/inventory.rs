@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::ocfl::bimap::{IntoIter, Iter, PathBiMap};
 use crate::ocfl::consts::{DEFAULT_CONTENT_DIR, INVENTORY_TYPE};
 use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
-use crate::ocfl::error::{not_found, Result, RocflError};
+use crate::ocfl::error::{not_found, not_found_path, Result, RocflError};
 use crate::ocfl::{Diff, InventoryPath, VersionNum};
 
 const STAGING_MESSAGE: &str = "Staging new version";
@@ -260,14 +260,24 @@ impl Inventory {
         self.manifest
             .insert_rc(digest_rc.clone(), Rc::new(content_path));
 
-        let version = match self.versions.get_mut(&self.head) {
-            Some(version) => version,
-            None => return Err(not_found(&self.id, Some(self.head))),
+        self.head_version_mut().add_file(digest_rc, logical_path)
+    }
+
+    /// Copies the specified logical path to a new path in the head version. The destination
+    /// path is validated prior to the copy.
+    pub fn copy_file_to_head(
+        &mut self,
+        src_version_num: VersionNum,
+        src_path: &InventoryPath,
+        dst_path: InventoryPath,
+    ) -> Result<()> {
+        let src_version = self.get_version(src_version_num)?;
+        let digest = match src_version.lookup_digest(src_path) {
+            Some(digest) => digest.clone(),
+            None => return Err(not_found_path(&self.id, src_version_num, src_path)),
         };
 
-        version.add_file(digest_rc, logical_path);
-
-        Ok(())
+        self.head_version_mut().add_file(digest, dst_path)
     }
 
     /// Removes the specified path from the HEAD version's state. If the HEAD version has
@@ -496,6 +506,7 @@ impl Version {
         })
     }
 
+    /// Returns a set of all of the logical paths that match the provided glob pattern
     pub fn resolve_glob(&self, glob: &str, recursive: bool) -> Result<HashSet<Rc<InventoryPath>>> {
         let mut matches = HashSet::new();
 
@@ -608,7 +619,8 @@ impl Version {
 
     /// Adds a new logical path to the version, and updates the virtual directory set, if needed.
     /// This path MUST be added to the inventory manifest separately for the inventory to be valid.
-    fn add_file(&mut self, digest: Rc<HexDigest>, logical_path: InventoryPath) {
+    fn add_file(&mut self, digest: Rc<HexDigest>, logical_path: InventoryPath) -> Result<()> {
+        self.validate_non_conflicting(&logical_path)?;
         if let Some(dirs) = self.virtual_dirs.get_mut() {
             if let Err(e) = foreach_dir(&logical_path, |dir| {
                 dirs.insert(dir);
@@ -619,6 +631,8 @@ impl Version {
             }
         }
         self.state.insert_rc(digest, Rc::new(logical_path));
+
+        Ok(())
     }
 
     /// Removes a logical path from the version's state

@@ -205,16 +205,18 @@ impl FsOcflStore {
             .join(inventory.head.to_string())
             .join(inventory.defaulted_content_dir());
 
-        for file in WalkDir::new(&content_dir) {
-            let file = file?;
-            if file.path().is_file() {
-                let content_path = pathdiff::diff_paths(file.path(), &object_root).unwrap();
-                if !inventory.contains_content_path(&InventoryPath::try_from(
-                    content_path.to_string_lossy(),
-                )?) {
-                    info!("Deleting orphaned file: {}", file.path().to_string_lossy());
-                    fs::remove_file(file.path())?;
-                    util::clean_dirs_up(file.path().parent().unwrap())?;
+        if content_dir.exists() {
+            for file in WalkDir::new(&content_dir) {
+                let file = file?;
+                if file.path().is_file() {
+                    let content_path = pathdiff::diff_paths(file.path(), &object_root).unwrap();
+                    if !inventory.contains_content_path(&InventoryPath::try_from(
+                        content_path.to_string_lossy(),
+                    )?) {
+                        info!("Deleting orphaned file: {}", file.path().to_string_lossy());
+                        fs::remove_file(file.path())?;
+                        util::clean_dirs_up(file.path().parent().unwrap())?;
+                    }
                 }
             }
         }

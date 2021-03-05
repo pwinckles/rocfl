@@ -322,7 +322,7 @@ impl OcflRepo {
         &self,
         object_id: &str,
         src: &[impl AsRef<Path>],
-        dst: &str,
+        dst: &InventoryPath,
         recursive: bool,
         force: bool,
     ) -> Result<()> {
@@ -336,6 +336,81 @@ impl OcflRepo {
         )
     }
 
+    /// Copies files within an OCFL object. The source paths may be glob patterns.
+    pub fn copy_files_internal(
+        &self,
+        object_id: &str,
+        version_num: Option<VersionNum>,
+        src: &[impl AsRef<str>],
+        dst: &InventoryPath,
+        recursive: bool,
+        force: bool,
+    ) -> Result<()> {
+        if src.is_empty() {
+            return Ok(());
+        }
+
+        // TODO even though this is not supposed to be used concurrently, it's not a bad idea
+        //      to get some sort of file lock here so that an object cannot be updated concurrently
+        // TODO will also need to handle ctrlc https://github.com/Detegr/rust-ctrlc
+
+        let mut inventory = self.get_staged_inventory(object_id)?;
+
+        let src_version_num = version_num.unwrap_or(inventory.head);
+        let dst_dir_exists = inventory.head_version().is_dir(dst);
+
+        for path in src {
+            let paths = inventory
+                .get_version(src_version_num)?
+                .resolve_glob(path.as_ref(), recursive)?;
+
+            if paths.is_empty() {
+                info!(
+                    "Object {} version {} does not contain {}",
+                    object_id,
+                    src_version_num,
+                    path.as_ref()
+                );
+                continue;
+            }
+
+            // TODO this is not accurate. if there is a glob that ultimately resolves to a single
+            //      file the resolved path here is incorrect
+            if paths.len() > 1 {
+                // TODO resolve glob for virt dir
+            } else {
+                let src_path = paths.iter().next().unwrap();
+
+                let dst_path = if src.len() > 1 || dst_dir_exists {
+                    let filename = src_path.filename();
+                    dst.resolve(&filename.try_into()?)
+                } else {
+                    dst.clone()
+                };
+
+                if inventory.head_version().is_file(&dst_path) {
+                    if force {
+                        info!("Overwriting existing file at {}", dst_path);
+                    } else {
+                        return Err(RocflError::AlreadyExists(dst_path));
+                    }
+                }
+
+                info!(
+                    "Copying file {} from {} to {}",
+                    src_path, src_version_num, dst_path
+                );
+
+                inventory.copy_file_to_head(src_version_num, src_path, dst_path)?;
+            }
+        }
+
+        inventory.head_version_mut().created = Local::now();
+        self.get_staging()?.stage_inventory(&inventory, false)?;
+
+        Ok(())
+    }
+
     /// Moves files from outside the OCFL repository into the specified OCFL object.
     /// A destination of `/` specifies the object's root.
     ///
@@ -345,7 +420,7 @@ impl OcflRepo {
         &self,
         object_id: &str,
         src: &[impl AsRef<Path>],
-        dst: &str,
+        dst: &InventoryPath,
         force: bool,
     ) -> Result<()> {
         self.operate_on_external_source(
@@ -468,7 +543,7 @@ impl OcflRepo {
         &self,
         object_id: &str,
         src: &[impl AsRef<Path>],
-        dst: &str,
+        dst: &InventoryPath,
         recursive: bool,
         force: bool,
         operator: impl Fn(&Path, InventoryPath, bool, &mut Inventory) -> Result<()>,
@@ -483,10 +558,10 @@ impl OcflRepo {
 
         let mut inventory = self.get_staged_inventory(object_id)?;
 
-        let dst_path: InventoryPath = dst.try_into()?;
-
         for path in src.iter() {
             let path = path.as_ref();
+
+            // TODO existence check
 
             if path.is_file() {
                 // TODO need to continue on error ?
@@ -494,7 +569,7 @@ impl OcflRepo {
                 let logical_path = logical_path_for_file(
                     path,
                     parent,
-                    dst,
+                    dst.as_ref(),
                     src.len() > 1,
                     false,
                     inventory.head_version(),
@@ -502,7 +577,7 @@ impl OcflRepo {
 
                 operator(path, logical_path, force, &mut inventory)?;
             } else if recursive {
-                let dst_dir_exists = inventory.head_version().is_dir(&dst_path);
+                let dst_dir_exists = inventory.head_version().is_dir(dst);
 
                 for file in WalkDir::new(path) {
                     let file = file?;
@@ -510,7 +585,7 @@ impl OcflRepo {
                         let logical_path = logical_path_for_file(
                             file.path(),
                             path,
-                            dst,
+                            dst.as_ref(),
                             true,
                             dst_dir_exists,
                             inventory.head_version(),
@@ -740,6 +815,8 @@ where
         }
     };
 
+    // This is also done as part of adding a path to a version, but we duplicate the call
+    // here so that we can know if the path conflicts before copying or moving the file
     version.validate_non_conflicting(&logical_path)?;
 
     Ok(logical_path)

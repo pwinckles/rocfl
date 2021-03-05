@@ -281,7 +281,7 @@ pub struct CopyCmd {
 
     /// When '--internal' is used, this option specifies the version of the object the source
     /// paths are for. If not specified, the most recent version is used.
-    #[structopt(short, long, value_name = "VERSION")]
+    #[structopt(short, long, value_name = "VERSION", requires = "internal")]
     pub version: Option<VersionNum>,
 
     /// The object ID of the object to copy files into
@@ -313,7 +313,7 @@ pub struct MoveCmd {
 
     /// When '--internal' is used, this option specifies the version of the object the source
     /// paths are for. If not specified, the most recent version is used.
-    #[structopt(short, long, value_name = "VERSION")]
+    #[structopt(short, long, value_name = "VERSION", requires = "internal")]
     pub version: Option<VersionNum>,
 
     /// The object ID of the object to move files into

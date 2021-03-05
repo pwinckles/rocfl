@@ -51,6 +51,18 @@ pub fn not_found(object_id: &str, version_num: Option<VersionNum>) -> RocflError
     }
 }
 
+/// Constructs a `RocflError::NotFound` error for paths
+pub fn not_found_path(
+    object_id: &str,
+    version_num: VersionNum,
+    logical_path: &InventoryPath,
+) -> RocflError {
+    RocflError::NotFound(format!(
+        "Object {} version {} path {}",
+        object_id, version_num, logical_path
+    ))
+}
+
 impl Debug for RocflError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Display::fmt(self, f)
