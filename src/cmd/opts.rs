@@ -72,8 +72,6 @@ pub enum Command {
     Move(MoveCmd),
     #[structopt(name = "rm")]
     Remove(RemoveCmd),
-    #[structopt(name = "status")]
-    Status(StatusCmd),
     #[structopt(name = "revert")]
     Revert(RevertCmd),
     #[structopt(name = "commit")]
@@ -179,6 +177,10 @@ pub struct LogCmd {
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct ShowCmd {
+    /// Shows the changes in the staged version of the object, if it exists
+    #[structopt(short = "S", long, conflicts_with = "version")]
+    pub staged: bool,
+
     /// Suppresses the version details output
     #[structopt(short, long)]
     pub minimal: bool,
@@ -187,7 +189,7 @@ pub struct ShowCmd {
     #[structopt(name = "OBJ_ID")]
     pub object_id: String,
 
-    /// Optional version to show
+    /// The version to show. The most recent version is shown by default
     #[structopt(name = "VERSION")]
     pub version: Option<VersionNum>,
 }
@@ -350,16 +352,6 @@ pub struct RemoveCmd {
     /// The logical paths of the files to remove. This may be a glob pattern
     #[structopt(name = "PATH", required = true)]
     pub paths: Vec<String>,
-}
-
-/// Displays a summary of staged objects or staged changes within an object
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
-pub struct StatusCmd {
-    /// The ID of the object to display staged changes for. If not provided, all objects with
-    /// changes are listed.
-    #[structopt(name = "OBJ_ID")]
-    pub object_id: Option<String>,
 }
 
 /// Commits all of an objects staged changes to a new OCFL version
