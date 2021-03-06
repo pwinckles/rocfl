@@ -14,6 +14,7 @@ use crate::ocfl::consts::{DEFAULT_CONTENT_DIR, INVENTORY_TYPE};
 use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
 use crate::ocfl::error::{not_found, not_found_path, Result, RocflError};
 use crate::ocfl::{Diff, InventoryPath, VersionNum};
+use std::borrow::Cow;
 
 const STAGING_MESSAGE: &str = "Staging new version";
 const ROCFL_USER: &str = "rocfl";
@@ -533,17 +534,55 @@ impl Version {
         if recursive {
             for dir in self.get_virtual_dirs() {
                 if matcher.is_match(dir.as_ref()) {
-                    let prefix = format!("{}/", dir);
-                    for (path, _digest) in self.state.iter() {
-                        if path.as_ref().as_ref().starts_with(&prefix) {
-                            matches.insert(path.clone());
-                        }
-                    }
+                    matches.extend(self.paths_with_prefix(dir.as_ref()));
                 }
             }
         }
 
         Ok(matches)
+    }
+
+    /// Returns a set of all of the virtual dirs that match the glob
+    pub fn resolve_glob_to_dirs(&self, glob: &str) -> Result<HashSet<&InventoryPath>> {
+        let mut matches = HashSet::new();
+
+        // Logical paths do not have leading slashes
+        let glob = glob.trim_start_matches('/');
+
+        // TODO check root copy
+
+        let matcher = GlobBuilder::new(glob)
+            .literal_separator(true)
+            .backslash_escape(true)
+            .build()?
+            .compile_matcher();
+
+        for dir in self.get_virtual_dirs() {
+            if matcher.is_match(dir.as_ref()) {
+                matches.insert(dir);
+            }
+        }
+
+        Ok(matches)
+    }
+
+    /// Returns a list of all of the paths that beging with the specified prefix
+    pub fn paths_with_prefix(&self, prefix: &str) -> Vec<Rc<InventoryPath>> {
+        let mut matches = Vec::new();
+
+        let prefix = if !prefix.ends_with('/') && !prefix.is_empty() {
+            Cow::Owned(format!("{}/", prefix))
+        } else {
+            prefix.into()
+        };
+
+        for (path, _digest) in self.state.iter() {
+            if path.as_ref().as_ref().starts_with(prefix.as_ref()) {
+                matches.push(path.clone());
+            }
+        }
+
+        matches
     }
 
     /// Computes a diff between the versions. This version is the right-hand version and the
