@@ -5,6 +5,7 @@ use log::info;
 
 use crate::cmd::opts::{
     CatCmd, CommitCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, MoveCmd, NewCmd, RemoveCmd,
+    RevertCmd,
 };
 use crate::cmd::opts::{InitCmd, Layout, RocflArgs, Storage};
 use crate::cmd::{println, Cmd, GlobalArgs};
@@ -106,6 +107,12 @@ impl Cmd for MoveCmd {
 impl Cmd for RemoveCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
         repo.remove_files(&self.object_id, &self.paths, self.recursive)
+    }
+}
+
+impl Cmd for RevertCmd {
+    fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
+        repo.revert(&self.object_id, &self.paths, self.recursive)
     }
 }
 
