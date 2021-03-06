@@ -104,6 +104,10 @@ pub struct ListCmd {
     #[structopt(short, long)]
     pub tsv: bool,
 
+    /// Lists staged objects or the contents of a specific staged object
+    #[structopt(short = "S", long, conflicts_with = "version")]
+    pub staged: bool,
+
     /// Specifies the version of the object to list
     #[structopt(short, long, value_name = "VERSION")]
     pub version: Option<VersionNum>,
@@ -124,12 +128,11 @@ pub struct ListCmd {
     #[structopt(short, long)]
     pub objects: bool,
 
-    // TODO make this default? display virtual dirs?
+    // TODO remove this and change to work with virt dirs
     /// Wildcards in path glob expressions will not match '/'
     #[structopt(short, long)]
     pub glob_literal_separator: bool,
 
-    // TODO add --staged flag
     /// ID of the object to list. May be a glob when used with '-o'.
     #[structopt(name = "OBJ_ID")]
     pub object_id: Option<String>,
@@ -210,6 +213,10 @@ pub struct DiffCmd {
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct CatCmd {
+    /// Cats the contents of a staged file
+    #[structopt(short = "S", long, conflicts_with = "version")]
+    pub staged: bool,
+
     /// Specifies the version of the object to retrieve the file from
     #[structopt(short, long, value_name = "VERSION")]
     pub version: Option<VersionNum>,

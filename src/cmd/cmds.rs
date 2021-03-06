@@ -14,12 +14,20 @@ use crate::ocfl::{DigestAlgorithm, OcflRepo, Result};
 
 impl Cmd for CatCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
-        repo.get_object_file(
-            &self.object_id,
-            &self.path.as_str().try_into()?,
-            self.version,
-            &mut io::stdout(),
-        )
+        if self.staged {
+            repo.get_staged_object_file(
+                &self.object_id,
+                &self.path.as_str().try_into()?,
+                &mut io::stdout(),
+            )
+        } else {
+            repo.get_object_file(
+                &self.object_id,
+                &self.path.as_str().try_into()?,
+                self.version,
+                &mut io::stdout(),
+            )
+        }
     }
 }
 

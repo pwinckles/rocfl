@@ -21,7 +21,8 @@ impl Cmd for ListCmd {
 
 impl ListCmd {
     fn list_objects(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
-        let iter = repo.list_objects(self.object_id.as_deref())?;
+        // TODO the physical path of the staged objects is not relative the storage root
+        let iter = repo.list_objects(self.staged, self.object_id.as_deref())?;
 
         let mut objects: Vec<ObjectVersionDetails> = iter.collect();
 
@@ -40,7 +41,12 @@ impl ListCmd {
 
     fn list_object_contents(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         let object_id = self.object_id.as_ref().unwrap();
-        let object = repo.get_object(object_id, self.version)?;
+        let object = if self.staged {
+            // TODO staged physical paths here are not relative to storage root as well
+            repo.get_staged_object(object_id)?
+        } else {
+            repo.get_object(object_id, self.version)?
+        };
 
         // TODO this should remove any leading slashes
         let glob = match self.path.as_ref() {
