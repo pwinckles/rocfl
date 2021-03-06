@@ -71,6 +71,19 @@ fn println(value: impl Display) -> Result<()> {
     }
 }
 
+fn print(value: impl Display) -> Result<()> {
+    if let Err(e) = write!(io::stdout(), "{}", value) {
+        match e.kind() {
+            // This happens if the app is killed while writing
+            ErrorKind::BrokenPipe => Ok(()),
+            _ => Err(e.into()),
+        }
+    } else {
+        io::stdout().flush()?;
+        Ok(())
+    }
+}
+
 fn create_repo(args: &RocflArgs) -> Result<OcflRepo> {
     match args.target_storage() {
         Storage::FileSystem => OcflRepo::new_fs_repo(args.root.clone()),
