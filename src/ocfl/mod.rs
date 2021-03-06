@@ -351,74 +351,28 @@ impl OcflRepo {
         }
 
         // TODO abstract the before and after?
-        let mut inventory = self.get_staged_inventory(object_id)?;
 
+        let mut inventory = self.get_staged_inventory(object_id)?;
         let src_version_num = version_num.unwrap_or(inventory.head);
 
-        let dst_path = dst.try_into()?;
-        let dst_dir_exists = inventory.head_version().is_dir(&dst_path);
-        let src_is_many = src.len() > 1;
-        let dst_has_slash = dst.ends_with('/');
+        let to_copy =
+            self.resolve_internal_moves(&inventory, src_version_num, src, dst, recursive)?;
 
-        for path in src {
-            let version = inventory.get_version(src_version_num)?;
-            let mut to_copy = HashMap::new();
-
-            let files = version.resolve_glob(path.as_ref(), false)?;
-            let many_files = files.len() > 1;
-
-            if recursive {
-                let dirs = version.resolve_glob_to_dirs(path.as_ref())?;
-                let many_dirs = dirs.len() > 1;
-
-                for dir in dirs {
-                    let children = version.paths_with_prefix(dir.as_ref());
-                    let many_children = children.len() > 1;
-
-                    for file in children {
-                        let logical_path = if dst_dir_exists
-                            || src_is_many
-                            || many_children
-                            || many_dirs
-                            || !files.is_empty()
-                        {
-                            logical_path_in_dst_dir_internal(&file, &dir.parent(), dst)?
-                        } else {
-                            logical_path_in_dst_dir_internal(&file, &dir, dst)?
-                        };
-
-                        to_copy.insert(file.clone(), logical_path);
-                    }
+        for (src_path, dst_path) in to_copy {
+            if inventory.head_version().is_file(&dst_path) {
+                if force {
+                    info!("Overwriting existing file at {}", dst_path);
+                } else {
+                    return Err(RocflError::AlreadyExists(dst_path));
                 }
             }
 
-            for file in files {
-                let logical_path = if dst_dir_exists
-                    || src_is_many
-                    || dst_has_slash
-                    || many_files
-                    || !to_copy.is_empty()
-                {
-                    dst_path.resolve(&file.filename().try_into()?)
-                } else {
-                    dst_path.clone()
-                };
+            info!(
+                "Copying file {} from {} to {}",
+                src_path, src_version_num, dst_path
+            );
 
-                to_copy.insert(file.clone(), logical_path);
-            }
-
-            if to_copy.is_empty() {
-                error!(
-                    "Object {} version {} does not contain: {}",
-                    object_id,
-                    src_version_num,
-                    path.as_ref()
-                );
-            }
-
-            for (src, dst) in to_copy {
-                self.copy_file_internal(src_version_num, &src, dst, &mut inventory, force)?;
-            }
+            inventory.copy_file_to_head(src_version_num, &src_path, dst_path)?;
         }
 
         inventory.head_version_mut().created = Local::now();
@@ -454,6 +408,44 @@ impl OcflRepo {
                 util::clean_dirs_down(path)?;
             }
         }
+
+        Ok(())
+    }
+
+    /// Moves files within an OCFL object. The source paths may be glob patterns.
+    pub fn move_files_internal(
+        &self,
+        object_id: &str,
+        src: &[impl AsRef<str>],
+        dst: &str,
+        force: bool,
+    ) -> Result<()> {
+        if src.is_empty() {
+            return Ok(());
+        }
+
+        // TODO abstract the before and after?
+
+        let mut inventory = self.get_staged_inventory(object_id)?;
+
+        let to_copy = self.resolve_internal_moves(&inventory, inventory.head, src, dst, true)?;
+
+        for (src_path, dst_path) in to_copy {
+            if inventory.head_version().is_file(&dst_path) {
+                if force {
+                    info!("Overwriting existing file at {}", dst_path);
+                } else {
+                    return Err(RocflError::AlreadyExists(dst_path));
+                }
+            }
+
+            info!("Moving {} to {}", src_path, dst_path);
+
+            inventory.move_file_in_head(&src_path, dst_path)?;
+        }
+
+        inventory.head_version_mut().created = Local::now();
+        self.get_staging()?.stage_inventory(&inventory, false)?;
 
         Ok(())
     }
@@ -697,28 +689,83 @@ impl OcflRepo {
         inventory.add_file_to_head(digest, logical_path)
     }
 
-    fn copy_file_internal(
+    /// Returns a map of source logical paths to destination logical paths that represent a source
+    /// logical path being copied or moved from to the destination.
+    fn resolve_internal_moves(
         &self,
+        inventory: &Inventory,
         src_version_num: VersionNum,
-        src_path: &InventoryPath,
-        dst_path: InventoryPath,
-        inventory: &mut Inventory,
-        force: bool,
-    ) -> Result<()> {
-        if inventory.head_version().is_file(&dst_path) {
-            if force {
-                info!("Overwriting existing file at {}", dst_path);
-            } else {
-                return Err(RocflError::AlreadyExists(dst_path));
+        src: &[impl AsRef<str>],
+        dst: &str,
+        recursive: bool,
+    ) -> Result<HashMap<Rc<InventoryPath>, InventoryPath>> {
+        let mut to_move = HashMap::new();
+
+        let dst_path = dst.try_into()?;
+        let dst_dir_exists = inventory.head_version().is_dir(&dst_path);
+        let src_is_many = src.len() > 1;
+        let dst_has_slash = dst.ends_with('/');
+
+        let version = inventory.get_version(src_version_num)?;
+
+        for path in src {
+            let mut has_matches = false;
+            let files = version.resolve_glob(path.as_ref(), false)?;
+            let many_files = files.len() > 1;
+
+            if recursive {
+                let dirs = version.resolve_glob_to_dirs(path.as_ref())?;
+                let many_dirs = dirs.len() > 1;
+
+                for dir in dirs {
+                    let children = version.paths_with_prefix(dir.as_ref());
+                    let many_children = children.len() > 1;
+
+                    for file in children {
+                        let logical_path = if dst_dir_exists
+                            || src_is_many
+                            || many_children
+                            || many_dirs
+                            || !files.is_empty()
+                        {
+                            logical_path_in_dst_dir_internal(&file, &dir.parent(), dst)?
+                        } else {
+                            logical_path_in_dst_dir_internal(&file, &dir, dst)?
+                        };
+
+                        has_matches = true;
+                        to_move.insert(file.clone(), logical_path);
+                    }
+                }
+            }
+
+            for file in files {
+                let logical_path = if dst_dir_exists
+                    || src_is_many
+                    || dst_has_slash
+                    || many_files
+                    || !to_move.is_empty()
+                {
+                    dst_path.resolve(&file.filename().try_into()?)
+                } else {
+                    dst_path.clone()
+                };
+
+                has_matches = true;
+                to_move.insert(file.clone(), logical_path);
+            }
+
+            if !has_matches {
+                error!(
+                    "Object {} version {} does not contain: {}",
+                    inventory.id,
+                    src_version_num,
+                    path.as_ref()
+                );
             }
         }
 
-        info!(
-            "Copying file {} from {} to {}",
-            src_path, src_version_num, dst_path
-        );
-
-        inventory.copy_file_to_head(src_version_num, src_path, dst_path)
+        Ok(to_move)
     }
 
     fn get_staging(&self) -> Result<&FsOcflStore> {
