@@ -507,12 +507,16 @@ impl OcflStore for FsOcflStore {
                 }
             }
 
-            if let Err(e) = util::clean_dirs_up(&storage_path.parent().unwrap()) {
-                error!(
-                    "Failed to cleanup dangling directories at {}: {}",
-                    storage_path.to_string_lossy(),
-                    e
-                );
+            let parent = storage_path.parent().unwrap();
+
+            if parent.exists() {
+                if let Err(e) = util::clean_dirs_up(&parent) {
+                    error!(
+                        "Failed to cleanup dangling directories at {}: {}",
+                        storage_path.to_string_lossy(),
+                        e
+                    );
+                }
             }
         }
 

@@ -306,6 +306,13 @@ impl OcflRepo {
         }
     }
 
+    /// Completely removes the specified object from the repository. If the object doest not exist,
+    /// nothing happens.
+    pub fn purge_object(&self, object_id: &str) -> Result<()> {
+        self.get_staging()?.purge_object(object_id)?;
+        self.store.purge_object(object_id)
+    }
+
     /// Stages a new OCFL object if there is not an existing object with the same ID. The object
     /// is not inserted into the repository until it is committed.
     pub fn create_object(
