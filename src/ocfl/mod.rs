@@ -481,6 +481,82 @@ impl OcflRepo {
         Ok(())
     }
 
+    /// Reverts staged changes to an object. If no paths are specified, then the entire object
+    /// is removed from staging, dropping all changes.
+    pub fn revert<P: AsRef<str>>(
+        &self,
+        object_id: &str,
+        paths: &[P],
+        recursive: bool,
+    ) -> Result<()> {
+        let staging = self.get_staging()?;
+
+        if paths.is_empty() {
+            staging.purge_object(object_id)
+        } else {
+            let mut inventory = match staging.get_inventory(&object_id) {
+                Ok(inventory) => inventory,
+                Err(RocflError::NotFound(_)) => return Ok(()),
+                Err(e) => return Err(e),
+            };
+
+            let head = inventory.head_version();
+            let (previous, previous_num) = if inventory.is_new() {
+                (None, None)
+            } else {
+                let previous_num = inventory.head.previous()?;
+                (
+                    Some(inventory.get_version(previous_num)?),
+                    Some(previous_num),
+                )
+            };
+
+            let mut head_paths = HashSet::new();
+            let mut previous_paths = HashSet::new();
+
+            for path in paths {
+                head_paths.extend(head.resolve_glob(path.as_ref(), recursive)?);
+                if let Some(previous) = previous {
+                    previous_paths.extend(previous.resolve_glob(path.as_ref(), recursive)?);
+                }
+            }
+
+            let mut revert_updates = HashSet::new();
+            let mut revert_adds = HashSet::new();
+
+            for head_path in head_paths {
+                if previous_paths.remove(&head_path) {
+                    revert_updates.insert(head_path);
+                } else {
+                    revert_adds.insert(head_path);
+                }
+            }
+
+            // Need to apply add reverts first to attempt to avoid revert path conflicts
+            for path in revert_adds {
+                inventory.remove_logical_path_from_head(&path);
+            }
+
+            for path in revert_updates {
+                if let Some(previous_num) = previous_num {
+                    inventory.copy_file_to_head(previous_num, &path, path.as_ref().clone())?;
+                }
+            }
+
+            // The remaining paths are deletes to revert
+            for path in previous_paths {
+                if let Some(previous_num) = previous_num {
+                    inventory.copy_file_to_head(previous_num, &path, path.as_ref().clone())?;
+                }
+            }
+
+            inventory.head_version_mut().created = Local::now();
+            staging.stage_inventory(&inventory, false)?;
+
+            Ok(())
+        }
+    }
+
     /// Commits all of an object's staged changes
     pub fn commit(
         &self,
