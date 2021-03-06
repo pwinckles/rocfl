@@ -74,6 +74,8 @@ pub enum Command {
     Remove(RemoveCmd),
     #[structopt(name = "status")]
     Status(StatusCmd),
+    #[structopt(name = "revert")]
+    Revert(RevertCmd),
     #[structopt(name = "commit")]
     Commit(CommitCmd),
 }
@@ -375,7 +377,26 @@ pub struct CommitCmd {
     pub object_id: String,
 }
 
-// TODO Reset
+/// Reverts changes staged to an object. Additions are removed, deletions are restored, and
+/// modifications are returned to their original state.
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+pub struct RevertCmd {
+    /// Indicates that virtual directories should be reverted recursively
+    #[structopt(short, long)]
+    pub recursive: bool,
+
+    /// The ID of the object to revert
+    #[structopt(name = "OBJ_ID")]
+    pub object_id: String,
+
+    /// The logical paths of the files to revert. This may be a glob pattern. If no paths are
+    /// specified the entire object is reverted.
+    #[structopt(name = "PATH")]
+    pub paths: Vec<String>,
+}
+
+// TODO a command for rebasing staging if an object is updated after the staged version was created?
 
 // TODO Purge
 
