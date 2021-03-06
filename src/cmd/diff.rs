@@ -4,11 +4,11 @@ use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::fmt::Formatter;
 
-use crate::cmd::opts::{DiffCmd, LogCmd, ShowCmd, StatusCmd};
+use crate::cmd::opts::{DiffCmd, LogCmd, ShowCmd};
 use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, Separator, TableView, TextCell};
 use crate::cmd::{println, Cmd, GlobalArgs, DATE_FORMAT};
-use crate::ocfl::{Diff, ObjectVersionDetails, OcflRepo, Result, VersionDetails};
+use crate::ocfl::{Diff, OcflRepo, Result, VersionDetails};
 
 const DEFAULT_USER: &str = "NA";
 
@@ -71,17 +71,27 @@ impl LogCmd {
 
 impl Cmd for ShowCmd {
     fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
-        let object = repo.get_object_details(&self.object_id, self.version)?;
+        if self.staged {
+            let diffs = repo.diff_staged(&self.object_id)?;
 
-        if !self.minimal {
-            println(FormatVersion::new(&object.version_details, !args.no_styles))?;
+            if diffs.is_empty() {
+                println("No staged changes found.")
+            } else {
+                display_diffs(diffs, &args)
+            }
+        } else {
+            let object = repo.get_object_details(&self.object_id, self.version)?;
+
+            if !self.minimal {
+                println(FormatVersion::new(&object.version_details, !args.no_styles))?;
+            }
+
+            let right = object.version_details.version_num;
+
+            let diffs = repo.diff(&self.object_id, None, right)?;
+
+            display_diffs(diffs, &args)
         }
-
-        let right = object.version_details.version_num;
-
-        let diffs = repo.diff(&self.object_id, None, right)?;
-
-        display_diffs(diffs, &args)
     }
 }
 
@@ -94,45 +104,6 @@ impl Cmd for DiffCmd {
         let diffs = repo.diff(&self.object_id, Some(self.left), self.right)?;
 
         display_diffs(diffs, &args)
-    }
-}
-
-impl Cmd for StatusCmd {
-    fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
-        if let Some(object_id) = &self.object_id {
-            let diffs = repo.diff_staged(object_id)?;
-
-            if diffs.is_empty() {
-                println("No staged changes found.")?;
-            } else {
-                display_diffs(diffs, &args)?;
-            }
-        } else {
-            let iter = repo.list_objects(true, None)?;
-
-            let mut objects: Vec<ObjectVersionDetails> = iter.collect();
-
-            if objects.is_empty() {
-                println("No objects with staged changes found.")?;
-            } else {
-                objects.sort_unstable_by(|a, b| natord::compare(&a.id, &b.id));
-
-                let mut columns = Vec::new();
-                columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
-                columns.push(Column::new(ColumnId::Created, "Updated", Alignment::Left));
-                columns.push(Column::new(
-                    ColumnId::ObjectId,
-                    "Object ID",
-                    Alignment::Left,
-                ));
-                let mut table = TableView::new(columns, Separator::SPACE, true, !args.no_styles);
-
-                objects.iter().for_each(|object| table.add_row(object));
-                table.write_stdio()?;
-            }
-        }
-
-        Ok(())
     }
 }
 
