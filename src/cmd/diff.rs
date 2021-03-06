@@ -108,7 +108,7 @@ impl Cmd for StatusCmd {
                 display_diffs(diffs, &args)?;
             }
         } else {
-            let iter = repo.list_staged_objects()?;
+            let iter = repo.list_objects(true, None)?;
 
             let mut objects: Vec<ObjectVersionDetails> = iter.collect();
 

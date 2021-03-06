@@ -104,27 +104,27 @@ impl OcflRepo {
     ///
     /// The iterator return an error if it encounters a problem accessing an object. This does
     /// terminate the iterator; there are still more objects until it returns `None`.
+    ///
+    /// If `staged` is specified, then only objects with staged changes are returned.
     pub fn list_objects<'a>(
         &'a self,
+        staged: bool,
         filter_glob: Option<&str>,
     ) -> Result<Box<dyn Iterator<Item = ObjectVersionDetails> + 'a>> {
-        let inv_iter = self.store.iter_inventories(filter_glob)?;
+        if staged {
+            // TODO this should NOT create staging if it does not exist
+            let inv_iter = self.get_staging()?.iter_inventories(None)?;
 
-        Ok(Box::new(InventoryAdapterIter::new(inv_iter, |inventory| {
-            ObjectVersionDetails::from_inventory(inventory, None)
-        })))
-    }
+            Ok(Box::new(InventoryAdapterIter::new(inv_iter, |inventory| {
+                ObjectVersionDetails::from_inventory(inventory, None)
+            })))
+        } else {
+            let inv_iter = self.store.iter_inventories(filter_glob)?;
 
-    /// Returns a list of objects that have staged changes
-    pub fn list_staged_objects<'a>(
-        &'a self,
-    ) -> Result<Box<dyn Iterator<Item = ObjectVersionDetails> + 'a>> {
-        // TODO this should NOT create staging if it does not exist
-        let inv_iter = self.get_staging()?.iter_inventories(None)?;
-
-        Ok(Box::new(InventoryAdapterIter::new(inv_iter, |inventory| {
-            ObjectVersionDetails::from_inventory(inventory, None)
-        })))
+            Ok(Box::new(InventoryAdapterIter::new(inv_iter, |inventory| {
+                ObjectVersionDetails::from_inventory(inventory, None)
+            })))
+        }
     }
 
     /// Returns a view of a version of an object. If a `VersionNum` is not specified,
@@ -139,6 +139,26 @@ impl OcflRepo {
     ) -> Result<ObjectVersion> {
         let inventory = self.store.get_inventory(object_id)?;
         Ok(ObjectVersion::from_inventory(inventory, version_num)?)
+    }
+
+    /// Same as `get_object()` except that it returns the staged version of an object.
+    ///
+    /// If the object does not have a staged version, then a `RocflError::NotFound`
+    /// error is returned.
+    pub fn get_staged_object(&self, object_id: &str) -> Result<ObjectVersion> {
+        let inventory = match self.get_staging()?.get_inventory(object_id) {
+            Ok(inventory) => inventory,
+            Err(RocflError::NotFound(_)) => {
+                return Err(RocflError::NotFound(format!(
+                    "{} does not have a staged version.",
+                    object_id
+                )))
+            }
+            Err(e) => return Err(e),
+        };
+
+        let version = inventory.head;
+        Ok(ObjectVersion::from_inventory(inventory, Some(version))?)
     }
 
     /// Returns high-level details about an object version. This method is similar to
@@ -186,6 +206,33 @@ impl OcflRepo {
     ) -> Result<()> {
         self.store
             .get_object_file(object_id, path, version_num, sink)
+    }
+
+    /// Writes the specified file from the staged version of the object to the sink.
+    ///
+    /// If the file cannot be found, then a `RocflError::NotFound` error is returned.
+    pub fn get_staged_object_file(
+        &self,
+        object_id: &str,
+        path: &InventoryPath,
+        sink: &mut dyn Write,
+    ) -> Result<()> {
+        let staging = self.get_staging()?;
+
+        let inventory = staging.get_inventory(object_id)?;
+        let content_path = inventory.content_path_for_logical_path(path, None)?;
+
+        let version_prefix = format!("{}/", inventory.head);
+
+        if content_path.as_ref().as_ref().starts_with(&version_prefix) {
+            // The content exists in staging
+            self.get_staging()?
+                .get_object_file(object_id, path, None, sink)
+        } else {
+            // The content exists in the main repo
+            self.store
+                .get_object_file(object_id, path, Some(inventory.head.previous()?), sink)
+        }
     }
 
     /// Returns a vector contain the version metadata for every version of an object that
