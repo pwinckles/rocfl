@@ -4,8 +4,8 @@ use std::io;
 use log::info;
 
 use crate::cmd::opts::{
-    CatCmd, CommitCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, MoveCmd, NewCmd, RemoveCmd,
-    RevertCmd,
+    CatCmd, CommitCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, MoveCmd, NewCmd, PurgeCmd,
+    RemoveCmd, RevertCmd,
 };
 use crate::cmd::opts::{InitCmd, Layout, RocflArgs, Storage};
 use crate::cmd::{println, Cmd, GlobalArgs};
@@ -134,6 +134,16 @@ impl Cmd for CommitCmd {
         )?;
 
         Ok(())
+    }
+}
+
+impl Cmd for PurgeCmd {
+    fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
+        if !self.force {
+            // TODO prompt for confirmation
+        }
+
+        repo.purge_object(&self.object_id)
     }
 }
 

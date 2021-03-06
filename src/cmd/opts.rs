@@ -76,6 +76,8 @@ pub enum Command {
     Revert(RevertCmd),
     #[structopt(name = "commit")]
     Commit(CommitCmd),
+    #[structopt(name = "purge")]
+    Purge(PurgeCmd),
 }
 
 /// Lists objects or files within objects.
@@ -395,9 +397,20 @@ pub struct RevertCmd {
     pub paths: Vec<String>,
 }
 
-// TODO a command for rebasing staging if an object is updated after the staged version was created?
+/// Purges an object, completely removing it from the repository.
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+pub struct PurgeCmd {
+    /// Purges without prompting for confirmation
+    #[structopt(short, long)]
+    pub force: bool,
 
-// TODO Purge
+    /// The ID of the object to purge
+    #[structopt(name = "OBJ_ID")]
+    pub object_id: String,
+}
+
+// TODO a command for rebasing staging if an object is updated after the staged version was created?
 
 #[derive(Debug)]
 pub struct Num(pub usize);
