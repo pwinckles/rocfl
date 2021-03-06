@@ -8,7 +8,7 @@ use crate::cmd::opts::{
     RemoveCmd, RevertCmd,
 };
 use crate::cmd::opts::{InitCmd, Layout, RocflArgs, Storage};
-use crate::cmd::{println, Cmd, GlobalArgs};
+use crate::cmd::{print, println, Cmd, GlobalArgs};
 use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
 use crate::ocfl::{DigestAlgorithm, OcflRepo, Result};
 
@@ -140,7 +140,13 @@ impl Cmd for CommitCmd {
 impl Cmd for PurgeCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
         if !self.force {
-            // TODO prompt for confirmation
+            print(format!("Permanently delete '{}'? [y/N]: ", self.object_id))?;
+            let mut response = String::new();
+            io::stdin().read_line(&mut response)?;
+            if !response.trim().eq_ignore_ascii_case("y") {
+                println("Aborted")?;
+                return Ok(());
+            }
         }
 
         repo.purge_object(&self.object_id)
