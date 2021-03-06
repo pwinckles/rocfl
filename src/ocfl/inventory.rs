@@ -281,6 +281,24 @@ impl Inventory {
         self.head_version_mut().add_file(digest, dst_path)
     }
 
+    /// Moves the specified logical path to a new path within the head version. The destination
+    /// path is validated prior to the move.
+    pub fn move_file_in_head(
+        &mut self,
+        src_path: &InventoryPath,
+        dst_path: InventoryPath,
+    ) -> Result<()> {
+        let head = self.head_version_mut();
+        let digest = match head.lookup_digest(src_path) {
+            Some(digest) => digest.clone(),
+            None => return Err(not_found_path(&self.id, self.head, src_path)),
+        };
+
+        head.add_file(digest, dst_path)?;
+        head.remove_file(src_path);
+        Ok(())
+    }
+
     /// Removes the specified path from the HEAD version's state. If the HEAD version has
     /// no more references to the removed file's digest, then any content paths that were
     /// introduced with that digest are removed from the manifest.
