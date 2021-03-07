@@ -8,6 +8,7 @@ use structopt::clap::AppSettings::{ColorAuto, ColoredHelp, DisableVersion};
 use structopt::StructOpt;
 
 use crate::ocfl::VersionNum;
+use chrono::{DateTime, Local};
 
 // TODO review all of these docs so that the language agrees
 
@@ -363,7 +364,11 @@ pub struct CommitCmd {
     #[structopt(short, long, value_name = "MESSAGE")]
     pub message: Option<String>,
 
-    // TODO allow setting the `created` timestamp?
+    /// The creation timestamp of the version. Timestamps should be formatted in accordance
+    /// to RFC 3339, for example: 2020-12-23T10:11:12-06:00. Default: now
+    #[structopt(short, long, value_name = "TIMESTAMP")]
+    pub created: Option<DateTime<Local>>,
+
     /// The ID of the object to commit changes for
     #[structopt(name = "OBJ_ID")]
     pub object_id: String,

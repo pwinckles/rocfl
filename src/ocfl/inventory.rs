@@ -447,16 +447,17 @@ impl Version {
 
     pub fn update_meta(
         &mut self,
-        name: &Option<String>,
-        address: &Option<String>,
-        message: &Option<String>,
+        name: Option<String>,
+        address: Option<String>,
+        message: Option<String>,
+        created: Option<DateTime<Local>>,
     ) {
-        self.message = message.clone();
+        self.message = message;
         self.user = match name {
-            Some(name) => Some(User::new(name.clone(), address.clone())),
+            Some(name) => Some(User::new(name, address)),
             None => None,
         };
-        self.created = Local::now();
+        self.created = created.unwrap_or_else(Local::now);
     }
 
     /// Returns a consuming iterator for the version's state
