@@ -77,6 +77,8 @@ pub enum Command {
     Revert(RevertCmd),
     #[structopt(name = "commit")]
     Commit(CommitCmd),
+    #[structopt(name = "status")]
+    Status(StatusCmd),
     #[structopt(name = "purge")]
     Purge(PurgeCmd),
 }
@@ -391,6 +393,16 @@ pub struct RevertCmd {
     /// specified the entire object is reverted.
     #[structopt(name = "PATH")]
     pub paths: Vec<String>,
+}
+/// Lists all of the objects with staged changes or shows the staged changes for a specific object.
+/// This command is a simplified version of 'ls --staged' and 'show -staged'. Use the other commands
+/// if you need more options.
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+pub struct StatusCmd {
+    /// The ID of the object to show staged changes for
+    #[structopt(name = "OBJ_ID")]
+    pub object_id: Option<String>,
 }
 
 /// Purges an object, completely removing it from the repository.
