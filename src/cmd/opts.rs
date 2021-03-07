@@ -85,9 +85,10 @@ pub enum Command {
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct ListCmd {
-    /// Indicates that logical paths within object should be listed recursively
-    #[structopt(short, long)]
-    pub recursive: bool,
+    /// Disables the interpretation of logical path segments as hierarchical virtual directories.
+    /// With this flag set, logical paths are treated as flat, opaque keys.
+    #[structopt(short = "V", long)]
+    pub no_virtual_dirs: bool,
 
     /// Enables long output format: Version, Updated, Name (Object ID or Logical Path)
     #[structopt(short, long)]
@@ -126,7 +127,7 @@ pub struct ListCmd {
     pub sort: Field,
 
     /// Reverses the direction of the sort
-    #[structopt(short = "R", long)]
+    #[structopt(short, long)]
     pub reverse: bool,
 
     /// Lists only objects; not their contents
