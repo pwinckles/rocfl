@@ -282,11 +282,6 @@ pub struct CopyCmd {
     #[structopt(short, long)]
     pub recursive: bool,
 
-    // TODO invert this flag
-    /// Allows existing files to be overwritten.
-    #[structopt(short, long)]
-    pub force: bool,
-
     /// Specifies that the source paths should be interpreted as logical paths internal to the
     /// object, and not as paths on the filesystem.
     #[structopt(short, long)]
@@ -315,10 +310,6 @@ pub struct CopyCmd {
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct MoveCmd {
-    /// Allows existing files to be overwritten.
-    #[structopt(short, long)]
-    pub force: bool,
-
     /// Specifies that the source paths should be interpreted as logical paths internal to the
     /// object, and not as paths on the filesystem.
     #[structopt(short, long)]
