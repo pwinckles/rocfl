@@ -20,7 +20,7 @@ use std::path;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use chrono::Local;
+use chrono::{DateTime, Local};
 use log::{error, info};
 use once_cell::unsync::OnceCell;
 #[cfg(feature = "s3")]
@@ -599,9 +599,10 @@ impl OcflRepo {
     pub fn commit(
         &self,
         object_id: &str,
-        user_name: &Option<String>,
-        user_address: &Option<String>,
-        message: &Option<String>,
+        user_name: Option<String>,
+        user_address: Option<String>,
+        message: Option<String>,
+        created: Option<DateTime<Local>>,
     ) -> Result<()> {
         let staging = self.get_staging()?;
 
@@ -620,7 +621,7 @@ impl OcflRepo {
 
         inventory
             .head_version_mut()
-            .update_meta(user_name, user_address, message);
+            .update_meta(user_name, user_address, message, created);
 
         staging.stage_inventory(&inventory, true)?;
         staging.rm_staged_files(&inventory, &duplicates)?;
