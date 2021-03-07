@@ -85,6 +85,10 @@ pub enum Command {
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct ListCmd {
+    /// Indicates that logical paths within object should be listed recursively
+    #[structopt(short, long)]
+    pub recursive: bool,
+
     /// Enables long output format: Version, Updated, Name (Object ID or Logical Path)
     #[structopt(short, long)]
     pub long: bool,
@@ -122,17 +126,12 @@ pub struct ListCmd {
     pub sort: Field,
 
     /// Reverses the direction of the sort
-    #[structopt(short, long)]
+    #[structopt(short = "R", long)]
     pub reverse: bool,
 
     /// Lists only objects; not their contents
     #[structopt(short, long)]
     pub objects: bool,
-
-    // TODO remove this and change to work with virt dirs
-    /// Wildcards in path glob expressions will not match '/'
-    #[structopt(short, long)]
-    pub glob_literal_separator: bool,
 
     /// ID of the object to list. May be a glob when used with '-o'.
     #[structopt(name = "OBJ_ID")]
