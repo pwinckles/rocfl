@@ -1,4 +1,7 @@
+use std::borrow::Cow;
 use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
 
 use globset::GlobBuilder;
 
@@ -7,7 +10,9 @@ use crate::cmd::opts::*;
 use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, Separator, TableView, TextCell};
 use crate::cmd::{Cmd, GlobalArgs, DATE_FORMAT};
-use crate::ocfl::{FileDetails, ObjectVersionDetails, OcflRepo, Result};
+use crate::ocfl::{
+    FileDetails, InventoryPath, ObjectVersion, ObjectVersionDetails, OcflRepo, Result,
+};
 
 impl Cmd for ListCmd {
     fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
@@ -21,7 +26,6 @@ impl Cmd for ListCmd {
 
 impl ListCmd {
     fn list_objects(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
-        // TODO the physical path of the staged objects is not relative the storage root
         let iter = if self.staged {
             repo.list_staged_objects(self.object_id.as_deref())?
         } else {
@@ -46,42 +50,19 @@ impl ListCmd {
     fn list_object_contents(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         let object_id = self.object_id.as_ref().unwrap();
         let object = if self.staged {
-            // TODO staged physical paths here are not relative to storage root as well
+            // TODO the physical paths are not correct -- files appear to be in staging when they are not
             repo.get_staged_object(object_id)?
         } else {
             repo.get_object(object_id, self.version)?
         };
 
-        // TODO this should remove any leading slashes
-        let glob = match self.path.as_ref() {
-            Some(path) => Some(
-                GlobBuilder::new(path)
-                    .literal_separator(self.glob_literal_separator)
-                    .backslash_escape(true)
-                    .build()?
-                    .compile_matcher(),
-            ),
-            None => None,
-        };
-
-        let mut listings: Vec<ContentListing> = object
-            .state
-            .into_iter()
-            .map(move |(path, details)| ContentListing {
-                logical_path: path.to_string(),
-                details,
-            })
-            .filter(|listing| match &glob {
-                Some(glob) => glob.is_match(&listing.logical_path),
-                None => true,
-            })
-            .collect();
+        let mut listings = self.filter_paths_to_listings(object)?;
 
         listings.sort_unstable_by(|a, b| {
             if self.reverse {
-                cmp_object_contents(&self.sort, b, a)
+                cmp_listings(&self.sort, b, a)
             } else {
-                cmp_object_contents(&self.sort, a, b)
+                cmp_listings(&self.sort, a, b)
             }
         });
 
@@ -144,6 +125,111 @@ impl ListCmd {
         TableView::new(columns, self.separator(), self.header, !args.no_styles)
     }
 
+    // TODO clean this mess up
+    fn filter_paths_to_listings(&self, object: ObjectVersion) -> Result<Vec<Listing>> {
+        let mut listings = Vec::new();
+
+        let glob = match &self.path {
+            Some(path) => {
+                let trimmed = path.trim_start_matches('/');
+                if trimmed.is_empty() {
+                    "*".to_string()
+                } else {
+                    trimmed.to_string()
+                }
+            }
+            None => "*".to_string(),
+        };
+
+        let matcher = GlobBuilder::new(&glob)
+            .literal_separator(true)
+            .backslash_escape(true)
+            .build()?
+            .compile_matcher();
+
+        let virt_dirs = create_virt_dirs(&object);
+
+        let mut not_matched = HashMap::new();
+
+        for (path, details) in object.state {
+            if matcher.is_match(path.as_ref().as_ref()) {
+                listings.push(Listing::File(ContentListing {
+                    logical_path: path.to_string(),
+                    details,
+                }));
+            } else {
+                not_matched.insert(path, details);
+            }
+        }
+
+        let mut dir_matches = HashSet::new();
+        let mut not_matched_dirs = HashSet::new();
+
+        for dir in virt_dirs {
+            if matcher.is_match(dir.as_ref()) {
+                dir_matches.insert(dir);
+            } else {
+                not_matched_dirs.insert(dir);
+            }
+        }
+
+        if self.recursive {
+            if !not_matched.is_empty() {
+                for dir in dir_matches {
+                    let mut remaining = HashMap::new();
+
+                    let prefix = if dir.as_ref().is_empty() {
+                        dir.as_ref().into()
+                    } else {
+                        Cow::Owned(format!("{}/", dir))
+                    };
+
+                    for (path, details) in not_matched {
+                        if path.as_ref().as_ref().as_str().starts_with(prefix.as_ref()) {
+                            listings.push(Listing::File(ContentListing {
+                                logical_path: path.to_string(),
+                                details,
+                            }))
+                        } else {
+                            remaining.insert(path, details);
+                        }
+                    }
+
+                    not_matched = remaining;
+                }
+            }
+        } else if listings.is_empty() && dir_matches.len() == 1 && glob != "*" {
+            let sub_matcher = GlobBuilder::new(&format!("{}/*", glob))
+                .literal_separator(true)
+                .backslash_escape(true)
+                .build()?
+                .compile_matcher();
+
+            for (path, details) in not_matched {
+                if sub_matcher.is_match(path.as_ref().as_ref()) {
+                    listings.push(Listing::File(ContentListing {
+                        logical_path: path.to_string(),
+                        details,
+                    }));
+                }
+            }
+
+            for dir in not_matched_dirs {
+                if sub_matcher.is_match(dir.as_ref()) {
+                    listings.push(Listing::Dir(format!("{}/", dir)));
+                }
+            }
+        } else {
+            for dir in dir_matches {
+                if !dir.as_ref().is_empty() {
+                    listings.push(Listing::Dir(format!("{}/", dir)));
+                }
+            }
+        }
+
+        Ok(listings)
+    }
+
     fn separator(&self) -> Separator {
         if self.tsv {
             Separator::TAB
@@ -167,28 +253,90 @@ fn cmp_objects(field: &Field, a: &ObjectVersionDetails, b: &ObjectVersionDetails
     }
 }
 
-fn cmp_object_contents(field: &Field, a: &ContentListing, b: &ContentListing) -> Ordering {
-    match field {
-        Field::Name => natord::compare(&a.logical_path, &b.logical_path),
-        Field::Version => a
-            .details
-            .last_update
-            .version_num
-            .cmp(&b.details.last_update.version_num),
-        Field::Updated => a
-            .details
-            .last_update
-            .created
-            .cmp(&b.details.last_update.created),
-        Field::Physical => natord::compare(&a.details.storage_path, &b.details.storage_path),
-        Field::Digest => a.details.digest.cmp(&b.details.digest),
-        Field::None => Ordering::Equal,
+fn cmp_listings(field: &Field, a: &Listing, b: &Listing) -> Ordering {
+    match (a, b) {
+        (Listing::File(a), Listing::File(b)) => match field {
+            Field::Name => natord::compare(&a.logical_path, &b.logical_path),
+            Field::Version => a
+                .details
+                .last_update
+                .version_num
+                .cmp(&b.details.last_update.version_num),
+            Field::Updated => a
+                .details
+                .last_update
+                .created
+                .cmp(&b.details.last_update.created),
+            Field::Physical => natord::compare(&a.details.storage_path, &b.details.storage_path),
+            Field::Digest => a.details.digest.cmp(&b.details.digest),
+            Field::None => Ordering::Equal,
+        },
+        (Listing::File(a_file), Listing::Dir(b_dir)) => match field {
+            Field::Name => natord::compare(&a_file.logical_path, b_dir),
+            Field::None => Ordering::Equal,
+            _ => Ordering::Greater,
+        },
+        (Listing::Dir(a_dir), Listing::Dir(b_dir)) => match field {
+            Field::None => Ordering::Equal,
+            _ => natord::compare(a_dir, b_dir),
+        },
+        (Listing::Dir(a_dir), Listing::File(b_file)) => match field {
+            Field::Name => natord::compare(a_dir, &b_file.logical_path),
+            Field::None => Ordering::Equal,
+            _ => Ordering::Less,
+        },
     }
+}
+
+fn create_virt_dirs(object: &ObjectVersion) -> HashSet<InventoryPath> {
+    let mut dirs = HashSet::with_capacity(object.state.len());
+
+    dirs.insert("".try_into().unwrap());
+
+    for path in object.state.keys() {
+        let mut parent = path.parent();
+        while parent.as_ref() != "" {
+            let next = parent.parent();
+            dirs.insert(parent);
+            parent = next;
+        }
+    }
+
+    dirs
+}
+
+enum Listing {
+    File(ContentListing),
+    Dir(String),
 }
 
 struct ContentListing {
     logical_path: String,
     details: FileDetails,
+}
+
+impl<'a> AsRow<'a> for Listing {
+    fn as_row(&'a self, columns: &[Column]) -> Row<'a> {
+        match self {
+            Listing::File(file) => file.as_row(columns),
+            Listing::Dir(dir) => {
+                let mut cells = Vec::new();
+
+                for column in columns {
+                    let cell = match column.id {
+                        ColumnId::LogicalPath => {
+                            TextCell::new(dir.as_str()).with_style(&*style::BOLD)
+                        }
+                        _ => TextCell::blank(),
+                    };
+
+                    cells.push(cell);
+                }
+
+                Row::new(cells)
+            }
+        }
+    }
 }
 
 impl<'a> AsRow<'a> for ContentListing {
