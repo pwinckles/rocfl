@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
@@ -125,7 +124,6 @@ impl ListCmd {
         TableView::new(columns, self.separator(), self.header, !args.no_styles)
     }
 
-    // TODO clean this mess up
     fn filter_paths_to_listings(&self, object: ObjectVersion) -> Result<Vec<Listing>> {
         let mut listings = Vec::new();
 
@@ -142,12 +140,16 @@ impl ListCmd {
         };
 
         let matcher = GlobBuilder::new(&glob)
-            .literal_separator(true)
+            .literal_separator(!self.no_virtual_dirs)
             .backslash_escape(true)
             .build()?
             .compile_matcher();
 
-        let virt_dirs = create_virt_dirs(&object);
+        let virt_dirs = if !self.no_virtual_dirs {
+            Some(create_virt_dirs(&object))
+        } else {
+            None
+        };
 
         let mut not_matched = HashMap::new();
 
@@ -162,67 +164,45 @@ impl ListCmd {
             }
         }
 
-        let mut dir_matches = HashSet::new();
-        let mut not_matched_dirs = HashSet::new();
+        if !self.no_virtual_dirs {
+            let mut dir_matches = HashSet::new();
+            let mut not_matched_dirs = HashSet::new();
 
-        for dir in virt_dirs {
-            if matcher.is_match(dir.as_ref()) {
-                dir_matches.insert(dir);
-            } else {
-                not_matched_dirs.insert(dir);
+            for dir in virt_dirs.unwrap() {
+                if matcher.is_match(dir.as_ref()) {
+                    dir_matches.insert(dir);
+                } else {
+                    not_matched_dirs.insert(dir);
+                }
             }
-        }
 
-        if self.recursive {
-            if !not_matched.is_empty() {
-                for dir in dir_matches {
-                    let mut remaining = HashMap::new();
+            // If no files were matched and there is a single directory match, then expand the dir
+            if listings.is_empty() && dir_matches.len() == 1 && glob != "*" {
+                let sub_matcher = GlobBuilder::new(&format!("{}/*", glob))
+                    .literal_separator(true)
+                    .backslash_escape(true)
+                    .build()?
+                    .compile_matcher();
 
-                    let prefix = if dir.as_ref().is_empty() {
-                        dir.as_ref().into()
-                    } else {
-                        Cow::Owned(format!("{}/", dir))
-                    };
-
-                    for (path, details) in not_matched {
-                        if path.as_ref().as_ref().as_str().starts_with(prefix.as_ref()) {
-                            listings.push(Listing::File(ContentListing {
-                                logical_path: path.to_string(),
-                                details,
-                            }))
-                        } else {
-                            remaining.insert(path, details);
-                        }
+                for (path, details) in not_matched {
+                    if sub_matcher.is_match(path.as_ref().as_ref()) {
+                        listings.push(Listing::File(ContentListing {
+                            logical_path: path.to_string(),
+                            details,
+                        }));
                     }
-
-                    not_matched = remaining;
                 }
-            }
-        } else if listings.is_empty() && dir_matches.len() == 1 && glob != "*" {
-            let sub_matcher = GlobBuilder::new(&format!("{}/*", glob))
-                .literal_separator(true)
-                .backslash_escape(true)
-                .build()?
-                .compile_matcher();
 
-            for (path, details) in not_matched {
-                if sub_matcher.is_match(path.as_ref().as_ref()) {
-                    listings.push(Listing::File(ContentListing {
-                        logical_path: path.to_string(),
-                        details,
-                    }));
+                for dir in not_matched_dirs {
+                    if sub_matcher.is_match(dir.as_ref()) {
+                        listings.push(Listing::Dir(format!("{}/", dir)));
+                    }
                 }
-            }
-
-            for dir in not_matched_dirs {
-                if sub_matcher.is_match(dir.as_ref()) {
-                    listings.push(Listing::Dir(format!("{}/", dir)));
-                }
-            }
-        } else {
-            for dir in dir_matches {
-                if !dir.as_ref().is_empty() {
-                    listings.push(Listing::Dir(format!("{}/", dir)));
+            } else {
+                for dir in dir_matches {
+                    if !dir.as_ref().is_empty() {
+                        listings.push(Listing::Dir(format!("{}/", dir)));
+                    }
                 }
             }
         }
