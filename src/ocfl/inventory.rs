@@ -576,8 +576,6 @@ impl Version {
         // Logical paths do not have leading slashes
         let glob = glob.trim_start_matches('/');
 
-        // TODO check root copy
-
         let matcher = GlobBuilder::new(glob)
             .literal_separator(true)
             .backslash_escape(true)
@@ -744,6 +742,7 @@ fn foreach_dir<F: FnMut(InventoryPath) -> Result<()>>(
     path: &InventoryPath,
     mut consumer: F,
 ) -> Result<()> {
+    // TODO I think all of this might be able to be replaced with calls to the new parent() method
     let mut parts = path.parts();
     let mut dir = String::new();
     let mut current = parts.next();
