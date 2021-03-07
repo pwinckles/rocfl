@@ -39,7 +39,12 @@ pub struct Inventory {
     pub fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
 
     #[serde(skip)]
+    /// Path to the object's root relative the storage root
     pub object_root: String,
+    // TODO see if this is useful anywhere else
+    #[serde(skip)]
+    /// Physical path to the object's root
+    pub storage_path: String,
 }
 
 /// Used to construct new inventories. This is not currently a general purposes builder. It is
@@ -53,6 +58,7 @@ pub struct InventoryBuilder {
     manifest: PathBiMap,
     versions: BTreeMap<VersionNum, Version>,
     object_root: String,
+    storage_path: String,
 }
 
 /// OCFL version serialization object
@@ -382,6 +388,7 @@ impl InventoryBuilder {
             manifest: PathBiMap::new(),
             versions: BTreeMap::new(),
             object_root: "".to_string(),
+            storage_path: "".to_string(),
         }
     }
 
@@ -413,6 +420,7 @@ impl InventoryBuilder {
             versions: self.versions,
             fixity: None,
             object_root: self.object_root,
+            storage_path: self.storage_path,
         };
 
         inventory.validate()?;

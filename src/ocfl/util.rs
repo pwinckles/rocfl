@@ -1,9 +1,13 @@
-use std::fs;
 use std::path::Path;
+use std::{fs, path};
 
 use walkdir::WalkDir;
 
 use crate::ocfl::error::Result;
+use std::borrow::Cow;
+
+/// Indicates if the system path separator is `\`
+pub const BACKSLASH_SEPARATOR: bool = path::MAIN_SEPARATOR == '\\';
 
 /// Walks up the directory hierarchy deleting directories until it finds a non-empty directory.
 pub fn clean_dirs_up(start_dir: impl AsRef<Path>) -> Result<()> {
@@ -33,4 +37,20 @@ pub fn clean_dirs_down(start_dir: impl AsRef<Path>) -> Result<()> {
 /// Returns true if the specified directory does not contain any files
 pub fn dir_is_empty(dir: impl AsRef<Path>) -> Result<bool> {
     Ok(fs::read_dir(dir)?.next().is_none())
+}
+
+/// Changes `/` to `\` on Windows
+pub fn convert_forwardslash_to_back(path: &str) -> Cow<str> {
+    if BACKSLASH_SEPARATOR && path.contains('/') {
+        return Cow::Owned(path.replace("/", "\\"));
+    }
+    path.into()
+}
+
+/// Changes `\\` to `/` on Windows
+pub fn convert_backslash_to_forward(path: &str) -> Cow<str> {
+    if BACKSLASH_SEPARATOR && path.contains('\\') {
+        return Cow::Owned(path.replace("\\", "/"));
+    }
+    path.into()
 }
