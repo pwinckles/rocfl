@@ -1,5 +1,5 @@
 use std::convert::{TryFrom, TryInto};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use chrono::DateTime;
@@ -32,7 +32,8 @@ fn list_all_objects() -> Result<()> {
         objects.remove(0),
         ObjectVersionDetails {
             id: "o1".to_string(),
-            object_root: Path::new("235")
+            object_root: repo_root
+                .join("235")
                 .join("2da")
                 .join("728")
                 .join("2352da7280f1decc3acf1ba84eb945c9fc2b7b541094e1d0992dbffd1b6664cc")
@@ -55,7 +56,8 @@ fn list_all_objects() -> Result<()> {
         objects.remove(0),
         ObjectVersionDetails {
             id: "o2".to_string(),
-            object_root: Path::new("925")
+            object_root: repo_root
+                .join("925")
                 .join("0b9")
                 .join("912")
                 .join("9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04")
@@ -70,7 +72,8 @@ fn list_all_objects() -> Result<()> {
         objects.remove(0),
         ObjectVersionDetails {
             id: "o3".to_string(),
-            object_root: Path::new("de2")
+            object_root: repo_root
+                .join("de2")
                 .join("d91")
                 .join("dc0")
                 .join("de2d91dc0a2580414e9a70f7dfc76af727b69cac0838f2cbe0a88d12642efcbf")
@@ -105,7 +108,8 @@ fn list_single_object_from_glob() -> Result<()> {
         objects.remove(0),
         ObjectVersionDetails {
             id: "o1".to_string(),
-            object_root: Path::new("235")
+            object_root: repo_root
+                .join("235")
                 .join("2da")
                 .join("728")
                 .join("2352da7280f1decc3acf1ba84eb945c9fc2b7b541094e1d0992dbffd1b6664cc")
@@ -144,7 +148,8 @@ fn list_repo_with_invalid_objects() -> Result<()> {
     let repo_root = create_repo_root("invalid");
     let repo = OcflRepo::new_fs_repo(&repo_root)?;
 
-    let object_root = Path::new("925")
+    let object_root = repo_root
+        .join("925")
         .join("0b9")
         .join("912")
         .join("9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04");
@@ -173,7 +178,8 @@ fn get_object_when_exists() -> Result<()> {
 
     let object = repo.get_object("o2", None)?;
 
-    let object_root = Path::new("925")
+    let object_root = repo_root
+        .join("925")
         .join("0b9")
         .join("912")
         .join("9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04");
@@ -218,7 +224,8 @@ fn get_object_version_when_exists() -> Result<()> {
 
     let object = repo.get_object("o2", Some(VersionNum::try_from(2)?))?;
 
-    let object_root = Path::new("925")
+    let object_root = repo_root
+        .join("925")
         .join("0b9")
         .join("912")
         .join("9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04");
@@ -280,7 +287,8 @@ fn get_object_when_exists_using_layout() -> Result<()> {
 
     let object = repo.get_object("o2", None)?;
 
-    let object_root = Path::new("925")
+    let object_root = repo_root
+        .join("925")
         .join("0b9")
         .join("912")
         .join("9250b9912ee91d6b46e23299459ecd6eb8154451d62558a3a0a708a77926ad04");

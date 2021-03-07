@@ -9,14 +9,12 @@
 //! let repo = OcflRepo::new_fs_repo("path/to/ocfl/storage/root");
 //! ```
 
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::Write;
 use std::ops::Deref;
-use std::path;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -58,10 +56,15 @@ mod util;
 /// Interface for interacting with an OCFL repository
 pub struct OcflRepo {
     /// For local filesystem repos, this is the storage root. TBD for S3.
-    root: PathBuf,
     // TODO experiment changing this to a generic
     store: Box<dyn OcflStore>,
+    /// The OCFL repo that stores staged objects
     staging: OnceCell<FsOcflStore>,
+    /// The path to the root of the staging repo
+    staging_root: PathBuf,
+    /// Indicates if the repository should convert separators to backslashes when rendering
+    /// physical paths.
+    use_backslashes: bool,
 }
 
 impl OcflRepo {
@@ -70,19 +73,27 @@ impl OcflRepo {
     pub fn new_fs_repo<P: AsRef<Path>>(storage_root: P) -> Result<Self> {
         // TODO need to warn about unsupported extensions
         Ok(Self {
-            root: PathBuf::from(storage_root.as_ref()),
+            staging_root: storage_root
+                .as_ref()
+                .join(EXTENSIONS_DIR)
+                .join(ROCFL_STAGING_EXTENSION),
             store: Box::new(FsOcflStore::new(storage_root)?),
             staging: OnceCell::default(),
+            use_backslashes: util::BACKSLASH_SEPARATOR,
         })
     }
 
     /// Initializes a new `OcflRepo` instance backed by the local filesystem. The OCFL repository
     /// most not already exist.
-    pub fn init_fs_repo<P: AsRef<Path>>(root: P, layout: StorageLayout) -> Result<Self> {
+    pub fn init_fs_repo<P: AsRef<Path>>(storage_root: P, layout: StorageLayout) -> Result<Self> {
         Ok(Self {
-            root: PathBuf::from(root.as_ref()),
-            store: Box::new(FsOcflStore::init(root, layout)?),
+            staging_root: storage_root
+                .as_ref()
+                .join(EXTENSIONS_DIR)
+                .join(ROCFL_STAGING_EXTENSION),
+            store: Box::new(FsOcflStore::init(storage_root, layout)?),
             staging: OnceCell::default(),
+            use_backslashes: util::BACKSLASH_SEPARATOR,
         })
     }
 
@@ -91,10 +102,11 @@ impl OcflRepo {
     #[cfg(feature = "s3")]
     pub fn new_s3_repo(region: Region, bucket: &str, prefix: Option<&str>) -> Result<Self> {
         Ok(Self {
-            // TODO this is not correct
-            root: PathBuf::from("."),
+            // TODO this is not correct -- use xdg
+            staging_root: PathBuf::from("."),
             store: Box::new(S3OcflStore::new(region, bucket, prefix)?),
             staging: OnceCell::default(),
+            use_backslashes: false,
         })
     }
 
@@ -144,7 +156,11 @@ impl OcflRepo {
         version_num: Option<VersionNum>,
     ) -> Result<ObjectVersion> {
         let inventory = self.store.get_inventory(object_id)?;
-        Ok(ObjectVersion::from_inventory(inventory, version_num)?)
+        Ok(ObjectVersion::from_inventory(
+            inventory,
+            version_num,
+            self.use_backslashes,
+        )?)
     }
 
     /// Same as `get_object()` except that it returns the staged version of an object.
@@ -164,7 +180,11 @@ impl OcflRepo {
         };
 
         let version = inventory.head;
-        Ok(ObjectVersion::from_inventory(inventory, Some(version))?)
+        Ok(ObjectVersion::from_inventory(
+            inventory,
+            Some(version),
+            util::BACKSLASH_SEPARATOR,
+        )?)
     }
 
     /// Returns high-level details about an object version. This method is similar to
@@ -863,7 +883,7 @@ impl OcflRepo {
     fn get_staging(&self) -> Result<&FsOcflStore> {
         Ok(self.staging.get_or_try_init(|| {
             FsOcflStore::init_if_needed(
-                self.root.join(EXTENSIONS_DIR).join(ROCFL_STAGING_EXTENSION),
+                &self.staging_root,
                 StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None)?,
             )
         })?)
@@ -971,13 +991,9 @@ fn logical_path_in_dst_dir(
     }
 
     let relative_path = pathdiff::diff_paths(src, base).unwrap();
-    let mut relative = relative_path.to_string_lossy();
+    let relative_str = relative_path.to_string_lossy();
 
-    if path::MAIN_SEPARATOR == '\\' {
-        relative = Cow::Owned(relative.as_ref().replace("\\", "/"))
-    }
-
-    logical_path.push_str(relative.as_ref());
+    logical_path.push_str(&util::convert_backslash_to_forward(&relative_str));
     logical_path.try_into()
 }
 
