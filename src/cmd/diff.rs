@@ -72,8 +72,12 @@ impl LogCmd {
 impl Cmd for ShowCmd {
     fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         if self.staged {
-            // TODO show version meta like normal show
             // TODO add back status alias?
+            if !self.minimal {
+                let object = repo.get_staged_object_details(&self.object_id)?;
+                println(FormatVersion::new(&object.version_details, !args.no_styles))?;
+            }
+
             let diffs = repo.diff_staged(&self.object_id)?;
 
             if diffs.is_empty() {
