@@ -22,7 +22,11 @@ impl Cmd for ListCmd {
 impl ListCmd {
     fn list_objects(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         // TODO the physical path of the staged objects is not relative the storage root
-        let iter = repo.list_objects(self.staged, self.object_id.as_deref())?;
+        let iter = if self.staged {
+            repo.list_staged_objects(self.object_id.as_deref())?
+        } else {
+            repo.list_objects(self.object_id.as_deref())?
+        };
 
         let mut objects: Vec<ObjectVersionDetails> = iter.collect();
 

@@ -33,9 +33,6 @@ pub enum RocflError {
     #[error("{0}")]
     General(String),
 
-    #[error("File already exists at {0}. Use the force flag if you wish to overwrite.")]
-    AlreadyExists(InventoryPath),
-
     #[error("{0}")]
     Io(io::Error),
 
