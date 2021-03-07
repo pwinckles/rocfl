@@ -88,7 +88,6 @@ impl Cmd for CopyCmd {
                 &self.source,
                 &self.destination,
                 self.recursive,
-                self.force,
             )
         } else {
             repo.copy_files_external(
@@ -96,7 +95,6 @@ impl Cmd for CopyCmd {
                 &self.source,
                 &self.destination,
                 self.recursive,
-                self.force,
             )
         }
     }
@@ -105,9 +103,9 @@ impl Cmd for CopyCmd {
 impl Cmd for MoveCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
         if self.internal {
-            repo.move_files_internal(&self.object_id, &self.source, &self.destination, self.force)
+            repo.move_files_internal(&self.object_id, &self.source, &self.destination)
         } else {
-            repo.move_files_external(&self.object_id, &self.source, &self.destination, self.force)
+            repo.move_files_external(&self.object_id, &self.source, &self.destination)
         }
     }
 }

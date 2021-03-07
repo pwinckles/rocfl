@@ -104,27 +104,33 @@ impl OcflRepo {
     ///
     /// The iterator return an error if it encounters a problem accessing an object. This does
     /// terminate the iterator; there are still more objects until it returns `None`.
-    ///
-    /// If `staged` is specified, then only objects with staged changes are returned.
     pub fn list_objects<'a>(
         &'a self,
-        staged: bool,
         filter_glob: Option<&str>,
     ) -> Result<Box<dyn Iterator<Item = ObjectVersionDetails> + 'a>> {
-        if staged {
-            // TODO this should NOT create staging if it does not exist
-            let inv_iter = self.get_staging()?.iter_inventories(None)?;
+        let inv_iter = self.store.iter_inventories(filter_glob)?;
 
-            Ok(Box::new(InventoryAdapterIter::new(inv_iter, |inventory| {
-                ObjectVersionDetails::from_inventory(inventory, None)
-            })))
-        } else {
-            let inv_iter = self.store.iter_inventories(filter_glob)?;
+        Ok(Box::new(InventoryAdapterIter::new(inv_iter, |inventory| {
+            ObjectVersionDetails::from_inventory(inventory, None)
+        })))
+    }
 
-            Ok(Box::new(InventoryAdapterIter::new(inv_iter, |inventory| {
-                ObjectVersionDetails::from_inventory(inventory, None)
-            })))
-        }
+    /// Returns an iterator that iterate through all of the staged objects in an OCFL repository.
+    /// Objects are lazy-loaded. An optional glob pattern may be provided to filter the objects
+    /// that are returned.
+    ///
+    /// The iterator return an error if it encounters a problem accessing an object. This does
+    /// terminate the iterator; there are still more objects until it returns `None`.
+    pub fn list_staged_objects<'a>(
+        &'a self,
+        filter_glob: Option<&str>,
+    ) -> Result<Box<dyn Iterator<Item = ObjectVersionDetails> + 'a>> {
+        // TODO this should NOT create staging if it does not exist
+        let inv_iter = self.get_staging()?.iter_inventories(filter_glob)?;
+
+        Ok(Box::new(InventoryAdapterIter::new(inv_iter, |inventory| {
+            ObjectVersionDetails::from_inventory(inventory, None)
+        })))
     }
 
     /// Returns a view of a version of an object. If a `VersionNum` is not specified,
@@ -378,15 +384,13 @@ impl OcflRepo {
         src: &[impl AsRef<Path>],
         dst: &str,
         recursive: bool,
-        force: bool,
     ) -> Result<()> {
         self.operate_on_external_source(
             object_id,
             src,
             dst,
             recursive,
-            force,
-            |file, logical_path, f, inventory| self.copy_file(file, logical_path, f, inventory),
+            |file, logical_path, inventory| self.copy_file(file, logical_path, inventory),
         )
     }
 
@@ -398,7 +402,6 @@ impl OcflRepo {
         src: &[impl AsRef<str>],
         dst: &str,
         recursive: bool,
-        force: bool,
     ) -> Result<()> {
         if src.is_empty() {
             return Ok(());
@@ -413,14 +416,6 @@ impl OcflRepo {
             self.resolve_internal_moves(&inventory, src_version_num, src, dst, recursive)?;
 
         for (src_path, dst_path) in to_copy {
-            if inventory.head_version().is_file(&dst_path) {
-                if force {
-                    info!("Overwriting existing file at {}", dst_path);
-                } else {
-                    return Err(RocflError::AlreadyExists(dst_path));
-                }
-            }
-
             info!(
                 "Copying file {} from {} to {}",
                 src_path, src_version_num, dst_path
@@ -445,15 +440,13 @@ impl OcflRepo {
         object_id: &str,
         src: &[impl AsRef<Path>],
         dst: &str,
-        force: bool,
     ) -> Result<()> {
         self.operate_on_external_source(
             object_id,
             src,
             dst,
             true,
-            force,
-            |file, logical_path, f, inventory| self.move_file(file, logical_path, f, inventory),
+            |file, logical_path, inventory| self.move_file(file, logical_path, inventory),
         )?;
 
         for path in src {
@@ -472,7 +465,6 @@ impl OcflRepo {
         object_id: &str,
         src: &[impl AsRef<str>],
         dst: &str,
-        force: bool,
     ) -> Result<()> {
         if src.is_empty() {
             return Ok(());
@@ -485,14 +477,6 @@ impl OcflRepo {
         let to_copy = self.resolve_internal_moves(&inventory, inventory.head, src, dst, true)?;
 
         for (src_path, dst_path) in to_copy {
-            if inventory.head_version().is_file(&dst_path) {
-                if force {
-                    info!("Overwriting existing file at {}", dst_path);
-                } else {
-                    return Err(RocflError::AlreadyExists(dst_path));
-                }
-            }
-
             info!("Moving {} to {}", src_path, dst_path);
 
             inventory.move_file_in_head(&src_path, dst_path)?;
@@ -683,8 +667,7 @@ impl OcflRepo {
         src: &[impl AsRef<Path>],
         dst: &str,
         recursive: bool,
-        force: bool,
-        operator: impl Fn(&Path, InventoryPath, bool, &mut Inventory) -> Result<()>,
+        operator: impl Fn(&Path, InventoryPath, &mut Inventory) -> Result<()>,
     ) -> Result<()> {
         if src.is_empty() {
             return Ok(());
@@ -723,7 +706,7 @@ impl OcflRepo {
                 inventory
                     .head_version()
                     .validate_non_conflicting(&logical_path)?;
-                operator(path, logical_path, force, &mut inventory)?;
+                operator(path, logical_path, &mut inventory)?;
             } else if recursive {
                 for file in WalkDir::new(path) {
                     let file = file?;
@@ -739,7 +722,7 @@ impl OcflRepo {
                         inventory
                             .head_version()
                             .validate_non_conflicting(&logical_path)?;
-                        operator(file.path(), logical_path, force, &mut inventory)?;
+                        operator(file.path(), logical_path, &mut inventory)?;
                     }
                 }
             } else {
@@ -760,19 +743,8 @@ impl OcflRepo {
         &self,
         file: impl AsRef<Path>,
         logical_path: InventoryPath,
-        force: bool,
         inventory: &mut Inventory,
     ) -> Result<()> {
-        let version = inventory.head_version();
-
-        if version.is_file(&logical_path) {
-            if force {
-                info!("Overwriting existing file at {}", logical_path);
-            } else {
-                return Err(RocflError::AlreadyExists(logical_path));
-            }
-        }
-
         let mut reader = inventory.digest_algorithm.reader(File::open(&file)?)?;
 
         info!(
@@ -791,19 +763,8 @@ impl OcflRepo {
         &self,
         file: impl AsRef<Path>,
         logical_path: InventoryPath,
-        force: bool,
         inventory: &mut Inventory,
     ) -> Result<()> {
-        let version = inventory.head_version();
-
-        if version.is_file(&logical_path) {
-            if force {
-                info!("Overwriting existing file at {}", logical_path);
-            } else {
-                return Err(RocflError::AlreadyExists(logical_path));
-            }
-        }
-
         info!(
             "Moving file {} into object at {}",
             file.as_ref().to_string_lossy(),
