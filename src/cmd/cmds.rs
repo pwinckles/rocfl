@@ -4,8 +4,8 @@ use std::io;
 use log::info;
 
 use crate::cmd::opts::{
-    CatCmd, CommitCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, MoveCmd, NewCmd, PurgeCmd,
-    RemoveCmd, RevertCmd,
+    CatCmd, CommitCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, Field, ListCmd, MoveCmd, NewCmd,
+    PurgeCmd, RemoveCmd, RevertCmd, ShowCmd, StatusCmd,
 };
 use crate::cmd::opts::{InitCmd, Layout, RocflArgs, Storage};
 use crate::cmd::{print, println, Cmd, GlobalArgs};
@@ -133,6 +133,38 @@ impl Cmd for CommitCmd {
         )?;
 
         Ok(())
+    }
+}
+
+impl Cmd for StatusCmd {
+    fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
+        if let Some(object_id) = self.object_id.as_ref() {
+            let cmd = ShowCmd {
+                object_id: object_id.to_string(),
+                version: None,
+                staged: true,
+                minimal: false,
+            };
+            cmd.exec(repo, args)
+        } else {
+            let cmd = ListCmd {
+                object_id: None,
+                version: None,
+                path: None,
+                staged: true,
+                no_virtual_dirs: false,
+                digest: false,
+                objects: false,
+                header: true,
+                long: true,
+                reverse: false,
+                physical: false,
+                tsv: false,
+                sort: Field::Name,
+            };
+
+            cmd.exec(repo, args)
+        }
     }
 }
 
