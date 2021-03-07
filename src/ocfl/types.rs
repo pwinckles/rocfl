@@ -1,4 +1,5 @@
 use core::fmt;
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
@@ -18,7 +19,6 @@ use crate::ocfl::digest::HexDigest;
 use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::{Inventory, Version};
 use crate::ocfl::DigestAlgorithm;
-use std::borrow::Cow;
 
 static VERSION_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^v\d+$"#).unwrap());
 
@@ -370,6 +370,7 @@ impl ObjectVersion {
     pub fn from_inventory(
         mut inventory: Inventory,
         version_num: Option<VersionNum>,
+        use_backslashes: bool,
     ) -> Result<Self> {
         let version_num = match version_num {
             Some(version) => version,
@@ -379,11 +380,11 @@ impl ObjectVersion {
         let version = inventory.get_version(version_num)?;
         let version_details = VersionDetails::new(version_num, version);
 
-        let state = ObjectVersion::construct_state(version_num, &mut inventory)?;
+        let state = ObjectVersion::construct_state(version_num, &mut inventory, use_backslashes)?;
 
         Ok(Self {
             id: inventory.id,
-            object_root: inventory.object_root,
+            object_root: inventory.storage_path,
             digest_algorithm: inventory.digest_algorithm,
             version_details,
             state,
@@ -393,6 +394,7 @@ impl ObjectVersion {
     fn construct_state(
         target: VersionNum,
         inventory: &mut Inventory,
+        use_backslashes: bool,
     ) -> Result<HashMap<Rc<InventoryPath>, FileDetails>> {
         let mut state = HashMap::new();
 
@@ -411,13 +413,17 @@ impl ObjectVersion {
             if version_details.version_num.number == 1 {
                 for (target_path, target_digest) in target_path_map {
                     let content_path = inventory.content_path_for_digest(&target_digest)?;
+                    let storage_path = convert_path_separator(
+                        use_backslashes,
+                        join(&inventory.storage_path, content_path.as_ref().as_ref()),
+                    );
                     state.insert(
                         target_path,
                         FileDetails::new(
                             content_path.clone(),
+                            storage_path,
                             target_digest,
                             inventory.digest_algorithm,
-                            &inventory.object_root,
                             version_details.clone(),
                         ),
                     );
@@ -435,13 +441,17 @@ impl ObjectVersion {
 
                 if entry.is_none() || entry.unwrap().1 != target_digest {
                     let content_path = inventory.content_path_for_digest(&target_digest)?;
+                    let storage_path = convert_path_separator(
+                        use_backslashes,
+                        join(&inventory.storage_path, content_path.as_ref().as_ref()),
+                    );
                     state.insert(
                         target_path,
                         FileDetails::new(
                             content_path.clone(),
+                            storage_path,
                             target_digest,
                             inventory.digest_algorithm,
-                            &inventory.object_root,
                             version_details.clone(),
                         ),
                     );
@@ -463,14 +473,11 @@ impl ObjectVersion {
 impl FileDetails {
     pub fn new(
         content_path: Rc<InventoryPath>,
+        storage_path: String,
         digest: Rc<HexDigest>,
         digest_algorithm: DigestAlgorithm,
-        object_root: &str,
         version_details: Rc<VersionDetails>,
     ) -> Self {
-        let storage_path =
-            convert_path_separator(join(object_root, content_path.as_ref().as_ref()));
-
         Self {
             content_path,
             storage_path,
@@ -531,7 +538,7 @@ impl ObjectVersionDetails {
 
         Ok(Self {
             id: inventory.id,
-            object_root: inventory.object_root,
+            object_root: inventory.storage_path,
             digest_algorithm: inventory.digest_algorithm,
             version_details,
         })
@@ -559,8 +566,8 @@ fn join(parent: &str, child: &str) -> String {
 }
 
 /// Changes `/` to `\` on Windows
-fn convert_path_separator(path: String) -> String {
-    if path::MAIN_SEPARATOR == '\\' {
+fn convert_path_separator(use_backslashes: bool, path: String) -> String {
+    if use_backslashes && path::MAIN_SEPARATOR == '\\' {
         return path.replace("/", "\\");
     }
     path

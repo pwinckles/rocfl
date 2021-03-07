@@ -34,6 +34,7 @@ pub struct S3OcflStore {
     storage_layout: Option<StorageLayout>,
     /// Caches object ID to path mappings
     id_path_cache: RefCell<HashMap<String, String>>,
+    prefix: Option<String>,
 }
 
 impl S3OcflStore {
@@ -46,6 +47,7 @@ impl S3OcflStore {
             s3_client,
             storage_layout,
             id_path_cache: RefCell::new(HashMap::new()),
+            prefix: prefix.map(|p| p.to_string()),
         })
     }
 
@@ -104,6 +106,13 @@ impl S3OcflStore {
             };
             inventory.object_root =
                 strip_leading_slash(strip_trailing_slash(object_root).as_ref()).into();
+
+            inventory.storage_path = if let Some(prefix) = &self.prefix {
+                join(prefix, &inventory.object_root)
+            } else {
+                inventory.object_root.clone()
+            };
+
             Ok(Some(inventory))
         } else {
             Ok(None)

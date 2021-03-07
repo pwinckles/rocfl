@@ -718,6 +718,8 @@ where
     };
 
     inventory.object_root = relative;
+    inventory.storage_path =
+        util::convert_forwardslash_to_back(&object_root.as_ref().to_string_lossy()).into();
     Ok(inventory)
 }
 
