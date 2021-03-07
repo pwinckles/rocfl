@@ -168,17 +168,7 @@ impl OcflRepo {
     /// If the object does not have a staged version, then a `RocflError::NotFound`
     /// error is returned.
     pub fn get_staged_object(&self, object_id: &str) -> Result<ObjectVersion> {
-        let inventory = match self.get_staging()?.get_inventory(object_id) {
-            Ok(inventory) => inventory,
-            Err(RocflError::NotFound(_)) => {
-                return Err(RocflError::NotFound(format!(
-                    "{} does not have a staged version.",
-                    object_id
-                )))
-            }
-            Err(e) => return Err(e),
-        };
-
+        let inventory = self.get_staged_inventory(object_id)?;
         let version = inventory.head;
         Ok(ObjectVersion::from_inventory(
             inventory,
@@ -202,6 +192,19 @@ impl OcflRepo {
         Ok(ObjectVersionDetails::from_inventory(
             inventory,
             version_num,
+        )?)
+    }
+
+    /// Same as `get_object_details()`, but for the staged version of an object.
+    ///
+    /// If the object does not have a staged version, then a `RocflError::NotFound`
+    /// error is returned.
+    pub fn get_staged_object_details(&self, object_id: &str) -> Result<ObjectVersionDetails> {
+        let inventory = self.get_staged_inventory(object_id)?;
+        let version = inventory.head;
+        Ok(ObjectVersionDetails::from_inventory(
+            inventory,
+            Some(version),
         )?)
     }
 
@@ -429,7 +432,7 @@ impl OcflRepo {
 
         // TODO abstract the before and after?
 
-        let mut inventory = self.get_staged_inventory(object_id)?;
+        let mut inventory = self.get_or_created_staged_inventory(object_id)?;
         let src_version_num = version_num.unwrap_or(inventory.head);
 
         let to_copy =
@@ -492,7 +495,7 @@ impl OcflRepo {
 
         // TODO abstract the before and after?
 
-        let mut inventory = self.get_staged_inventory(object_id)?;
+        let mut inventory = self.get_or_created_staged_inventory(object_id)?;
 
         let to_copy = self.resolve_internal_moves(&inventory, inventory.head, src, dst, true)?;
 
@@ -520,7 +523,7 @@ impl OcflRepo {
             return Ok(());
         }
 
-        let mut inventory = self.get_staged_inventory(object_id)?;
+        let mut inventory = self.get_or_created_staged_inventory(object_id)?;
         let version = inventory.head_version();
 
         let mut paths_to_remove = HashSet::new();
@@ -663,9 +666,9 @@ impl OcflRepo {
     }
 
     /// Attempts to get the inventory from staging. If it is not found, it is loaded from the
-    /// main repo, and moved into staging. If it is not found in staging, then an error is
+    /// main repo, and moved into staging. If it is not found in the main repo, then an error is
     /// returned.
-    fn get_staged_inventory(&self, object_id: &str) -> Result<Inventory> {
+    fn get_or_created_staged_inventory(&self, object_id: &str) -> Result<Inventory> {
         let staging = self.get_staging()?;
 
         match staging.get_inventory(&object_id) {
@@ -676,6 +679,19 @@ impl OcflRepo {
                 staging.stage_object(&mut inventory)?;
                 Ok(inventory)
             }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Attempts to load the object's inventory from staging. If it does not exist,
+    /// then `RocflError::NotFound` is returned.
+    fn get_staged_inventory(&self, object_id: &str) -> Result<Inventory> {
+        match self.get_staging()?.get_inventory(object_id) {
+            Ok(inventory) => Ok(inventory),
+            Err(RocflError::NotFound(_)) => Err(RocflError::NotFound(format!(
+                "{} does not have a staged version.",
+                object_id
+            ))),
             Err(e) => Err(e),
         }
     }
@@ -698,7 +714,7 @@ impl OcflRepo {
         //      to get some sort of file lock here so that an object cannot be updated concurrently
         // TODO will also need to handle ctrlc https://github.com/Detegr/rust-ctrlc
 
-        let mut inventory = self.get_staged_inventory(object_id)?;
+        let mut inventory = self.get_or_created_staged_inventory(object_id)?;
 
         let dst_path = dst.try_into()?;
 
