@@ -426,9 +426,8 @@ impl ObjectVersion {
             // No versions left to compare to; any remaining files were last updated here
             if version_details.version_num.number == 1 {
                 for (target_path, target_digest) in target_path_map {
-                    // TODO the content path can be incorrect if there is a staged file with the
-                    //      same digest as an existing content file
-                    let content_path = inventory.content_path_for_digest(&target_digest)?;
+                    let content_path = inventory
+                        .content_path_for_digest(&target_digest, Some(current_version_num))?;
                     let storage_path = convert_path_separator(
                         backslashes,
                         join(object_root.as_ref(), content_path.as_ref().as_ref()),
@@ -456,9 +455,8 @@ impl ObjectVersion {
                 let entry = previous_path_map.remove_path(&target_path);
 
                 if entry.is_none() || entry.unwrap().1 != target_digest {
-                    // TODO the content path can be incorrect if there is a staged file with the
-                    //      same digest as an existing content file
-                    let content_path = inventory.content_path_for_digest(&target_digest)?;
+                    let content_path = inventory
+                        .content_path_for_digest(&target_digest, Some(current_version_num))?;
                     let storage_path = convert_path_separator(
                         backslashes,
                         join(object_root.as_ref(), content_path.as_ref().as_ref()),

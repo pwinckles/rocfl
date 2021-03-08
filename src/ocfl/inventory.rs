@@ -139,15 +139,35 @@ impl Inventory {
 
     /// Returns the first content path associated with the specified digest, or an error if it does
     /// not exist.
-    pub fn content_path_for_digest(&self, digest: &HexDigest) -> Result<&Rc<InventoryPath>> {
+    ///
+    /// If a version is specified, then the content path must exist in the specified version
+    /// or earlier.
+    pub fn content_path_for_digest(
+        &self,
+        digest: &HexDigest,
+        version_num: Option<VersionNum>,
+    ) -> Result<&Rc<InventoryPath>> {
+        let version_num = version_num.unwrap_or(self.head);
+
         match self.manifest.get_paths(digest) {
-            Some(paths) => match paths.iter().next() {
-                Some(path) => Ok(path),
-                None => Err(RocflError::CorruptObject {
+            Some(paths) => {
+                for path in paths {
+                    // TODO move this to `ContentPath` after it's created
+                    if let Some(slash) = path.as_ref().as_ref().find('/') {
+                        let version_str = &path.as_ref().as_ref().as_str()[0..slash];
+                        let version: VersionNum = version_str.try_into()?;
+
+                        if version <= version_num {
+                            return Ok(path);
+                        }
+                    }
+                }
+
+                Err(RocflError::CorruptObject {
                     object_id: self.id.clone(),
                     message: format!("Digest {} is not mapped to any content paths", digest),
-                }),
-            },
+                })
+            }
             None => Err(RocflError::CorruptObject {
                 object_id: self.id.clone(),
                 message: format!("Digest {} not found in manifest", digest),
@@ -175,7 +195,7 @@ impl Inventory {
             }
         };
 
-        self.content_path_for_digest(digest)
+        self.content_path_for_digest(digest, Some(version_num))
     }
 
     /// Returns the diffs of two versions. An error is returned if either of the specified versions
