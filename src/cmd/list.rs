@@ -49,7 +49,6 @@ impl ListCmd {
     fn list_object_contents(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
         let object_id = self.object_id.as_ref().unwrap();
         let object = if self.staged {
-            // TODO the physical paths are not correct -- files appear to be in staging when they are not
             repo.get_staged_object(object_id)?
         } else {
             repo.get_object(object_id, self.version)?

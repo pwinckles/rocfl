@@ -18,7 +18,7 @@ use crate::ocfl::bimap::PathBiMap;
 use crate::ocfl::digest::HexDigest;
 use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::{Inventory, Version};
-use crate::ocfl::DigestAlgorithm;
+use crate::ocfl::{util, DigestAlgorithm};
 
 static VERSION_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^v\d+$"#).unwrap());
 
@@ -367,9 +367,11 @@ impl Display for InventoryPath {
 
 impl ObjectVersion {
     /// Creates an `ObjectVersion` by consuming the supplied `Inventory`.
-    pub fn from_inventory(
+    pub fn from_inventory<S: AsRef<str> + Copy>(
         mut inventory: Inventory,
         version_num: Option<VersionNum>,
+        object_storage_path: S,
+        object_staging_path: Option<S>,
         use_backslashes: bool,
     ) -> Result<Self> {
         let version_num = match version_num {
@@ -380,7 +382,13 @@ impl ObjectVersion {
         let version = inventory.get_version(version_num)?;
         let version_details = VersionDetails::new(version_num, version);
 
-        let state = ObjectVersion::construct_state(version_num, &mut inventory, use_backslashes)?;
+        let state = ObjectVersion::construct_state(
+            version_num,
+            &mut inventory,
+            object_storage_path,
+            object_staging_path,
+            use_backslashes,
+        )?;
 
         Ok(Self {
             id: inventory.id,
@@ -391,9 +399,11 @@ impl ObjectVersion {
         })
     }
 
-    fn construct_state(
+    fn construct_state<S: AsRef<str> + Copy>(
         target: VersionNum,
         inventory: &mut Inventory,
+        object_storage_path: S,
+        object_staging_path: Option<S>,
         use_backslashes: bool,
     ) -> Result<HashMap<Rc<InventoryPath>, FileDetails>> {
         let mut state = HashMap::new();
@@ -401,6 +411,10 @@ impl ObjectVersion {
         let mut current_version_num = target;
         let mut current_version = inventory.remove_version(target)?;
         let mut target_path_map = current_version.remove_state();
+
+        // This nonsense is needed to differentiate the storage paths for staged files
+        let mut backslashes = object_staging_path.is_some() && util::BACKSLASH_SEPARATOR;
+        let mut object_root = object_staging_path.unwrap_or(object_storage_path);
 
         while !target_path_map.is_empty() {
             let mut not_found = PathBiMap::new();
@@ -412,10 +426,12 @@ impl ObjectVersion {
             // No versions left to compare to; any remaining files were last updated here
             if version_details.version_num.number == 1 {
                 for (target_path, target_digest) in target_path_map {
+                    // TODO the content path can be incorrect if there is a staged file with the
+                    //      same digest as an existing content file
                     let content_path = inventory.content_path_for_digest(&target_digest)?;
                     let storage_path = convert_path_separator(
-                        use_backslashes,
-                        join(&inventory.storage_path, content_path.as_ref().as_ref()),
+                        backslashes,
+                        join(object_root.as_ref(), content_path.as_ref().as_ref()),
                     );
                     state.insert(
                         target_path,
@@ -440,10 +456,12 @@ impl ObjectVersion {
                 let entry = previous_path_map.remove_path(&target_path);
 
                 if entry.is_none() || entry.unwrap().1 != target_digest {
+                    // TODO the content path can be incorrect if there is a staged file with the
+                    //      same digest as an existing content file
                     let content_path = inventory.content_path_for_digest(&target_digest)?;
                     let storage_path = convert_path_separator(
-                        use_backslashes,
-                        join(&inventory.storage_path, content_path.as_ref().as_ref()),
+                        backslashes,
+                        join(object_root.as_ref(), content_path.as_ref().as_ref()),
                     );
                     state.insert(
                         target_path,
@@ -464,6 +482,9 @@ impl ObjectVersion {
             current_version = previous_version;
 
             target_path_map = not_found;
+
+            object_root = object_storage_path;
+            backslashes = use_backslashes;
         }
 
         Ok(state)
