@@ -138,6 +138,8 @@ impl ListCmd {
             None => "*".to_string(),
         };
 
+        let glob_trailing_slash = glob.ends_with('/');
+
         let matcher = GlobBuilder::new(&glob)
             .literal_separator(!self.all)
             .backslash_escape(true)
@@ -153,7 +155,9 @@ impl ListCmd {
         let mut not_matched = HashMap::new();
 
         for (path, details) in object.state {
-            if matcher.is_match(path.as_ref().as_ref()) {
+            if (glob_trailing_slash && matcher.is_match(format!("{}/", path)))
+                || (!glob_trailing_slash && matcher.is_match(path.as_ref().as_ref()))
+            {
                 listings.push(Listing::File(ContentListing {
                     logical_path: path.to_string(),
                     details,
