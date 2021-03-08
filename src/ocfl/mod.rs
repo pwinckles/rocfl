@@ -156,9 +156,13 @@ impl OcflRepo {
         version_num: Option<VersionNum>,
     ) -> Result<ObjectVersion> {
         let inventory = self.store.get_inventory(object_id)?;
+        let object_root = inventory.storage_path.clone();
+
         Ok(ObjectVersion::from_inventory(
             inventory,
             version_num,
+            &object_root,
+            None,
             self.use_backslashes,
         )?)
     }
@@ -168,11 +172,27 @@ impl OcflRepo {
     /// If the object does not have a staged version, then a `RocflError::NotFound`
     /// error is returned.
     pub fn get_staged_object(&self, object_id: &str) -> Result<ObjectVersion> {
-        let inventory = self.get_staged_inventory(object_id)?;
-        let version = inventory.head;
+        let staging_inventory = self.get_staged_inventory(object_id)?;
+        let version = staging_inventory.head;
+        let object_staging_root = staging_inventory.storage_path.clone();
+
+        let object_storage_root = match self.store.get_inventory(object_id) {
+            Ok(inventory) => Some(inventory.storage_path),
+            Err(RocflError::NotFound(_)) => None,
+            Err(e) => return Err(e),
+        };
+
+        let (root, staging) = if let Some(storage_root) = object_storage_root {
+            (storage_root, Some(object_staging_root))
+        } else {
+            (object_staging_root, None)
+        };
+
         Ok(ObjectVersion::from_inventory(
-            inventory,
+            staging_inventory,
             Some(version),
+            &root,
+            staging.as_ref(),
             util::BACKSLASH_SEPARATOR,
         )?)
     }
