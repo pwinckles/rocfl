@@ -155,9 +155,7 @@ impl ListCmd {
         let mut not_matched = HashMap::new();
 
         for (path, details) in object.state {
-            if (glob_trailing_slash && matcher.is_match(format!("{}/", path)))
-                || (!glob_trailing_slash && matcher.is_match(path.as_ref().as_ref()))
-            {
+            if matcher.is_match(path.as_ref().as_ref()) {
                 listings.push(Listing::File(ContentListing {
                     logical_path: path.to_string(),
                     details,
@@ -172,7 +170,9 @@ impl ListCmd {
             let mut not_matched_dirs = HashSet::new();
 
             for dir in virt_dirs.unwrap() {
-                if matcher.is_match(dir.as_ref()) {
+                if (glob_trailing_slash && matcher.is_match(format!("{}/", dir)))
+                    || (!glob_trailing_slash && matcher.is_match(dir.as_ref()))
+                {
                     dir_matches.insert(dir);
                 } else {
                     not_matched_dirs.insert(dir);
@@ -181,7 +181,13 @@ impl ListCmd {
 
             // If no files were matched and there is a single directory match, then expand the dir
             if listings.is_empty() && dir_matches.len() == 1 && glob != "*" {
-                let sub_matcher = GlobBuilder::new(&format!("{}/*", glob))
+                let sub_glob = if glob_trailing_slash {
+                    format!("{}*", glob)
+                } else {
+                    format!("{}/*", glob)
+                };
+
+                let sub_matcher = GlobBuilder::new(&sub_glob)
                     .literal_separator(true)
                     .backslash_escape(true)
                     .build()?
