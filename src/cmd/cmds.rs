@@ -152,7 +152,7 @@ impl Cmd for StatusCmd {
                 version: None,
                 path: None,
                 staged: true,
-                no_virtual_dirs: false,
+                all: false,
                 digest: false,
                 objects: false,
                 header: true,
