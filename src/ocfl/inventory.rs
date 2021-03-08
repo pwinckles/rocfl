@@ -566,6 +566,8 @@ impl Version {
             glob = "*";
         }
 
+        let glob_trailing_slash = glob.ends_with('/');
+
         let matcher = GlobBuilder::new(glob)
             .literal_separator(true)
             .backslash_escape(true)
@@ -580,7 +582,9 @@ impl Version {
 
         if recursive {
             for dir in self.get_virtual_dirs() {
-                if matcher.is_match(dir.as_ref()) {
+                if (glob_trailing_slash && matcher.is_match(format!("{}/", dir)))
+                    || (!glob_trailing_slash && matcher.is_match(dir.as_ref()))
+                {
                     matches.extend(self.paths_with_prefix(dir.as_ref()));
                 }
             }
