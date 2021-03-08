@@ -88,9 +88,9 @@ pub enum Command {
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct ListCmd {
     /// Disables the interpretation of logical path segments as hierarchical virtual directories.
-    /// With this flag set, logical paths are treated as flat, opaque keys.
-    #[structopt(short = "V", long)]
-    pub no_virtual_dirs: bool,
+    /// With this flag set, all logical paths in an object are returned
+    #[structopt(short, long)]
+    pub all: bool,
 
     /// Enables long output format: Version, Updated, Name (Object ID or Logical Path)
     #[structopt(short, long)]
