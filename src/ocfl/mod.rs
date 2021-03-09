@@ -6,7 +6,7 @@
 //! ```rust
 //! use rocfl::ocfl::OcflRepo;
 //!
-//! let repo = OcflRepo::new_fs_repo("path/to/ocfl/storage/root");
+//! let repo = OcflRepo::fs_repo("path/to/ocfl/storage/root");
 //! ```
 
 use std::collections::{HashMap, HashSet};
@@ -48,6 +48,7 @@ mod inventory;
 pub mod layout;
 #[cfg(feature = "s3")]
 mod s3;
+mod specs;
 mod types;
 mod util;
 
@@ -70,7 +71,7 @@ pub struct OcflRepo {
 impl OcflRepo {
     /// Creates a new `OcflRepo` instance backed by the local filesystem. `storage_root` is the
     /// location of the OCFL repository to open. The OCFL repository must already exist.
-    pub fn new_fs_repo<P: AsRef<Path>>(storage_root: P) -> Result<Self> {
+    pub fn fs_repo<P: AsRef<Path>>(storage_root: P) -> Result<Self> {
         // TODO need to warn about unsupported extensions
         Ok(Self {
             staging_root: storage_root
@@ -100,7 +101,7 @@ impl OcflRepo {
     /// Creates a new `OcflRepo` instance backed by S3. `prefix` used to specify a virtual
     /// sub directory within a bucket that the OCFL repository is rooted in.
     #[cfg(feature = "s3")]
-    pub fn new_s3_repo(region: Region, bucket: &str, prefix: Option<&str>) -> Result<Self> {
+    pub fn s3_repo(region: Region, bucket: &str, prefix: Option<&str>) -> Result<Self> {
         Ok(Self {
             // TODO this is not correct -- use xdg
             staging_root: PathBuf::from("."),

@@ -1,26 +1,23 @@
 use std::convert::{TryFrom, TryInto};
+use std::fs;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use assert_fs::prelude::*;
 use chrono::DateTime;
 use maplit::hashmap;
 
+use assert_fs::TempDir;
+use rocfl::ocfl::layout::{LayoutExtensionName, StorageLayout};
 use rocfl::ocfl::{
     Diff, DigestAlgorithm, FileDetails, InventoryPath, ObjectVersion, ObjectVersionDetails,
     OcflRepo, Result, VersionDetails, VersionNum,
 };
 
-// TODO testing crates:
-//  - https://crates.io/crates/proptest
-//  - https://crates.io/crates/quickcheck
-//  - https://crates.io/crates/assert_cmd
-//  - https://crates.io/crates/assert_fs
-//  - https://crates.io/crates/dir-diff
-
 #[test]
 fn list_all_objects() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root)?;
 
     let mut objects: Vec<ObjectVersionDetails> = repo.list_objects(None)?.collect();
 
@@ -98,7 +95,7 @@ fn list_all_objects() -> Result<()> {
 #[test]
 fn list_single_object_from_glob() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root)?;
 
     let mut objects: Vec<ObjectVersionDetails> = repo.list_objects(Some("*1"))?.collect();
 
@@ -134,7 +131,7 @@ fn list_single_object_from_glob() -> Result<()> {
 #[test]
 fn list_empty_repo() -> Result<()> {
     let repo_root = create_repo_root("empty");
-    let repo = OcflRepo::new_fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root)?;
 
     let objects: Vec<ObjectVersionDetails> = repo.list_objects(None)?.collect();
 
@@ -146,7 +143,7 @@ fn list_empty_repo() -> Result<()> {
 #[test]
 fn list_repo_with_invalid_objects() -> Result<()> {
     let repo_root = create_repo_root("invalid");
-    let repo = OcflRepo::new_fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root)?;
 
     let object_root = repo_root
         .join("925")
@@ -174,7 +171,7 @@ fn list_repo_with_invalid_objects() -> Result<()> {
 #[test]
 fn get_object_when_exists() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root)?;
 
     let object = repo.get_object("o2", None)?;
 
@@ -220,7 +217,7 @@ fn get_object_when_exists() -> Result<()> {
 #[test]
 fn get_object_version_when_exists() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root)?;
 
     let object = repo.get_object("o2", Some(VersionNum::try_from(2)?))?;
 
@@ -276,14 +273,14 @@ fn get_object_version_when_exists() -> Result<()> {
 #[should_panic(expected = "Not found: Object o4")]
 fn error_when_object_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
     repo.get_object("o4", None).unwrap();
 }
 
 #[test]
 fn get_object_when_exists_using_layout() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects-with-layout");
-    let repo = OcflRepo::new_fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root)?;
 
     let object = repo.get_object("o2", None)?;
 
@@ -330,7 +327,7 @@ fn get_object_when_exists_using_layout() -> Result<()> {
 #[should_panic(expected = "Not found: Object o4")]
 fn error_when_object_not_exists_with_layout() {
     let repo_root = create_repo_root("multiple-objects-with-layout");
-    let repo = OcflRepo::new_fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
     repo.get_object("o4", None).unwrap();
 }
 
@@ -338,7 +335,7 @@ fn error_when_object_not_exists_with_layout() {
 #[should_panic(expected = "Not found: Object o2 version v4")]
 fn error_when_version_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
     repo.get_object("o2", Some(VersionNum::try_from(4).unwrap()))
         .unwrap();
 }
@@ -347,14 +344,14 @@ fn error_when_version_not_exists() {
 #[should_panic(expected = "Not found: Object o3")]
 fn error_when_get_invalid_object() {
     let repo_root = create_repo_root("invalid");
-    let repo = OcflRepo::new_fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
     repo.get_object("o3", None).unwrap();
 }
 
 #[test]
 fn list_versions_when_multiple() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root)?;
 
     let mut versions = repo.list_object_versions("o2")?;
 
@@ -370,7 +367,7 @@ fn list_versions_when_multiple() -> Result<()> {
 #[test]
 fn list_file_versions_when_multiple() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root)?;
 
     let mut versions = repo.list_file_versions("o2", &"dir3/file1".try_into()?)?;
 
@@ -386,7 +383,7 @@ fn list_file_versions_when_multiple() -> Result<()> {
 #[should_panic(expected = "Not found: Object o5")]
 fn list_versions_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
     repo.list_object_versions("o5").unwrap();
 }
 
@@ -394,7 +391,7 @@ fn list_versions_not_exists() {
 #[should_panic(expected = "Not found: Path bogus.txt not found in object o2")]
 fn list_file_versions_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
     repo.list_file_versions("o2", &"bogus.txt".try_into().unwrap())
         .unwrap();
 }
@@ -402,7 +399,7 @@ fn list_file_versions_not_exists() {
 #[test]
 fn diff_when_left_and_right_specified() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root)?;
 
     let mut diff = repo.diff(
         "o2",
@@ -423,7 +420,7 @@ fn diff_when_left_and_right_specified() -> Result<()> {
 #[test]
 fn diff_with_previous_when_left_not_specified() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root)?;
 
     let mut diff = repo.diff("o2", None, VersionNum::try_from(3).unwrap())?;
 
@@ -440,7 +437,7 @@ fn diff_with_previous_when_left_not_specified() -> Result<()> {
 #[test]
 fn diff_first_version_all_adds() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root)?;
 
     let mut diff = repo.diff("o2", None, VersionNum::try_from(1).unwrap())?;
 
@@ -457,7 +454,7 @@ fn diff_first_version_all_adds() -> Result<()> {
 #[test]
 fn diff_same_version_no_diff() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root)?;
 
     let diff = repo.diff(
         "o2",
@@ -476,7 +473,7 @@ fn diff_same_version_no_diff() -> Result<()> {
 #[should_panic(expected = "Not found: Object o6")]
 fn diff_object_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
     repo.diff("o6", None, VersionNum::try_from(2).unwrap())
         .unwrap();
 }
@@ -485,7 +482,7 @@ fn diff_object_not_exists() {
 #[should_panic(expected = "Not found: Object o1 version v2")]
 fn diff_version_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
     repo.diff("o1", None, VersionNum::try_from(2).unwrap())
         .unwrap();
 }
@@ -493,7 +490,7 @@ fn diff_version_not_exists() {
 #[test]
 fn get_object_file_when_exists() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root)?;
 
     let id = "o2";
     let version = VersionNum::try_from(2)?;
@@ -510,7 +507,7 @@ fn get_object_file_when_exists() -> Result<()> {
 #[should_panic(expected = "Path dir1/bogus not found in object o2 version v2")]
 fn fail_get_object_file_when_does_not_exist() {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::new_fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
 
     let id = "o2";
     let version = VersionNum::try_from(2).unwrap();
@@ -523,6 +520,72 @@ fn fail_get_object_file_when_does_not_exist() {
         &mut out,
     )
     .unwrap();
+}
+
+#[test]
+fn create_new_repo_empty_dir() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let _repo = OcflRepo::init_fs_repo(
+        root.path(),
+        StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None)?,
+    )?;
+
+    assert_storage_root(&root);
+    assert_layout_extension(
+        &root,
+        "0004-hashed-n-tuple-storage-layout",
+        r#"{
+  "extensionName": "0004-hashed-n-tuple-storage-layout",
+  "digestAlgorithm": "sha256",
+  "tupleSize": 3,
+  "numberOfTuples": 3,
+  "shortObjectRoot": false
+}"#,
+    );
+
+    Ok(())
+}
+
+fn assert_storage_root(root: &TempDir) {
+    root.child("0=ocfl_1.0")
+        .assert(predicates::path::is_file())
+        .assert("ocfl_1.0\n");
+    root.child("ocfl_1.0.txt")
+        .assert(predicates::path::is_file())
+        .assert(read_spec("ocfl_1.0.txt"));
+}
+
+fn assert_layout_extension(root: &TempDir, layout_name: &str, config: &str) {
+    root.child("ocfl_layout.json")
+        .assert(predicates::path::is_file())
+        .assert(predicates::str::contains(format!(
+            "\"extension\": \"{}\"",
+            layout_name
+        )));
+
+    let layout_spec = format!("{}.md", layout_name);
+    root.child(&layout_spec)
+        .assert(predicates::path::is_file())
+        .assert(read_spec(&layout_spec));
+
+    let extensions = root.child("extensions");
+    extensions.assert(predicates::path::is_dir());
+
+    let layout_dir = extensions.child(layout_name);
+    layout_dir.assert(predicates::path::is_dir());
+    layout_dir
+        .child("config.json")
+        .assert(predicates::path::is_file())
+        .assert(config);
+}
+
+fn read_spec(name: &str) -> String {
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("resources");
+    path.push("main");
+    path.push("specs");
+    path.push(name);
+    fs::read_to_string(path).unwrap()
 }
 
 fn o2_v1_details() -> VersionDetails {

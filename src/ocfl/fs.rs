@@ -18,8 +18,8 @@ use once_cell::sync::Lazy;
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
-use crate::ocfl::layout::StorageLayout;
-use crate::ocfl::util;
+use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
+use crate::ocfl::{specs, util};
 use crate::ocfl::{InventoryPath, OcflLayout, VersionNum};
 
 use super::OcflStore;
@@ -859,8 +859,11 @@ fn init_new_repo<P: AsRef<Path>>(root: P, layout: &StorageLayout) -> Result<()> 
         OCFL_VERSION
     )?;
 
-    let ocfl_spec = include_str!("../../resources/main/specs/ocfl_1.0.txt");
-    write!(File::create(root.join(OCFL_SPEC_FILE))?, "{}", ocfl_spec)?;
+    write!(
+        File::create(root.join(OCFL_SPEC_FILE))?,
+        "{}",
+        specs::OCFL_1_0_SPEC
+    )?;
 
     let ocfl_layout = OcflLayout {
         extension: layout.extension_name(),
@@ -870,14 +873,25 @@ fn init_new_repo<P: AsRef<Path>>(root: P, layout: &StorageLayout) -> Result<()> 
 
     serde_json::to_writer_pretty(File::create(root.join(OCFL_LAYOUT_FILE))?, &ocfl_layout)?;
 
-    let layout_ext_dir = root
-        .join(EXTENSIONS_DIR)
-        .join(layout.extension_name().to_string());
+    let extension_name = layout.extension_name().to_string();
+
+    let mut layout_ext_dir = root.join(EXTENSIONS_DIR);
+    layout_ext_dir.push(&extension_name);
     fs::create_dir_all(&layout_ext_dir)?;
 
     File::create(layout_ext_dir.join(EXTENSIONS_CONFIG_FILE))?.write_all(&layout.serialize()?)?;
 
-    // TODO write extension spec
+    let extension_spec = match layout.extension_name() {
+        LayoutExtensionName::FlatDirectLayout => specs::EXT_0002_SPEC,
+        LayoutExtensionName::HashedNTupleObjectIdLayout => specs::EXT_0003_SPEC,
+        LayoutExtensionName::HashedNTupleLayout => specs::EXT_0004_SPEC,
+    };
+
+    write!(
+        File::create(root.join(format!("{}.md", extension_name)))?,
+        "{}",
+        extension_spec
+    )?;
 
     Ok(())
 }
