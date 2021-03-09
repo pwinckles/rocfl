@@ -409,7 +409,7 @@ impl OcflStore for FsOcflStore {
     fn write_new_object(&self, inventory: &Inventory, object_path: &Path) -> Result<()> {
         let destination =
             match self.get_object_root_path(&inventory.id) {
-                Some(object_root) => PathBuf::from(object_root),
+                Some(object_root) => self.storage_root.join(object_root),
                 None => return Err(RocflError::IllegalState(
                     "Objects cannot be created in repositories lacking a defined storage layout."
                         .to_string(),
@@ -852,7 +852,6 @@ fn init_new_repo<P: AsRef<Path>>(root: P, layout: &StorageLayout) -> Result<()> 
 
     fs::create_dir_all(&root)?;
 
-    // TODO should we fail if already exists?
     writeln!(
         File::create(root.join(REPO_NAMASTE_FILE))?,
         "{}",

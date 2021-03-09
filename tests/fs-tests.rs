@@ -4,10 +4,10 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use assert_fs::prelude::*;
+use assert_fs::TempDir;
 use chrono::DateTime;
 use maplit::hashmap;
 
-use assert_fs::TempDir;
 use rocfl::ocfl::layout::{LayoutExtensionName, StorageLayout};
 use rocfl::ocfl::{
     Diff, DigestAlgorithm, FileDetails, InventoryPath, ObjectVersion, ObjectVersionDetails,
@@ -525,7 +525,9 @@ fn fail_get_object_file_when_does_not_exist() {
 #[test]
 fn create_new_repo_empty_dir() -> Result<()> {
     let root = TempDir::new().unwrap();
-    let _repo = OcflRepo::init_fs_repo(
+    let temp = TempDir::new().unwrap();
+
+    let repo = OcflRepo::init_fs_repo(
         root.path(),
         StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None)?,
     )?;
@@ -543,7 +545,125 @@ fn create_new_repo_empty_dir() -> Result<()> {
 }"#,
     );
 
+    let object_id = "foobar";
+    create_simple_object(object_id, &repo, &temp);
+
+    root.child("c3a")
+        .child("b8f")
+        .child("f13")
+        .child("c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2")
+        .assert(predicates::path::is_dir());
+
     Ok(())
+}
+
+#[test]
+fn create_new_flat_repo_empty_dir() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = OcflRepo::init_fs_repo(
+        root.path(),
+        StorageLayout::new(LayoutExtensionName::FlatDirectLayout, None)?,
+    )?;
+
+    assert_storage_root(&root);
+    assert_layout_extension(
+        &root,
+        "0002-flat-direct-storage-layout",
+        r#"{
+  "extensionName": "0002-flat-direct-storage-layout"
+}"#,
+    );
+
+    let object_id = "foobar";
+    create_simple_object(object_id, &repo, &temp);
+
+    root.child(object_id).assert(predicates::path::is_dir());
+
+    Ok(())
+}
+
+#[test]
+fn create_new_hash_id_repo_empty_dir() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = OcflRepo::init_fs_repo(
+        root.path(),
+        StorageLayout::new(LayoutExtensionName::HashedNTupleObjectIdLayout, None)?,
+    )?;
+
+    assert_storage_root(&root);
+    assert_layout_extension(
+        &root,
+        "0003-hash-and-id-n-tuple-storage-layout",
+        r#"{
+  "extensionName": "0003-hash-and-id-n-tuple-storage-layout",
+  "digestAlgorithm": "sha256",
+  "tupleSize": 3,
+  "numberOfTuples": 3
+}"#,
+    );
+
+    let object_id = "foobar";
+    create_simple_object(object_id, &repo, &temp);
+
+    root.child("c3a")
+        .child("b8f")
+        .child("f13")
+        .child(object_id)
+        .assert(predicates::path::is_dir());
+
+    Ok(())
+}
+
+#[test]
+fn create_new_repo_empty_dir_custom_layout() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let layout = r#"{
+  "extensionName": "0004-hashed-n-tuple-storage-layout",
+  "digestAlgorithm": "sha512",
+  "tupleSize": 5,
+  "numberOfTuples": 2,
+  "shortObjectRoot": true
+}"#;
+
+    let repo = OcflRepo::init_fs_repo(
+        root.path(),
+        StorageLayout::new(
+            LayoutExtensionName::HashedNTupleLayout,
+            Some(layout.as_bytes()),
+        )?,
+    )?;
+
+    assert_storage_root(&root);
+    assert_layout_extension(&root, "0004-hashed-n-tuple-storage-layout", layout);
+
+    let object_id = "foobar";
+    create_simple_object(object_id, &repo, &temp);
+
+    root.child("0a502").child("61ebd")
+        .child("1a390fed2bf326f2673c145582a6342d523204973d0219337f81616a8069b012587cf5635f6925f1b56c360230c19b273500ee013e030601bf2425")
+        .assert(predicates::path::is_dir());
+
+    Ok(())
+}
+
+#[test]
+#[should_panic(expected = "must be empty")]
+fn fail_new_repo_creation_when_non_empty_root() {
+    let root = TempDir::new().unwrap();
+
+    root.child("file").write_str("contents").unwrap();
+
+    let _repo = OcflRepo::init_fs_repo(
+        root.path(),
+        StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None).unwrap(),
+    )
+    .unwrap();
 }
 
 fn assert_storage_root(root: &TempDir) {
@@ -577,6 +697,17 @@ fn assert_layout_extension(root: &TempDir, layout_name: &str, config: &str) {
         .child("config.json")
         .assert(predicates::path::is_file())
         .assert(config);
+}
+
+fn create_simple_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
+        .unwrap();
+
+    temp.child("test.txt").write_str("testing").unwrap();
+    repo.copy_files_external(object_id, &vec![temp.path()], "test.txt", false)
+        .unwrap();
+
+    repo.commit(object_id, None, None, None, None).unwrap();
 }
 
 fn read_spec(name: &str) -> String {
