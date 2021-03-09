@@ -141,10 +141,8 @@ impl FsOcflStore {
 
         let content_path = inventory.new_content_path_head(&logical_path)?;
 
-        let storage_path = self
-            .storage_root
-            .join(&inventory.object_root)
-            .join(&content_path.as_ref());
+        let mut storage_path = self.storage_root.join(&inventory.object_root);
+        storage_path.push(&content_path.as_ref());
 
         fs::create_dir_all(storage_path.parent().unwrap())?;
         io::copy(source, &mut File::create(&storage_path)?)?;
@@ -164,10 +162,8 @@ impl FsOcflStore {
         // TODO cleanup pathing
         let content_path = inventory.new_content_path_head(&logical_path)?;
 
-        let storage_path = self
-            .storage_root
-            .join(&inventory.object_root)
-            .join(&content_path.as_ref());
+        let mut storage_path = self.storage_root.join(&inventory.object_root);
+        storage_path.push(&content_path.as_ref());
 
         fs::create_dir_all(storage_path.parent().unwrap())?;
         fs::rename(source, &storage_path)?;
@@ -201,9 +197,8 @@ impl FsOcflStore {
         // TODO need to centralize all of this path wrangling
         let object_root = self.storage_root.join(&inventory.object_root);
 
-        let content_dir = object_root
-            .join(inventory.head.to_string())
-            .join(inventory.defaulted_content_dir());
+        let mut content_dir = object_root.join(inventory.head.to_string());
+        content_dir.push(inventory.defaulted_content_dir());
 
         if content_dir.exists() {
             for file in WalkDir::new(&content_dir) {
@@ -395,10 +390,8 @@ impl OcflStore for FsOcflStore {
         let inventory = self.get_inventory(object_id)?;
 
         let content_path = inventory.content_path_for_logical_path(path, version_num)?;
-        let storage_path = self
-            .storage_root
-            .join(&inventory.object_root)
-            .join(content_path.as_ref().as_ref());
+        let mut storage_path = self.storage_root.join(&inventory.object_root);
+        storage_path.push(content_path.as_ref().as_ref());
 
         let mut file = File::open(storage_path)?;
         io::copy(&mut file, sink)?;
@@ -802,11 +795,9 @@ fn parse_layout_file<P: AsRef<Path>>(layout_file: P) -> Result<OcflLayout> {
 }
 
 fn read_layout_config<P: AsRef<Path>>(storage_root: P, layout: &OcflLayout) -> Option<Vec<u8>> {
-    let config_file = storage_root
-        .as_ref()
-        .join(EXTENSIONS_DIR)
-        .join(layout.extension.to_string())
-        .join(EXTENSIONS_CONFIG_FILE);
+    let mut config_file = storage_root.as_ref().join(EXTENSIONS_DIR);
+    config_file.push(layout.extension.to_string());
+    config_file.push(EXTENSIONS_CONFIG_FILE);
 
     if config_file.exists() {
         return match file_to_bytes(&config_file) {

@@ -73,11 +73,12 @@ impl OcflRepo {
     /// location of the OCFL repository to open. The OCFL repository must already exist.
     pub fn fs_repo<P: AsRef<Path>>(storage_root: P) -> Result<Self> {
         // TODO need to warn about unsupported extensions
+
+        let mut staging_root = storage_root.as_ref().join(EXTENSIONS_DIR);
+        staging_root.push(ROCFL_STAGING_EXTENSION);
+
         Ok(Self {
-            staging_root: storage_root
-                .as_ref()
-                .join(EXTENSIONS_DIR)
-                .join(ROCFL_STAGING_EXTENSION),
+            staging_root,
             store: Box::new(FsOcflStore::new(storage_root)?),
             staging: OnceCell::default(),
             use_backslashes: util::BACKSLASH_SEPARATOR,
@@ -87,11 +88,11 @@ impl OcflRepo {
     /// Initializes a new `OcflRepo` instance backed by the local filesystem. The OCFL repository
     /// most not already exist.
     pub fn init_fs_repo<P: AsRef<Path>>(storage_root: P, layout: StorageLayout) -> Result<Self> {
+        let mut staging_root = storage_root.as_ref().join(EXTENSIONS_DIR);
+        staging_root.push(ROCFL_STAGING_EXTENSION);
+
         Ok(Self {
-            staging_root: storage_root
-                .as_ref()
-                .join(EXTENSIONS_DIR)
-                .join(ROCFL_STAGING_EXTENSION),
+            staging_root,
             store: Box::new(FsOcflStore::init(storage_root, layout)?),
             staging: OnceCell::default(),
             use_backslashes: util::BACKSLASH_SEPARATOR,

@@ -314,7 +314,7 @@ impl<'a> AsRow<'a> for Listing {
                 for column in columns {
                     let cell = match column.id {
                         ColumnId::LogicalPath => {
-                            TextCell::new(dir.as_str()).with_style(&*style::BOLD)
+                            TextCell::new(dir.as_str()).with_style(&*style::DEFAULT)
                         }
                         _ => TextCell::blank(),
                     };
