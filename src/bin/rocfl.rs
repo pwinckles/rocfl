@@ -1,11 +1,10 @@
 use std::process;
 
-use log::error;
-use log::LevelFilter;
-use structopt::StructOpt;
-
+use log::{error, LevelFilter};
 use rocfl::cmd;
 use rocfl::cmd::opts::*;
+use rocfl::ocfl::RocflError;
+use structopt::StructOpt;
 
 fn main() {
     let args = RocflArgs::from_args();
@@ -25,7 +24,12 @@ fn main() {
         .init();
 
     if let Err(e) = cmd::exec_command(&args) {
-        error!("{:#}", e);
+        match e {
+            RocflError::CopyMoveError(errors) => {
+                errors.0.iter().for_each(|error| error!("{}", error))
+            }
+            _ => error!("{:#}", e),
+        }
         process::exit(1);
     }
 }

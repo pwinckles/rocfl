@@ -86,7 +86,7 @@ fn print(value: impl Display) -> Result<()> {
 
 fn create_repo(args: &RocflArgs) -> Result<OcflRepo> {
     match args.target_storage() {
-        Storage::FileSystem => OcflRepo::new_fs_repo(args.root.clone()),
+        Storage::FileSystem => OcflRepo::fs_repo(args.root.clone()),
         Storage::S3 => {
             #[cfg(not(feature = "s3"))]
             return Err(RocflError::General(
@@ -114,5 +114,5 @@ fn create_s3_repo(args: &RocflArgs) -> Result<OcflRepo> {
         false => args.region.as_ref().unwrap().parse()?,
     };
 
-    OcflRepo::new_s3_repo(region, args.bucket.as_ref().unwrap(), prefix)
+    OcflRepo::s3_repo(region, args.bucket.as_ref().unwrap(), prefix)
 }

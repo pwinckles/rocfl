@@ -1,4 +1,5 @@
 use core::iter;
+use std::fmt::{self, Display, Formatter};
 use std::io::{ErrorKind, Result, Write};
 use std::{cmp, io};
 
@@ -6,7 +7,6 @@ use ansi_term::Style;
 use unicode_width::UnicodeWidthStr;
 
 use crate::cmd::style;
-use std::fmt::{self, Display, Formatter};
 
 pub trait AsRow<'a> {
     fn as_row(&'a self, columns: &[Column]) -> Row<'a>;

@@ -4,10 +4,9 @@ use std::io;
 use log::info;
 
 use crate::cmd::opts::{
-    CatCmd, CommitCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, Field, ListCmd, MoveCmd, NewCmd,
-    PurgeCmd, RemoveCmd, RevertCmd, ShowCmd, StatusCmd,
+    CatCmd, CommitCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, Field, InitCmd, Layout, ListCmd,
+    MoveCmd, NewCmd, PurgeCmd, RemoveCmd, RevertCmd, RocflArgs, ShowCmd, StatusCmd, Storage,
 };
-use crate::cmd::opts::{InitCmd, Layout, RocflArgs, Storage};
 use crate::cmd::{print, println, Cmd, GlobalArgs};
 use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
 use crate::ocfl::{DigestAlgorithm, OcflRepo, Result};
@@ -118,7 +117,11 @@ impl Cmd for RemoveCmd {
 
 impl Cmd for RevertCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
-        repo.revert(&self.object_id, &self.paths, self.recursive)
+        if self.paths.is_empty() {
+            repo.revert(&self.object_id, &self.paths, self.recursive)
+        } else {
+            repo.revert_all(&self.object_id)
+        }
     }
 }
 
@@ -126,9 +129,9 @@ impl Cmd for CommitCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
         repo.commit(
             &self.object_id,
-            self.user_name.clone(),
-            self.user_address.clone(),
-            self.message.clone(),
+            self.user_name.as_deref(),
+            self.user_address.as_deref(),
+            self.message.as_deref(),
             self.created,
         )?;
 
