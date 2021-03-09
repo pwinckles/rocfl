@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Write;
+use std::path::Path;
 use std::vec::IntoIter;
 
 use globset::GlobBuilder;
@@ -17,14 +18,12 @@ use rusoto_s3::{
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
 
+use super::OcflStore;
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::layout::StorageLayout;
 use crate::ocfl::{InventoryPath, OcflLayout, VersionNum};
-
-use super::OcflStore;
-use std::path::Path;
 
 static EXTENSIONS_DIR_SUFFIX: Lazy<String> = Lazy::new(|| format!("/{}", EXTENSIONS_DIR));
 

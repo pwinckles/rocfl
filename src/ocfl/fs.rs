@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::fs::{self, File, ReadDir};
 use std::io::{self, Read, Write};
 use std::ops::Deref;
@@ -14,17 +15,14 @@ use grep_searcher::sinks::UTF8;
 use grep_searcher::Searcher;
 use log::{error, info};
 use once_cell::sync::Lazy;
+use walkdir::WalkDir;
 
+use super::OcflStore;
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
-use crate::ocfl::layout::StorageLayout;
-use crate::ocfl::util;
-use crate::ocfl::{InventoryPath, OcflLayout, VersionNum};
-
-use super::OcflStore;
-use std::convert::TryFrom;
-use walkdir::WalkDir;
+use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
+use crate::ocfl::{specs, util, InventoryPath, OcflLayout, VersionNum};
 
 static OBJECT_ID_MATCHER: Lazy<RegexMatcher> =
     Lazy::new(|| RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap());
@@ -141,10 +139,8 @@ impl FsOcflStore {
 
         let content_path = inventory.new_content_path_head(&logical_path)?;
 
-        let storage_path = self
-            .storage_root
-            .join(&inventory.object_root)
-            .join(&content_path.as_ref());
+        let mut storage_path = self.storage_root.join(&inventory.object_root);
+        storage_path.push(&content_path.as_ref());
 
         fs::create_dir_all(storage_path.parent().unwrap())?;
         io::copy(source, &mut File::create(&storage_path)?)?;
@@ -164,10 +160,8 @@ impl FsOcflStore {
         // TODO cleanup pathing
         let content_path = inventory.new_content_path_head(&logical_path)?;
 
-        let storage_path = self
-            .storage_root
-            .join(&inventory.object_root)
-            .join(&content_path.as_ref());
+        let mut storage_path = self.storage_root.join(&inventory.object_root);
+        storage_path.push(&content_path.as_ref());
 
         fs::create_dir_all(storage_path.parent().unwrap())?;
         fs::rename(source, &storage_path)?;
@@ -201,9 +195,8 @@ impl FsOcflStore {
         // TODO need to centralize all of this path wrangling
         let object_root = self.storage_root.join(&inventory.object_root);
 
-        let content_dir = object_root
-            .join(inventory.head.to_string())
-            .join(inventory.defaulted_content_dir());
+        let mut content_dir = object_root.join(inventory.head.to_string());
+        content_dir.push(inventory.defaulted_content_dir());
 
         if content_dir.exists() {
             for file in WalkDir::new(&content_dir) {
@@ -395,10 +388,8 @@ impl OcflStore for FsOcflStore {
         let inventory = self.get_inventory(object_id)?;
 
         let content_path = inventory.content_path_for_logical_path(path, version_num)?;
-        let storage_path = self
-            .storage_root
-            .join(&inventory.object_root)
-            .join(content_path.as_ref().as_ref());
+        let mut storage_path = self.storage_root.join(&inventory.object_root);
+        storage_path.push(content_path.as_ref().as_ref());
 
         let mut file = File::open(storage_path)?;
         io::copy(&mut file, sink)?;
@@ -409,7 +400,7 @@ impl OcflStore for FsOcflStore {
     fn write_new_object(&self, inventory: &Inventory, object_path: &Path) -> Result<()> {
         let destination =
             match self.get_object_root_path(&inventory.id) {
-                Some(object_root) => PathBuf::from(object_root),
+                Some(object_root) => self.storage_root.join(object_root),
                 None => return Err(RocflError::IllegalState(
                     "Objects cannot be created in repositories lacking a defined storage layout."
                         .to_string(),
@@ -802,11 +793,9 @@ fn parse_layout_file<P: AsRef<Path>>(layout_file: P) -> Result<OcflLayout> {
 }
 
 fn read_layout_config<P: AsRef<Path>>(storage_root: P, layout: &OcflLayout) -> Option<Vec<u8>> {
-    let config_file = storage_root
-        .as_ref()
-        .join(EXTENSIONS_DIR)
-        .join(layout.extension.to_string())
-        .join(EXTENSIONS_CONFIG_FILE);
+    let mut config_file = storage_root.as_ref().join(EXTENSIONS_DIR);
+    config_file.push(layout.extension.to_string());
+    config_file.push(EXTENSIONS_CONFIG_FILE);
 
     if config_file.exists() {
         return match file_to_bytes(&config_file) {
@@ -852,15 +841,17 @@ fn init_new_repo<P: AsRef<Path>>(root: P, layout: &StorageLayout) -> Result<()> 
 
     fs::create_dir_all(&root)?;
 
-    // TODO should we fail if already exists?
     writeln!(
         File::create(root.join(REPO_NAMASTE_FILE))?,
         "{}",
         OCFL_VERSION
     )?;
 
-    let ocfl_spec = include_str!("../../resources/main/specs/ocfl_1.0.txt");
-    write!(File::create(root.join(OCFL_SPEC_FILE))?, "{}", ocfl_spec)?;
+    write!(
+        File::create(root.join(OCFL_SPEC_FILE))?,
+        "{}",
+        specs::OCFL_1_0_SPEC
+    )?;
 
     let ocfl_layout = OcflLayout {
         extension: layout.extension_name(),
@@ -870,14 +861,25 @@ fn init_new_repo<P: AsRef<Path>>(root: P, layout: &StorageLayout) -> Result<()> 
 
     serde_json::to_writer_pretty(File::create(root.join(OCFL_LAYOUT_FILE))?, &ocfl_layout)?;
 
-    let layout_ext_dir = root
-        .join(EXTENSIONS_DIR)
-        .join(layout.extension_name().to_string());
+    let extension_name = layout.extension_name().to_string();
+
+    let mut layout_ext_dir = root.join(EXTENSIONS_DIR);
+    layout_ext_dir.push(&extension_name);
     fs::create_dir_all(&layout_ext_dir)?;
 
     File::create(layout_ext_dir.join(EXTENSIONS_CONFIG_FILE))?.write_all(&layout.serialize()?)?;
 
-    // TODO write extension spec
+    let extension_spec = match layout.extension_name() {
+        LayoutExtensionName::FlatDirectLayout => specs::EXT_0002_SPEC,
+        LayoutExtensionName::HashedNTupleObjectIdLayout => specs::EXT_0003_SPEC,
+        LayoutExtensionName::HashedNTupleLayout => specs::EXT_0004_SPEC,
+    };
+
+    write!(
+        File::create(root.join(format!("{}.md", extension_name)))?,
+        "{}",
+        extension_spec
+    )?;
 
     Ok(())
 }

@@ -1,10 +1,10 @@
+use std::borrow::Cow;
 use std::path::Path;
 use std::{fs, path};
 
 use walkdir::WalkDir;
 
 use crate::ocfl::error::Result;
-use std::borrow::Cow;
 
 /// Indicates if the system path separator is `\`
 pub const BACKSLASH_SEPARATOR: bool = path::MAIN_SEPARATOR == '\\';

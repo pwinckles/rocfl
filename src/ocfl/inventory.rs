@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryInto;
 use std::mem;
@@ -14,7 +15,6 @@ use crate::ocfl::consts::{DEFAULT_CONTENT_DIR, INVENTORY_TYPE};
 use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
 use crate::ocfl::error::{not_found, not_found_path, Result, RocflError};
 use crate::ocfl::{Diff, InventoryPath, VersionNum};
-use std::borrow::Cow;
 
 const STAGING_MESSAGE: &str = "Staging new version";
 const ROCFL_USER: &str = "rocfl";
@@ -403,7 +403,7 @@ impl InventoryBuilder {
             id: object_id.to_string(),
             type_declaration: INVENTORY_TYPE.to_string(),
             digest_algorithm: DigestAlgorithm::Sha512,
-            head: VersionNum::new(1, 0),
+            head: VersionNum::with_width(1, 0),
             content_directory: DEFAULT_CONTENT_DIR.to_string(),
             manifest: PathBiMap::new(),
             versions: BTreeMap::new(),
@@ -475,12 +475,12 @@ impl Version {
 
     pub fn update_meta(
         &mut self,
-        name: Option<String>,
-        address: Option<String>,
-        message: Option<String>,
+        name: Option<&str>,
+        address: Option<&str>,
+        message: Option<&str>,
         created: Option<DateTime<Local>>,
     ) {
-        self.message = message;
+        self.message = message.map(|e| e.to_string());
         self.user = match name {
             Some(name) => Some(User::new(name, address)),
             None => None,
@@ -753,10 +753,10 @@ impl Version {
 }
 
 impl User {
-    pub fn new(name: String, address: Option<String>) -> Self {
+    pub fn new(name: &str, address: Option<&str>) -> Self {
         Self {
-            name: Some(name),
-            address,
+            name: Some(name.to_string()),
+            address: address.map(|e| e.to_string()),
         }
     }
 }

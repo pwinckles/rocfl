@@ -6,7 +6,7 @@
 //! ```rust
 //! use rocfl::ocfl::OcflRepo;
 //!
-//! let repo = OcflRepo::new_fs_repo("path/to/ocfl/storage/root");
+//! let repo = OcflRepo::fs_repo("path/to/ocfl/storage/root");
 //! ```
 
 use std::collections::{HashMap, HashSet};
@@ -26,18 +26,18 @@ use rusoto_core::Region;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
-use crate::ocfl::consts::*;
-use crate::ocfl::digest::HexDigest;
-pub use crate::ocfl::error::{Result, RocflError};
-use crate::ocfl::inventory::Inventory;
-use crate::ocfl::layout::StorageLayout;
-
 pub use self::digest::DigestAlgorithm;
 use self::fs::FsOcflStore;
 use self::layout::LayoutExtensionName;
 #[cfg(feature = "s3")]
 use self::s3::S3OcflStore;
 pub use self::types::*;
+use crate::ocfl::consts::*;
+use crate::ocfl::digest::HexDigest;
+use crate::ocfl::error::MultiError;
+pub use crate::ocfl::error::{Result, RocflError};
+use crate::ocfl::inventory::Inventory;
+use crate::ocfl::layout::StorageLayout;
 
 mod bimap;
 mod consts;
@@ -48,6 +48,7 @@ mod inventory;
 pub mod layout;
 #[cfg(feature = "s3")]
 mod s3;
+mod specs;
 mod types;
 mod util;
 
@@ -70,13 +71,14 @@ pub struct OcflRepo {
 impl OcflRepo {
     /// Creates a new `OcflRepo` instance backed by the local filesystem. `storage_root` is the
     /// location of the OCFL repository to open. The OCFL repository must already exist.
-    pub fn new_fs_repo<P: AsRef<Path>>(storage_root: P) -> Result<Self> {
+    pub fn fs_repo<P: AsRef<Path>>(storage_root: P) -> Result<Self> {
         // TODO need to warn about unsupported extensions
+
+        let mut staging_root = storage_root.as_ref().join(EXTENSIONS_DIR);
+        staging_root.push(ROCFL_STAGING_EXTENSION);
+
         Ok(Self {
-            staging_root: storage_root
-                .as_ref()
-                .join(EXTENSIONS_DIR)
-                .join(ROCFL_STAGING_EXTENSION),
+            staging_root,
             store: Box::new(FsOcflStore::new(storage_root)?),
             staging: OnceCell::default(),
             use_backslashes: util::BACKSLASH_SEPARATOR,
@@ -86,11 +88,11 @@ impl OcflRepo {
     /// Initializes a new `OcflRepo` instance backed by the local filesystem. The OCFL repository
     /// most not already exist.
     pub fn init_fs_repo<P: AsRef<Path>>(storage_root: P, layout: StorageLayout) -> Result<Self> {
+        let mut staging_root = storage_root.as_ref().join(EXTENSIONS_DIR);
+        staging_root.push(ROCFL_STAGING_EXTENSION);
+
         Ok(Self {
-            staging_root: storage_root
-                .as_ref()
-                .join(EXTENSIONS_DIR)
-                .join(ROCFL_STAGING_EXTENSION),
+            staging_root,
             store: Box::new(FsOcflStore::init(storage_root, layout)?),
             staging: OnceCell::default(),
             use_backslashes: util::BACKSLASH_SEPARATOR,
@@ -100,7 +102,7 @@ impl OcflRepo {
     /// Creates a new `OcflRepo` instance backed by S3. `prefix` used to specify a virtual
     /// sub directory within a bucket that the OCFL repository is rooted in.
     #[cfg(feature = "s3")]
-    pub fn new_s3_repo(region: Region, bucket: &str, prefix: Option<&str>) -> Result<Self> {
+    pub fn s3_repo(region: Region, bucket: &str, prefix: Option<&str>) -> Result<Self> {
         Ok(Self {
             // TODO this is not correct -- use xdg
             staging_root: PathBuf::from("."),
@@ -405,7 +407,7 @@ impl OcflRepo {
             }
         }
 
-        let version_num = VersionNum::new(1, padding_width);
+        let version_num = VersionNum::with_width(1, padding_width);
 
         let mut inventory = Inventory::builder(object_id)
             .with_digest_algorithm(digest_algorithm)
@@ -457,6 +459,8 @@ impl OcflRepo {
 
         let to_copy =
             self.resolve_internal_moves(&inventory, src_version_num, src, dst, recursive)?;
+
+        // TODO continue on error
 
         for (src_path, dst_path) in to_copy {
             info!(
@@ -519,9 +523,10 @@ impl OcflRepo {
 
         let to_copy = self.resolve_internal_moves(&inventory, inventory.head, src, dst, true)?;
 
+        // TODO continue on error
+
         for (src_path, dst_path) in to_copy {
             info!("Moving {} to {}", src_path, dst_path);
-
             inventory.move_file_in_head(&src_path, dst_path)?;
         }
 
@@ -562,19 +567,24 @@ impl OcflRepo {
         Ok(())
     }
 
-    /// Reverts staged changes to an object. If no paths are specified, then the entire object
-    /// is removed from staging, dropping all changes.
+    /// Reverts all staged changes for an object by dropping the object's staged version completely.
+    pub fn revert_all(&self, object_id: &str) -> Result<()> {
+        self.get_staging()?.purge_object(object_id)
+    }
+
+    /// Reverts to specified staged changes to an object. Paths may be a glob and is resolved
+    /// against both the staged version and the previous version. Matches in the staged version
+    /// are treated as add/update reverts and matches in the previous version are treated as
+    /// remove reverts.
     pub fn revert<P: AsRef<str>>(
         &self,
         object_id: &str,
         paths: &[P],
         recursive: bool,
     ) -> Result<()> {
-        let staging = self.get_staging()?;
+        if !paths.is_empty() {
+            let staging = self.get_staging()?;
 
-        if paths.is_empty() {
-            staging.purge_object(object_id)
-        } else {
             let mut inventory = match staging.get_inventory(&object_id) {
                 Ok(inventory) => inventory,
                 Err(RocflError::NotFound(_)) => return Ok(()),
@@ -633,29 +643,37 @@ impl OcflRepo {
 
             inventory.head_version_mut().created = Local::now();
             staging.stage_inventory(&inventory, false)?;
-
-            Ok(())
         }
+
+        Ok(())
     }
 
-    /// Commits all of an object's staged changes
+    /// Commits all of an object's staged changes. If `user_address` is provided, then `user_name`
+    /// must also be. If `created` is not provided, then it defaults to the current time.
     pub fn commit(
         &self,
         object_id: &str,
-        user_name: Option<String>,
-        user_address: Option<String>,
-        message: Option<String>,
+        user_name: Option<&str>,
+        user_address: Option<&str>,
+        message: Option<&str>,
         created: Option<DateTime<Local>>,
     ) -> Result<()> {
+        if user_address.is_some() && user_name.is_none() {
+            return Err(RocflError::IllegalArgument(
+                "User name must be set when user address is set.".to_string(),
+            ));
+        }
+
         let staging = self.get_staging()?;
 
         let mut inventory = match staging.get_inventory(&object_id) {
             Ok(inventory) => inventory,
             Err(RocflError::NotFound(_)) => {
                 // TODO should this be an error?
-                return Err(RocflError::General(
-                    "No staged changed found for the specified object".to_string(),
-                ));
+                return Err(RocflError::General(format!(
+                    "No staged changes found for object {}",
+                    object_id
+                )));
             }
             Err(e) => return Err(e),
         };
@@ -742,56 +760,85 @@ impl OcflRepo {
         let src_is_many = src.len() > 1;
         let dst_has_slash = dst.ends_with('/');
 
+        let mut errors = Vec::new();
+
         for path in src.iter() {
             let path = path.as_ref();
 
             if !path.exists() {
-                error!("{} does not exist", path.to_string_lossy());
+                errors.push(format!(
+                    "Failed to copy/move {}: Does not exist",
+                    path.to_string_lossy()
+                ));
                 continue;
             }
 
-            if path.is_file() {
-                // TODO need to continue on error ?
-                let parent = path.parent().unwrap();
+            let mut attempt = || -> Result<()> {
+                if path.is_file() {
+                    let parent = path.parent().unwrap();
 
-                let logical_path = if dst_dir_exists || src_is_many || dst_has_slash {
-                    logical_path_in_dst_dir(path, parent, dst)?
-                } else {
-                    dst_path.clone()
-                };
+                    let logical_path = if dst_dir_exists || src_is_many || dst_has_slash {
+                        logical_path_in_dst_dir(path, parent, dst)?
+                    } else {
+                        dst_path.clone()
+                    };
 
-                inventory
-                    .head_version()
-                    .validate_non_conflicting(&logical_path)?;
-                operator(path, logical_path, &mut inventory)?;
-            } else if recursive {
-                for file in WalkDir::new(path) {
-                    let file = file?;
-                    if file.file_type().is_file() {
-                        let logical_path = if dst_dir_exists || src_is_many {
-                            let grandparent = path.parent().unwrap_or(path);
-                            logical_path_in_dst_dir(file.path(), grandparent, dst)?
-                        } else {
-                            logical_path_in_dst_dir(file.path(), path, dst)?
-                        };
+                    inventory
+                        .head_version()
+                        .validate_non_conflicting(&logical_path)?;
+                    operator(path, logical_path, &mut inventory)?;
+                } else if recursive {
+                    for file in WalkDir::new(path) {
+                        let file = file?;
+                        if file.file_type().is_file() {
+                            let mut attempt = || -> Result<()> {
+                                let logical_path = if dst_dir_exists || src_is_many {
+                                    let grandparent = path.parent().unwrap_or(path);
+                                    logical_path_in_dst_dir(file.path(), grandparent, dst)?
+                                } else {
+                                    logical_path_in_dst_dir(file.path(), path, dst)?
+                                };
 
-                        // TODO need to continue on error ?
-                        inventory
-                            .head_version()
-                            .validate_non_conflicting(&logical_path)?;
-                        operator(file.path(), logical_path, &mut inventory)?;
+                                inventory
+                                    .head_version()
+                                    .validate_non_conflicting(&logical_path)?;
+                                operator(file.path(), logical_path, &mut inventory)
+                            };
+
+                            if let Err(e) = attempt() {
+                                errors.push(format!(
+                                    "Failed to copy/move {}: {}",
+                                    file.path().to_string_lossy(),
+                                    e
+                                ));
+                            }
+                        }
                     }
+                } else {
+                    errors.push(format!(
+                        "Skipping directory {} because recursion is not enabled",
+                        path.to_string_lossy()
+                    ));
                 }
-            } else {
-                error!(
-                    "Skipping directory {} because recursion is not enabled",
-                    path.to_string_lossy()
-                );
+
+                Ok(())
+            };
+
+            if let Err(e) = attempt() {
+                errors.push(format!(
+                    "Failed to copy/move {}: {}",
+                    path.to_string_lossy(),
+                    e
+                ));
             }
         }
 
         inventory.head_version_mut().created = Local::now();
         self.get_staging()?.stage_inventory(&inventory, false)?;
+
+        if !errors.is_empty() {
+            return Err(RocflError::CopyMoveError(MultiError(errors)));
+        }
 
         Ok(())
     }

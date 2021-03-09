@@ -78,4 +78,7 @@ rusoto_s3 = { version = "0.46", default_features = false, features = ["rustls"],
 tokio = { version = "1", optional = true }
 
 [dev-dependencies]
+assert_fs = "1"
 maplit = "1"
+predicates = "1"
+tempfile = "3"

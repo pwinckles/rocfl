@@ -5,9 +5,8 @@ use std::convert::TryInto;
 use std::fmt::Formatter;
 
 use crate::cmd::opts::{DiffCmd, LogCmd, ShowCmd};
-use crate::cmd::style;
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, Separator, TableView, TextCell};
-use crate::cmd::{println, Cmd, GlobalArgs, DATE_FORMAT};
+use crate::cmd::{println, style, Cmd, GlobalArgs, DATE_FORMAT};
 use crate::ocfl::{Diff, OcflRepo, Result, VersionDetails};
 
 const DEFAULT_USER: &str = "NA";
