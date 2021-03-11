@@ -37,7 +37,7 @@ pub struct VersionNum {
 pub struct InventoryPath(String);
 
 /// Represents a version of an OCFL object
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct ObjectVersion {
     /// The object's ID
     pub id: String,
@@ -52,7 +52,7 @@ pub struct ObjectVersion {
 }
 
 /// Details about a file in an OCFL object
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct FileDetails {
     /// The file's digest
     pub digest: Rc<HexDigest>,
@@ -67,7 +67,7 @@ pub struct FileDetails {
 }
 
 /// Metadata about a version
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct VersionDetails {
     /// The version number of the version
     pub version_num: VersionNum,
@@ -82,7 +82,7 @@ pub struct VersionDetails {
 }
 
 /// Similar to `ObjectVersion`, except it does not contain the state map.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct ObjectVersionDetails {
     /// The object's ID
     pub id: String,
@@ -95,7 +95,7 @@ pub struct ObjectVersionDetails {
 }
 
 /// Represents a change to a file
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Diff {
     Added(Rc<InventoryPath>),
     Modified(Rc<InventoryPath>),

@@ -1,8 +1,9 @@
 use std::convert::{TryFrom, TryInto};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use assert_fs::fixture::ChildPath;
 use assert_fs::prelude::*;
 use assert_fs::TempDir;
 use chrono::DateTime;
@@ -645,8 +646,12 @@ fn create_new_repo_empty_dir_custom_layout() -> Result<()> {
     let object_id = "foobar";
     create_simple_object(object_id, &repo, &temp);
 
-    root.child("0a502").child("61ebd")
-        .child("1a390fed2bf326f2673c145582a6342d523204973d0219337f81616a8069b012587cf5635f6925f1b56c360230c19b273500ee013e030601bf2425")
+    root.child("0a502")
+        .child("61ebd")
+        .child(
+            "1a390fed2bf326f2673c145582a6342d523204973d0219337f81616a8069b012587cf5635f6925f1b56\
+        c360230c19b273500ee013e030601bf2425",
+        )
         .assert(predicates::path::is_dir());
 
     Ok(())
@@ -664,6 +669,185 @@ fn fail_new_repo_creation_when_non_empty_root() {
         StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None).unwrap(),
     )
     .unwrap();
+}
+
+#[test]
+fn copy_files_into_new_object() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "foobar";
+
+    assert_staged_obj_count(&repo, 0);
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)?;
+    assert_staged_obj_count(&repo, 1);
+
+    let staged: Vec<ObjectVersionDetails> = repo.list_staged_objects(None)?.collect();
+    assert_eq!(object_id, staged.first().unwrap().id);
+
+    create_file(&temp, "test.txt", "testing");
+    repo.copy_files_external(
+        object_id,
+        &vec![temp.child("test.txt").path()],
+        "test.txt",
+        false,
+    )?;
+
+    create_dirs(&temp, "nested/dir");
+    create_file(&temp, "nested/1.txt", "File 1");
+    create_file(&temp, "nested/dir/2.txt", "File 2");
+    create_file(&temp, "nested/dir/3.txt", "File 3");
+
+    repo.copy_files_external(object_id, &vec![temp.path()], "another", true)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+    let obj_root = PathBuf::from(&staged_obj.object_root);
+
+    assert_eq!(5, staged_obj.state.len());
+
+    let possible_paths = vec!["v1/content/another/test.txt", "v1/content/test.txt"];
+    let details = staged_obj.state.get(&path("test.txt")).unwrap();
+
+    assert!(possible_paths.contains(&details.content_path.as_ref().as_ref().as_str()));
+
+    let dup_path = details.content_path.clone();
+
+    assert_file_details(
+        staged_obj.state.get(&path("test.txt")).unwrap(),
+        &obj_root,
+        dup_path.as_ref().as_ref(),
+        "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
+                        30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("another/test.txt")).unwrap(),
+        &obj_root,
+        dup_path.as_ref().as_ref(),
+        "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
+                        30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("another/nested/1.txt")).unwrap(),
+        &obj_root,
+        "v1/content/another/nested/1.txt",
+        "9c614ba0d58c976d0b39f8f5536eb8af89fae745cbe3783ac2ca3e3055bb0b1e3687417a1d\
+                        1104288d2883a4368d3dacb9931460c6e523117ff3eaa28810481a",
+    );
+    assert_file_details(
+        staged_obj
+            .state
+            .get(&path("another/nested/dir/2.txt"))
+            .unwrap(),
+        &obj_root,
+        "v1/content/another/nested/dir/2.txt",
+        "70ffe50550ae07cd0fc154cc1cd3a47b71499b5f67921b52219750441791981fb36476cd47\
+                        8440601bc26da16b28c8a2be4478b36091f2615ac94a575581902c",
+    );
+    assert_file_details(
+        staged_obj
+            .state
+            .get(&path("another/nested/dir/3.txt"))
+            .unwrap(),
+        &obj_root,
+        "v1/content/another/nested/dir/3.txt",
+        "79c994f97612eb4ee6a3cb1fbbb45278da184ea73bfb483274bb783f0bce6a7bf8dd8cb0d4\
+                        fc0eb2b065ebd28b2959b59d9a489929edf9ea7db4dcda8a09a76f",
+    );
+
+    assert_obj_count(&repo, 0);
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    assert_staged_obj_count(&repo, 0);
+    assert_obj_count(&repo, 1);
+
+    let obj = repo.get_object(object_id, None)?;
+
+    let obj_root = PathBuf::from(&obj.object_root);
+
+    assert_eq!(5, obj.state.len());
+
+    let details = obj.state.get(&path("test.txt")).unwrap();
+
+    assert!(possible_paths.contains(&details.content_path.as_ref().as_ref().as_str()));
+
+    let dup_path = details.content_path.clone();
+    let missing_path = possible_paths
+        .iter()
+        .filter(|p| &dup_path.as_ref().as_ref() != p)
+        .next()
+        .unwrap();
+    resolve_child(&root, missing_path).assert(predicates::path::missing());
+
+    assert_file_details(
+        obj.state.get(&path("test.txt")).unwrap(),
+        &obj_root,
+        dup_path.as_ref().as_ref(),
+        "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
+                        30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
+    );
+    assert_file_details(
+        obj.state.get(&path("another/test.txt")).unwrap(),
+        &obj_root,
+        dup_path.as_ref().as_ref(),
+        "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
+                        30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
+    );
+    assert_file_details(
+        obj.state.get(&path("another/nested/1.txt")).unwrap(),
+        &obj_root,
+        "v1/content/another/nested/1.txt",
+        "9c614ba0d58c976d0b39f8f5536eb8af89fae745cbe3783ac2ca3e3055bb0b1e3687417a1d\
+                        1104288d2883a4368d3dacb9931460c6e523117ff3eaa28810481a",
+    );
+    assert_file_details(
+        obj.state.get(&path("another/nested/dir/2.txt")).unwrap(),
+        &obj_root,
+        "v1/content/another/nested/dir/2.txt",
+        "70ffe50550ae07cd0fc154cc1cd3a47b71499b5f67921b52219750441791981fb36476cd47\
+                        8440601bc26da16b28c8a2be4478b36091f2615ac94a575581902c",
+    );
+    assert_file_details(
+        obj.state.get(&path("another/nested/dir/3.txt")).unwrap(),
+        &obj_root,
+        "v1/content/another/nested/dir/3.txt",
+        "79c994f97612eb4ee6a3cb1fbbb45278da184ea73bfb483274bb783f0bce6a7bf8dd8cb0d4\
+                        fc0eb2b065ebd28b2959b59d9a489929edf9ea7db4dcda8a09a76f",
+    );
+
+    Ok(())
+}
+
+// TODO fail copying into non-existent object
+// TODO new object with different settings
+// TODO new object of existing
+// TODO new object no storage layout
+
+fn assert_staged_obj_count(repo: &OcflRepo, count: usize) {
+    assert_eq!(count, repo.list_staged_objects(None).unwrap().count());
+}
+
+fn assert_obj_count(repo: &OcflRepo, count: usize) {
+    assert_eq!(count, repo.list_objects(None).unwrap().count());
+}
+
+fn assert_file_details(
+    actual: &FileDetails,
+    object_root: impl AsRef<Path>,
+    content_path: &str,
+    digest: &str,
+) {
+    assert_eq!(path_rc(content_path), actual.content_path);
+    assert_eq!(
+        join(object_root, &content_path.split('/').collect::<Vec<&str>>())
+            .to_string_lossy()
+            .to_string(),
+        actual.storage_path
+    );
+    assert_eq!(Rc::new(digest.into()), actual.digest);
+    assert!(Path::new(&actual.storage_path).is_file());
 }
 
 fn assert_storage_root(root: &TempDir) {
@@ -699,13 +883,41 @@ fn assert_layout_extension(root: &TempDir, layout_name: &str, config: &str) {
         .assert(config);
 }
 
+fn create_dirs(temp: &TempDir, path: &str) -> ChildPath {
+    let child = resolve_child(temp, path);
+    child.create_dir_all().unwrap();
+    child
+}
+
+fn create_file(temp: &TempDir, path: &str, content: &str) -> ChildPath {
+    let child = resolve_child(temp, path);
+    child.write_str(content).unwrap();
+    child
+}
+
+fn resolve_child(temp: &TempDir, path: &str) -> ChildPath {
+    let mut child: Option<ChildPath> = None;
+    for part in path.split('/') {
+        child = match child {
+            Some(child) => Some(child.child(part)),
+            None => Some(temp.child(part)),
+        };
+    }
+    child.unwrap()
+}
+
 fn create_simple_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
     repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
         .unwrap();
 
     temp.child("test.txt").write_str("testing").unwrap();
-    repo.copy_files_external(object_id, &vec![temp.path()], "test.txt", false)
-        .unwrap();
+    repo.copy_files_external(
+        object_id,
+        &vec![temp.child("test.txt").path()],
+        "test.txt",
+        false,
+    )
+    .unwrap();
 
     repo.commit(object_id, None, None, None, None).unwrap();
 }
@@ -755,6 +967,14 @@ fn o2_v3_details() -> VersionDetails {
     }
 }
 
+fn default_repo(root: impl AsRef<Path>) -> OcflRepo {
+    OcflRepo::init_fs_repo(
+        root,
+        StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None).unwrap(),
+    )
+    .unwrap()
+}
+
 fn create_repo_root(name: &str) -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("resources");
@@ -772,6 +992,20 @@ fn sort_diffs(diffs: &mut Vec<Diff>) {
     diffs.sort_unstable_by(|a, b| a.path().cmp(&b.path()))
 }
 
+fn path(path: &str) -> InventoryPath {
+    InventoryPath::try_from(path).unwrap()
+}
+
 fn path_rc(path: &str) -> Rc<InventoryPath> {
     Rc::new(InventoryPath::try_from(path).unwrap())
+}
+
+fn join(base: impl AsRef<Path>, parts: &[impl AsRef<Path>]) -> PathBuf {
+    let mut joined = base.as_ref().to_path_buf();
+
+    for part in parts {
+        joined = joined.join(part.as_ref());
+    }
+
+    joined
 }
