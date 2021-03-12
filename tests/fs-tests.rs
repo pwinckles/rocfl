@@ -1012,6 +1012,38 @@ fn copy_should_reject_conflicting_files() {
 }
 
 #[test]
+#[should_panic(
+    expected = "Conflicting logical path dir: This path is already in use as a directory"
+)]
+fn copy_should_reject_conflicting_dirs() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "conflicting";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
+        .unwrap();
+
+    let test_file = create_file(&temp, "test.txt", "testing");
+    repo.copy_files_external(
+        object_id,
+        &vec![test_file.path()],
+        "dir/sub/test.txt",
+        false,
+    )
+    .unwrap();
+
+    let test_file_2 = create_file(&temp, "dir", "conflict");
+    repo.copy_files_external(object_id, &vec![test_file_2.path()], "/", false)
+        .unwrap();
+}
+
+// TODO copy into dst ending in slash
+// TODO non-existent source
+
+#[test]
 fn copy_into_dir_when_dest_is_existing_dir() -> Result<()> {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();

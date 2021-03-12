@@ -34,10 +34,31 @@ pub enum RocflError {
     General(String),
 
     #[error("{0}")]
+    CopyMoveError(MultiError),
+
+    #[error("{0}")]
     Io(io::Error),
 
     #[error("{0}")]
     Wrapped(Box<dyn error::Error>),
+}
+
+pub struct MultiError(pub Vec<String>);
+
+impl Display for MultiError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let mut iter = self.0.iter().peekable();
+
+        while let Some(next) = iter.next() {
+            write!(f, "{}", next)?;
+
+            if iter.peek().is_some() {
+                writeln!(f)?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Constructs a `RocflError::NotFound` error

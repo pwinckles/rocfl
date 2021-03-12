@@ -6,6 +6,7 @@ use structopt::StructOpt;
 
 use rocfl::cmd;
 use rocfl::cmd::opts::*;
+use rocfl::ocfl::RocflError;
 
 fn main() {
     let args = RocflArgs::from_args();
@@ -25,7 +26,12 @@ fn main() {
         .init();
 
     if let Err(e) = cmd::exec_command(&args) {
-        error!("{:#}", e);
+        match e {
+            RocflError::CopyMoveError(errors) => {
+                errors.0.iter().for_each(|error| error!("{}", error))
+            }
+            _ => error!("{:#}", e),
+        }
         process::exit(1);
     }
 }

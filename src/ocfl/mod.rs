@@ -28,6 +28,7 @@ use walkdir::WalkDir;
 
 use crate::ocfl::consts::*;
 use crate::ocfl::digest::HexDigest;
+use crate::ocfl::error::MultiError;
 pub use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::layout::StorageLayout;
@@ -460,6 +461,8 @@ impl OcflRepo {
         let to_copy =
             self.resolve_internal_moves(&inventory, src_version_num, src, dst, recursive)?;
 
+        // TODO continue on error
+
         for (src_path, dst_path) in to_copy {
             info!(
                 "Copying file {} from {} to {}",
@@ -520,6 +523,8 @@ impl OcflRepo {
         let mut inventory = self.get_or_created_staged_inventory(object_id)?;
 
         let to_copy = self.resolve_internal_moves(&inventory, inventory.head, src, dst, true)?;
+
+        // TODO continue on error
 
         for (src_path, dst_path) in to_copy {
             info!("Moving {} to {}", src_path, dst_path);
@@ -744,56 +749,85 @@ impl OcflRepo {
         let src_is_many = src.len() > 1;
         let dst_has_slash = dst.ends_with('/');
 
+        let mut errors = Vec::new();
+
         for path in src.iter() {
             let path = path.as_ref();
 
             if !path.exists() {
-                error!("{} does not exist", path.to_string_lossy());
+                errors.push(format!(
+                    "Failed to copy/move {}: Does not exist",
+                    path.to_string_lossy()
+                ));
                 continue;
             }
 
-            if path.is_file() {
-                // TODO need to continue on error ?
-                let parent = path.parent().unwrap();
+            let mut attempt = || -> Result<()> {
+                if path.is_file() {
+                    let parent = path.parent().unwrap();
 
-                let logical_path = if dst_dir_exists || src_is_many || dst_has_slash {
-                    logical_path_in_dst_dir(path, parent, dst)?
-                } else {
-                    dst_path.clone()
-                };
+                    let logical_path = if dst_dir_exists || src_is_many || dst_has_slash {
+                        logical_path_in_dst_dir(path, parent, dst)?
+                    } else {
+                        dst_path.clone()
+                    };
 
-                inventory
-                    .head_version()
-                    .validate_non_conflicting(&logical_path)?;
-                operator(path, logical_path, &mut inventory)?;
-            } else if recursive {
-                for file in WalkDir::new(path) {
-                    let file = file?;
-                    if file.file_type().is_file() {
-                        let logical_path = if dst_dir_exists || src_is_many {
-                            let grandparent = path.parent().unwrap_or(path);
-                            logical_path_in_dst_dir(file.path(), grandparent, dst)?
-                        } else {
-                            logical_path_in_dst_dir(file.path(), path, dst)?
-                        };
+                    inventory
+                        .head_version()
+                        .validate_non_conflicting(&logical_path)?;
+                    operator(path, logical_path, &mut inventory)?;
+                } else if recursive {
+                    for file in WalkDir::new(path) {
+                        let file = file?;
+                        if file.file_type().is_file() {
+                            let mut attempt = || -> Result<()> {
+                                let logical_path = if dst_dir_exists || src_is_many {
+                                    let grandparent = path.parent().unwrap_or(path);
+                                    logical_path_in_dst_dir(file.path(), grandparent, dst)?
+                                } else {
+                                    logical_path_in_dst_dir(file.path(), path, dst)?
+                                };
 
-                        // TODO need to continue on error ?
-                        inventory
-                            .head_version()
-                            .validate_non_conflicting(&logical_path)?;
-                        operator(file.path(), logical_path, &mut inventory)?;
+                                inventory
+                                    .head_version()
+                                    .validate_non_conflicting(&logical_path)?;
+                                operator(file.path(), logical_path, &mut inventory)
+                            };
+
+                            if let Err(e) = attempt() {
+                                errors.push(format!(
+                                    "Failed to copy/move {}: {}",
+                                    file.path().to_string_lossy(),
+                                    e
+                                ));
+                            }
+                        }
                     }
+                } else {
+                    error!(
+                        "Skipping directory {} because recursion is not enabled",
+                        path.to_string_lossy()
+                    );
                 }
-            } else {
-                error!(
-                    "Skipping directory {} because recursion is not enabled",
-                    path.to_string_lossy()
-                );
+
+                Ok(())
+            };
+
+            if let Err(e) = attempt() {
+                errors.push(format!(
+                    "Failed to copy/move {}: {}",
+                    path.to_string_lossy(),
+                    e
+                ));
             }
         }
 
         inventory.head_version_mut().created = Local::now();
         self.get_staging()?.stage_inventory(&inventory, false)?;
+
+        if !errors.is_empty() {
+            return Err(RocflError::CopyMoveError(MultiError(errors)));
+        }
 
         Ok(())
     }
