@@ -820,10 +820,395 @@ fn copy_files_into_new_object() -> Result<()> {
     Ok(())
 }
 
-// TODO fail copying into non-existent object
-// TODO new object with different settings
-// TODO new object of existing
-// TODO new object no storage layout
+#[test]
+fn copy_files_into_existing_object() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "existing object";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)?;
+
+    create_file(&temp, "test.txt", "testing");
+    repo.copy_files_external(
+        object_id,
+        &vec![temp.child("test.txt").path()],
+        "test.txt",
+        false,
+    )?;
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    assert_staged_obj_count(&repo, 0);
+    assert_obj_count(&repo, 1);
+
+    create_dirs(&temp, "nested/dir");
+    create_file(&temp, "nested/1.txt", "File 1");
+    create_file(&temp, "nested/dir/2.txt", "File 2");
+    create_file(&temp, "nested/dir/3.txt", "File 3");
+
+    repo.copy_files_external(
+        object_id,
+        &vec![resolve_child(&temp, "nested/dir").path()],
+        "another",
+        true,
+    )?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+    let staged_root = PathBuf::from(&staged_obj.object_root);
+    let object_root = PathBuf::from(&repo.get_object_details(object_id, None)?.object_root);
+
+    assert_eq!(3, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("test.txt")).unwrap(),
+        &object_root,
+        "v1/content/test.txt",
+        "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
+                        30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("another/2.txt")).unwrap(),
+        &staged_root,
+        "v2/content/another/2.txt",
+        "70ffe50550ae07cd0fc154cc1cd3a47b71499b5f67921b52219750441791981fb36476cd47\
+                        8440601bc26da16b28c8a2be4478b36091f2615ac94a575581902c",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("another/3.txt")).unwrap(),
+        &staged_root,
+        "v2/content/another/3.txt",
+        "79c994f97612eb4ee6a3cb1fbbb45278da184ea73bfb483274bb783f0bce6a7bf8dd8cb0d4\
+                        fc0eb2b065ebd28b2959b59d9a489929edf9ea7db4dcda8a09a76f",
+    );
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let obj = repo.get_object(object_id, None)?;
+
+    assert_eq!(3, obj.state.len());
+
+    assert_file_details(
+        obj.state.get(&path("test.txt")).unwrap(),
+        &object_root,
+        "v1/content/test.txt",
+        "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
+                        30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
+    );
+    assert_file_details(
+        obj.state.get(&path("another/2.txt")).unwrap(),
+        &object_root,
+        "v2/content/another/2.txt",
+        "70ffe50550ae07cd0fc154cc1cd3a47b71499b5f67921b52219750441791981fb36476cd47\
+                        8440601bc26da16b28c8a2be4478b36091f2615ac94a575581902c",
+    );
+    assert_file_details(
+        obj.state.get(&path("another/3.txt")).unwrap(),
+        &object_root,
+        "v2/content/another/3.txt",
+        "79c994f97612eb4ee6a3cb1fbbb45278da184ea73bfb483274bb783f0bce6a7bf8dd8cb0d4\
+                        fc0eb2b065ebd28b2959b59d9a489929edf9ea7db4dcda8a09a76f",
+    );
+
+    Ok(())
+}
+
+#[test]
+fn copied_files_should_dedup_on_commit() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "dedup";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)?;
+
+    create_file(&temp, "test.txt", "testing");
+    repo.copy_files_external(
+        object_id,
+        &vec![temp.child("test.txt").path()],
+        "test.txt",
+        false,
+    )?;
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    repo.copy_files_external(
+        object_id,
+        &vec![temp.child("test.txt").path()],
+        "/dir/file.txt",
+        false,
+    )?;
+    repo.copy_files_external(
+        object_id,
+        &vec![temp.child("test.txt").path()],
+        "another/copy/here/surprise.txt",
+        false,
+    )?;
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let obj = repo.get_object(object_id, None)?;
+    let object_root = PathBuf::from(&obj.object_root);
+
+    assert_eq!(3, obj.state.len());
+
+    assert_file_details(
+        obj.state.get(&path("test.txt")).unwrap(),
+        &object_root,
+        "v1/content/test.txt",
+        "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
+                        30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
+    );
+    assert_file_details(
+        obj.state.get(&path("dir/file.txt")).unwrap(),
+        &object_root,
+        "v1/content/test.txt",
+        "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
+                        30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
+    );
+    assert_file_details(
+        obj.state
+            .get(&path("another/copy/here/surprise.txt"))
+            .unwrap(),
+        &object_root,
+        "v1/content/test.txt",
+        "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
+                        30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
+    );
+
+    Ok(())
+}
+
+#[test]
+#[should_panic(
+    expected = "Conflicting logical path test.txt/is/not/a/directory/test.txt: The path part test.txt is an existing logical file"
+)]
+fn copy_should_reject_conflicting_files() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "conflicting";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
+        .unwrap();
+
+    let test_file = create_file(&temp, "test.txt", "testing");
+    repo.copy_files_external(object_id, &vec![test_file.path()], "test.txt", false)
+        .unwrap();
+
+    repo.copy_files_external(
+        object_id,
+        &vec![test_file.path()],
+        "test.txt/is/not/a/directory/test.txt",
+        false,
+    )
+    .unwrap();
+}
+
+#[test]
+fn copy_into_dir_when_dest_is_existing_dir() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "existing dir";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)?;
+
+    let test_file = create_file(&temp, "test.txt", "testing");
+    repo.copy_files_external(
+        object_id,
+        &vec![test_file.path()],
+        "a/dir/here/test.txt",
+        false,
+    )?;
+
+    let test_file_2 = create_file(&temp, "different.txt", "different");
+    repo.copy_files_external(object_id, &vec![test_file_2.path()], "a/dir", false)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+    let staged_root = PathBuf::from(&staged_obj.object_root);
+
+    assert_eq!(2, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("a/dir/here/test.txt")).unwrap(),
+        &staged_root,
+        "v1/content/a/dir/here/test.txt",
+        "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
+                        30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("a/dir/different.txt")).unwrap(),
+        &staged_root,
+        "v1/content/a/dir/different.txt",
+        "49d5b8799558e22d3890d03b56a6c7a46faa1a7d216c2df22507396242ab3540e2317b87088\
+        2b2384d707254333a8439fd3ca191e93293f745786ff78ef069f8",
+    );
+
+    Ok(())
+}
+
+#[test]
+#[should_panic(expected = "Not found: Object does-not-exist")]
+fn fail_copy_when_target_obj_does_not_exist() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    create_file(&temp, "test.txt", "testing");
+
+    repo.copy_files_external(
+        "does-not-exist",
+        &vec![temp.child("test.txt").path()],
+        "test.txt",
+        false,
+    )
+    .unwrap();
+}
+
+#[test]
+fn create_object_with_non_standard_config() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "non-standard";
+
+    assert_staged_obj_count(&repo, 0);
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content-dir", 5)
+        .unwrap();
+    assert_staged_obj_count(&repo, 1);
+
+    create_file(&temp, "test.txt", "testing");
+
+    repo.copy_files_external(
+        object_id,
+        &vec![temp.child("test.txt").path()],
+        "test.txt",
+        false,
+    )
+    .unwrap();
+
+    let object = repo.get_staged_object(object_id).unwrap();
+
+    assert_eq!(DigestAlgorithm::Sha256, object.digest_algorithm);
+    assert_eq!("v00001", object.version_details.version_num.to_string());
+    assert!(object
+        .state
+        .get(&path("test.txt"))
+        .unwrap()
+        .content_path
+        .as_ref()
+        .as_ref()
+        .contains("/content-dir/"));
+}
+
+#[test]
+#[should_panic(expected = "Object IDs may not be blank")]
+fn reject_object_creation_with_empty_id() {
+    let root = TempDir::new().unwrap();
+    let repo = default_repo(root.path());
+    repo.create_object(" ", DigestAlgorithm::Sha512, "content", 0)
+        .unwrap();
+}
+
+#[test]
+#[should_panic(expected = "The inventory digest algorithm must be sha512 or sha256. Found: md5")]
+fn reject_object_creation_with_invalid_algorithm() {
+    let root = TempDir::new().unwrap();
+    let repo = default_repo(root.path());
+    repo.create_object("id", DigestAlgorithm::Md5, "content", 0)
+        .unwrap();
+}
+
+#[test]
+#[should_panic(
+    expected = "The content directory cannot equal '.' or '..' and cannot contain a '/'"
+)]
+fn reject_object_creation_with_invalid_content_dir_slash() {
+    let root = TempDir::new().unwrap();
+    let repo = default_repo(root.path());
+    repo.create_object("id", DigestAlgorithm::Sha256, "content/dir", 0)
+        .unwrap();
+}
+
+#[test]
+#[should_panic(
+    expected = "The content directory cannot equal '.' or '..' and cannot contain a '/'"
+)]
+fn reject_object_creation_with_invalid_content_dir_dot() {
+    let root = TempDir::new().unwrap();
+    let repo = default_repo(root.path());
+    repo.create_object("id", DigestAlgorithm::Sha256, ".", 0)
+        .unwrap();
+}
+
+#[test]
+#[should_panic(
+    expected = "The content directory cannot equal '.' or '..' and cannot contain a '/'"
+)]
+fn reject_object_creation_with_invalid_content_dir_dot_dot() {
+    let root = TempDir::new().unwrap();
+    let repo = default_repo(root.path());
+    repo.create_object("id", DigestAlgorithm::Sha256, "..", 0)
+        .unwrap();
+}
+
+#[test]
+#[should_panic(expected = "Cannot create object id because it already exists")]
+fn reject_object_creation_when_object_already_exists_in_main() {
+    let root = TempDir::new().unwrap();
+    let repo = default_repo(root.path());
+
+    let object_id = "id";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
+        .unwrap();
+    repo.commit(object_id, None, None, None, None).unwrap();
+
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
+        .unwrap();
+}
+
+#[test]
+#[should_panic(expected = "Cannot create object id because it already exists")]
+fn reject_object_creation_when_object_already_exists_in_staging() {
+    let root = TempDir::new().unwrap();
+    let repo = default_repo(root.path());
+
+    let object_id = "id";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
+        .unwrap();
+
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
+        .unwrap();
+}
+
+#[test]
+#[should_panic(
+    expected = "Objects cannot be created in repositories lacking a defined storage layout."
+)]
+fn reject_object_commit_when_no_known_storage_layout() {
+    let root = TempDir::new().unwrap();
+    let repo = OcflRepo::fs_repo(root.path()).unwrap();
+    repo.create_object("id", DigestAlgorithm::Sha512, "content", 0)
+        .unwrap();
+    repo.commit("id", None, None, None, None).unwrap();
+}
+
+// TODO copy list of sources
+// TODO behavior when a cp/mv fails
 
 fn assert_staged_obj_count(repo: &OcflRepo, count: usize) {
     assert_eq!(count, repo.list_staged_objects(None).unwrap().count());
