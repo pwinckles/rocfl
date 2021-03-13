@@ -528,7 +528,6 @@ impl OcflRepo {
 
         for (src_path, dst_path) in to_copy {
             info!("Moving {} to {}", src_path, dst_path);
-
             inventory.move_file_in_head(&src_path, dst_path)?;
         }
 
@@ -804,10 +803,10 @@ impl OcflRepo {
                         }
                     }
                 } else {
-                    error!(
+                    errors.push(format!(
                         "Skipping directory {} because recursion is not enabled",
                         path.to_string_lossy()
-                    );
+                    ));
                 }
 
                 Ok(())

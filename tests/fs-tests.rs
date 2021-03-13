@@ -12,7 +12,7 @@ use maplit::hashmap;
 use rocfl::ocfl::layout::{LayoutExtensionName, StorageLayout};
 use rocfl::ocfl::{
     Diff, DigestAlgorithm, FileDetails, InventoryPath, ObjectVersion, ObjectVersionDetails,
-    OcflRepo, Result, VersionDetails, VersionNum,
+    OcflRepo, Result, RocflError, VersionDetails, VersionNum,
 };
 
 #[test]
@@ -468,7 +468,7 @@ fn diff_same_version_no_diff() -> Result<()> {
     Ok(())
 }
 
-// TODO rename test
+// TODO diff rename test
 
 #[test]
 #[should_panic(expected = "Not found: Object o6")]
@@ -1040,8 +1040,35 @@ fn copy_should_reject_conflicting_dirs() {
         .unwrap();
 }
 
-// TODO copy into dst ending in slash
-// TODO non-existent source
+#[test]
+fn copy_to_dir_when_dst_ends_in_slash() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "conflicting";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)?;
+
+    let test_file = create_file(&temp, "test.txt", "testing");
+    repo.copy_files_external(object_id, &vec![test_file.path()], "dir/", false)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+    let staged_root = PathBuf::from(&staged_obj.object_root);
+
+    assert_eq!(1, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("dir/test.txt")).unwrap(),
+        &staged_root,
+        "v1/content/dir/test.txt",
+        "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
+                        30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
+    );
+
+    Ok(())
+}
 
 #[test]
 fn copy_into_dir_when_dest_is_existing_dir() -> Result<()> {
@@ -1105,6 +1132,165 @@ fn fail_copy_when_target_obj_does_not_exist() {
         false,
     )
     .unwrap();
+}
+
+#[test]
+#[should_panic(expected = "test.txt: Does not exist")]
+fn fail_copy_when_src_does_not_exist() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let object_id = "partial success";
+
+    let repo = default_repo(root.path());
+
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
+        .unwrap();
+
+    repo.copy_files_external(
+        object_id,
+        &vec![temp.child("test.txt").path()],
+        "test.txt",
+        false,
+    )
+    .unwrap();
+}
+
+#[test]
+#[should_panic(expected = "recursion is not enabled")]
+fn fail_copy_when_src_dir_and_recursion_not_enabled() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let object_id = "missing";
+
+    let repo = default_repo(root.path());
+
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
+        .unwrap();
+
+    create_dirs(&temp, "sub");
+    create_file(&temp, "sub/test.txt", "testing");
+
+    repo.copy_files_external(object_id, &vec![temp.child("sub").path()], "dst", false)
+        .unwrap();
+
+    let staged_obj = repo.get_staged_object(object_id).unwrap();
+    assert_eq!(0, staged_obj.state.len());
+}
+
+#[test]
+fn copy_should_partially_succeed_when_multiple_src_and_some_fail() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let object_id = "missing";
+
+    let repo = default_repo(root.path());
+
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
+        .unwrap();
+
+    create_file(&temp, "test.txt", "testing");
+
+    let result = repo.copy_files_external(
+        object_id,
+        &vec![temp.child("bogus").path(), temp.child("test.txt").path()],
+        "dst",
+        false,
+    );
+
+    match result {
+        Err(RocflError::CopyMoveError(e)) => {
+            assert_eq!(1, e.0.len());
+            assert!(e.0.get(0).unwrap().contains("bogus: Does not exist"));
+        }
+        _ => panic!("Expected copy to return an error"),
+    }
+
+    let staged_obj = repo.get_staged_object(object_id).unwrap();
+    let staged_root = PathBuf::from(&staged_obj.object_root);
+
+    assert_eq!(1, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("dst/test.txt")).unwrap(),
+        &staged_root,
+        "v1/content/dst/test.txt",
+        "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
+                        30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
+    );
+}
+
+#[test]
+fn copy_multiple_sources() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let object_id = "missing";
+
+    let repo = default_repo(root.path());
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+
+    create_dirs(&temp, "a/b/c");
+    create_dirs(&temp, "a/d/e");
+    create_dirs(&temp, "a/f");
+    create_file(&temp, "a/file1.txt", "File One");
+    create_file(&temp, "a/b/file2.txt", "File Two");
+    create_file(&temp, "a/b/file3.txt", "File Three");
+    create_file(&temp, "a/b/c/file4.txt", "File Four");
+    create_file(&temp, "a/d/e/file5.txt", "File Five");
+    create_file(&temp, "a/f/file6.txt", "File Six");
+
+    repo.copy_files_external(
+        object_id,
+        &vec![
+            resolve_child(&temp, "a/b").path(),
+            resolve_child(&temp, "a/d").path(),
+            resolve_child(&temp, "a/file1.txt").path(),
+        ],
+        "dst",
+        true,
+    )?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+    let staged_root = PathBuf::from(&staged_obj.object_root);
+
+    assert_eq!(5, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("dst/file1.txt")).unwrap(),
+        &staged_root,
+        "v1/content/dst/file1.txt",
+        "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("dst/b/file2.txt")).unwrap(),
+        &staged_root,
+        "v1/content/dst/b/file2.txt",
+        "b47592b10bc3e5c8ca8703d0862df10a6e409f43478804f93a08dd1844ae81b6",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("dst/b/file3.txt")).unwrap(),
+        &staged_root,
+        "v1/content/dst/b/file3.txt",
+        "e18fad97c1b6512b1588a1fa2b7f9a0e549df9cfc538ce6943b4f0f4ae78322c",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("dst/b/c/file4.txt")).unwrap(),
+        &staged_root,
+        "v1/content/dst/b/c/file4.txt",
+        "1971cbe108f98338aab3960c4537cc0c820dbc244d0ff4b99e32909a49b35267",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("dst/d/e/file5.txt")).unwrap(),
+        &staged_root,
+        "v1/content/dst/d/e/file5.txt",
+        "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
+    );
+
+    Ok(())
 }
 
 #[test]
@@ -1239,8 +1425,7 @@ fn reject_object_commit_when_no_known_storage_layout() {
     repo.commit("id", None, None, None, None).unwrap();
 }
 
-// TODO copy list of sources
-// TODO behavior when a cp/mv fails
+// TODO commit to a changed resource
 
 fn assert_staged_obj_count(repo: &OcflRepo, count: usize) {
     assert_eq!(count, repo.list_staged_objects(None).unwrap().count());
