@@ -1425,7 +1425,37 @@ fn reject_object_commit_when_no_known_storage_layout() {
     repo.commit("id", None, None, None, None).unwrap();
 }
 
+#[test]
+fn internal_copy_single_existing_file() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let object_id = "InternalCopy";
+
+    let repo = default_repo(root.path());
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.copy_files_internal(object_id, None, &vec!["a/file1.txt"], "new/blah.txt", false)?;
+
+    let committed_obj = repo.get_object(object_id, None)?;
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(8, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("new/blah.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/file1.txt",
+        "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
+    );
+
+    Ok(())
+}
+
 // TODO commit to a changed resource
+// TODO object in root has wrong id
+// TODO copy file into object, then make an internal copy, and then overwrite the original
 
 fn assert_staged_obj_count(repo: &OcflRepo, count: usize) {
     assert_eq!(count, repo.list_staged_objects(None).unwrap().count());
@@ -1520,6 +1550,74 @@ fn create_simple_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
         false,
     )
     .unwrap();
+
+    repo.commit(object_id, None, None, None, None).unwrap();
+}
+
+fn create_example_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+        .unwrap();
+
+    create_dirs(temp, "a/b/c");
+    create_dirs(temp, "a/d/e");
+    create_dirs(temp, "a/f");
+
+    create_file(temp, "a/file1.txt", "File One");
+    create_file(temp, "a/b/file2.txt", "File Two");
+    create_file(temp, "a/b/file3.txt", "File Three");
+    create_file(temp, "a/b/c/file4.txt", "File Four");
+    create_file(temp, "a/d/e/file5.txt", "File Five");
+    create_file(temp, "a/f/file6.txt", "File Six");
+
+    repo.move_files_external(object_id, &vec![temp.child("a").path()], "/")
+        .unwrap();
+
+    repo.commit(object_id, None, None, None, None).unwrap();
+
+    repo.remove_files(object_id, &vec!["a/b/file3.txt", "a/b/c/file4.txt"], false)
+        .unwrap();
+
+    repo.commit(object_id, None, None, None, None).unwrap();
+
+    repo.copy_files_internal(
+        object_id,
+        Some(VersionNum::new(1)),
+        &vec!["a/b/file3.txt"],
+        "/",
+        false,
+    )
+    .unwrap();
+    repo.copy_files_internal(
+        object_id,
+        Some(VersionNum::new(1)),
+        &vec!["a/file1.txt"],
+        "something/file1.txt",
+        false,
+    )
+    .unwrap();
+
+    create_dirs(temp, "something");
+
+    repo.copy_files_external(
+        object_id,
+        &vec![create_file(temp, "something/new.txt", "NEW").path()],
+        "something/new.txt",
+        true,
+    )
+    .unwrap();
+
+    repo.commit(object_id, None, None, None, None).unwrap();
+
+    repo.copy_files_external(
+        object_id,
+        &vec![create_file(temp, "file6.txt", "UPDATED!").path()],
+        "a/f/file6.txt",
+        true,
+    )
+    .unwrap();
+
+    repo.move_files_internal(object_id, &vec!["a/file5.txt"], "a/d/e/file5.txt")
+        .unwrap();
 
     repo.commit(object_id, None, None, None, None).unwrap();
 }

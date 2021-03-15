@@ -107,8 +107,13 @@ pub enum Diff {
 }
 
 impl VersionNum {
+    /// Creates a new VersionNum with width 0
+    pub fn new(number: u32) -> Self {
+        Self { number, width: 0 }
+    }
+
     /// Creates a new VersionNum
-    pub fn new(number: u32, width: u32) -> Self {
+    pub fn with_width(number: u32, width: u32) -> Self {
         Self { number, width }
     }
 
@@ -413,8 +418,11 @@ impl ObjectVersion {
         let mut target_path_map = current_version.remove_state();
 
         // This nonsense is needed to differentiate the storage paths for staged files
-        let mut backslashes = object_staging_path.is_some() && util::BACKSLASH_SEPARATOR;
-        let mut object_root = object_staging_path.unwrap_or(object_storage_path);
+        let staging_version_prefix = if object_staging_path.is_some() {
+            Some(format!("{}/", target))
+        } else {
+            None
+        };
 
         while !target_path_map.is_empty() {
             let mut not_found = PathBiMap::new();
@@ -428,10 +436,30 @@ impl ObjectVersion {
                 for (target_path, target_digest) in target_path_map {
                     let content_path = inventory
                         .content_path_for_digest(&target_digest, Some(current_version_num))?;
-                    let storage_path = convert_path_separator(
-                        backslashes,
-                        join(object_root.as_ref(), content_path.as_ref().as_ref()),
-                    );
+
+                    // TODO can this be extracted?
+                    let storage_path = if staging_version_prefix.is_some()
+                        && content_path
+                            .as_ref()
+                            .as_ref()
+                            .starts_with(staging_version_prefix.as_ref().unwrap())
+                    {
+                        // The content path resides in staging
+                        convert_path_separator(
+                            util::BACKSLASH_SEPARATOR,
+                            join(
+                                object_staging_path.unwrap().as_ref(),
+                                content_path.as_ref().as_ref(),
+                            ),
+                        )
+                    } else {
+                        // The content path resides in the main repo
+                        convert_path_separator(
+                            use_backslashes,
+                            join(object_storage_path.as_ref(), content_path.as_ref().as_ref()),
+                        )
+                    };
+
                     state.insert(
                         target_path,
                         FileDetails::new(
@@ -457,10 +485,30 @@ impl ObjectVersion {
                 if entry.is_none() || entry.unwrap().1 != target_digest {
                     let content_path = inventory
                         .content_path_for_digest(&target_digest, Some(current_version_num))?;
-                    let storage_path = convert_path_separator(
-                        backslashes,
-                        join(object_root.as_ref(), content_path.as_ref().as_ref()),
-                    );
+
+                    // TODO can this be extracted?
+                    let storage_path = if staging_version_prefix.is_some()
+                        && content_path
+                            .as_ref()
+                            .as_ref()
+                            .starts_with(staging_version_prefix.as_ref().unwrap())
+                    {
+                        // The content path resides in staging
+                        convert_path_separator(
+                            util::BACKSLASH_SEPARATOR,
+                            join(
+                                object_staging_path.unwrap().as_ref(),
+                                content_path.as_ref().as_ref(),
+                            ),
+                        )
+                    } else {
+                        // The content path resides in the main repo
+                        convert_path_separator(
+                            use_backslashes,
+                            join(object_storage_path.as_ref(), content_path.as_ref().as_ref()),
+                        )
+                    };
+
                     state.insert(
                         target_path,
                         FileDetails::new(
@@ -480,9 +528,6 @@ impl ObjectVersion {
             current_version = previous_version;
 
             target_path_map = not_found;
-
-            object_root = object_storage_path;
-            backslashes = use_backslashes;
         }
 
         Ok(state)
