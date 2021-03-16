@@ -437,28 +437,13 @@ impl ObjectVersion {
                     let content_path = inventory
                         .content_path_for_digest(&target_digest, Some(current_version_num))?;
 
-                    // TODO can this be extracted?
-                    let storage_path = if staging_version_prefix.is_some()
-                        && content_path
-                            .as_ref()
-                            .as_ref()
-                            .starts_with(staging_version_prefix.as_ref().unwrap())
-                    {
-                        // The content path resides in staging
-                        convert_path_separator(
-                            util::BACKSLASH_SEPARATOR,
-                            join(
-                                object_staging_path.unwrap().as_ref(),
-                                content_path.as_ref().as_ref(),
-                            ),
-                        )
-                    } else {
-                        // The content path resides in the main repo
-                        convert_path_separator(
-                            use_backslashes,
-                            join(object_storage_path.as_ref(), content_path.as_ref().as_ref()),
-                        )
-                    };
+                    let storage_path = ObjectVersion::storage_path(
+                        content_path.as_ref().as_ref(),
+                        object_storage_path,
+                        use_backslashes,
+                        &staging_version_prefix,
+                        &object_staging_path,
+                    );
 
                     state.insert(
                         target_path,
@@ -486,28 +471,13 @@ impl ObjectVersion {
                     let content_path = inventory
                         .content_path_for_digest(&target_digest, Some(current_version_num))?;
 
-                    // TODO can this be extracted?
-                    let storage_path = if staging_version_prefix.is_some()
-                        && content_path
-                            .as_ref()
-                            .as_ref()
-                            .starts_with(staging_version_prefix.as_ref().unwrap())
-                    {
-                        // The content path resides in staging
-                        convert_path_separator(
-                            util::BACKSLASH_SEPARATOR,
-                            join(
-                                object_staging_path.unwrap().as_ref(),
-                                content_path.as_ref().as_ref(),
-                            ),
-                        )
-                    } else {
-                        // The content path resides in the main repo
-                        convert_path_separator(
-                            use_backslashes,
-                            join(object_storage_path.as_ref(), content_path.as_ref().as_ref()),
-                        )
-                    };
+                    let storage_path = ObjectVersion::storage_path(
+                        content_path.as_ref().as_ref(),
+                        object_storage_path,
+                        use_backslashes,
+                        &staging_version_prefix,
+                        &object_staging_path,
+                    );
 
                     state.insert(
                         target_path,
@@ -531,6 +501,27 @@ impl ObjectVersion {
         }
 
         Ok(state)
+    }
+
+    fn storage_path<S: AsRef<str> + Copy>(
+        content_path: &str,
+        storage_path: S,
+        use_backslashes: bool,
+        staging_version_prefix: &Option<String>,
+        staging_path: &Option<S>,
+    ) -> String {
+        if staging_version_prefix.is_some()
+            && content_path.starts_with(staging_version_prefix.as_ref().unwrap())
+        {
+            // The content path resides in staging
+            convert_path_separator(
+                util::BACKSLASH_SEPARATOR,
+                join(staging_path.unwrap().as_ref(), content_path),
+            )
+        } else {
+            // The content path resides in the main repo
+            convert_path_separator(use_backslashes, join(storage_path.as_ref(), content_path))
+        }
     }
 }
 
