@@ -1449,8 +1449,298 @@ fn internal_copy_single_existing_file() -> Result<()> {
         "v1/content/a/file1.txt",
         "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
     );
+    assert_file_details(
+        staged_obj.state.get(&path("a/file1.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/file1.txt",
+        "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
+    );
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let committed_obj = repo.get_object(object_id, None)?;
+
+    assert_eq!(8, committed_obj.state.len());
+
+    assert_file_details(
+        committed_obj.state.get(&path("new/blah.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/file1.txt",
+        "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
+    );
 
     Ok(())
+}
+
+#[test]
+fn internal_copy_multiple_existing_file() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let object_id = "InternalCopy";
+
+    let repo = default_repo(root.path());
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.copy_files_internal(
+        object_id,
+        Some(VersionNum::new(1)),
+        &vec!["a/b/*", "a/d/e/file5.txt"],
+        "new-dir",
+        false,
+    )?;
+
+    let committed_obj = repo.get_object(object_id, None)?;
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(10, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("new-dir/file2.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/b/file2.txt",
+        "b47592b10bc3e5c8ca8703d0862df10a6e409f43478804f93a08dd1844ae81b6",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("new-dir/file3.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/b/file3.txt",
+        "e18fad97c1b6512b1588a1fa2b7f9a0e549df9cfc538ce6943b4f0f4ae78322c",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("new-dir/file5.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/d/e/file5.txt",
+        "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
+    );
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let committed_obj = repo.get_object(object_id, None)?;
+
+    assert_eq!(10, committed_obj.state.len());
+
+    assert_file_details(
+        committed_obj.state.get(&path("new-dir/file2.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/b/file2.txt",
+        "b47592b10bc3e5c8ca8703d0862df10a6e409f43478804f93a08dd1844ae81b6",
+    );
+    assert_file_details(
+        committed_obj.state.get(&path("new-dir/file3.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/b/file3.txt",
+        "e18fad97c1b6512b1588a1fa2b7f9a0e549df9cfc538ce6943b4f0f4ae78322c",
+    );
+    assert_file_details(
+        committed_obj.state.get(&path("new-dir/file5.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/d/e/file5.txt",
+        "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
+    );
+
+    Ok(())
+}
+
+#[test]
+fn internal_copy_files_added_in_staged_version() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let object_id = "InternalCopy staged version";
+
+    let repo = default_repo(root.path());
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.copy_files_external(
+        object_id,
+        &vec![create_file(&temp, "just in.txt", "new file").path()],
+        "just in.txt",
+        true,
+    )?;
+
+    repo.copy_files_internal(object_id, None, &vec!["just in.txt"], "just-in.txt", false)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(9, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("just in.txt")).unwrap(),
+        &Path::new(&staged_obj.object_root),
+        "v5/content/just in.txt",
+        "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("just-in.txt")).unwrap(),
+        &Path::new(&staged_obj.object_root),
+        "v5/content/just in.txt",
+        "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
+    );
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let committed_obj = repo.get_object(object_id, None)?;
+
+    assert_eq!(9, committed_obj.state.len());
+
+    assert_file_details(
+        committed_obj.state.get(&path("just in.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v5/content/just in.txt",
+        "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
+    );
+    assert_file_details(
+        committed_obj.state.get(&path("just-in.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v5/content/just in.txt",
+        "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
+    );
+
+    Ok(())
+}
+#[test]
+fn internal_copy_files_with_recursive_glob() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let object_id = "InternalCopy globs!";
+
+    let repo = default_repo(root.path());
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.copy_files_internal(
+        object_id,
+        Some(VersionNum::new(3)),
+        &vec!["a/*"],
+        "copied",
+        true,
+    )?;
+
+    let committed_obj = repo.get_object(object_id, None)?;
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(11, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("copied/file1.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/file1.txt",
+        "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("copied/b/file2.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/b/file2.txt",
+        "b47592b10bc3e5c8ca8703d0862df10a6e409f43478804f93a08dd1844ae81b6",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("copied/d/e/file5.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/d/e/file5.txt",
+        "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("copied/f/file6.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/f/file6.txt",
+        "ac055b59cef48e2c34706677198cd8445ad692689be5169f33f1d93f957581e0",
+    );
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let committed_obj = repo.get_object(object_id, None)?;
+
+    assert_eq!(11, committed_obj.state.len());
+
+    assert_file_details(
+        committed_obj.state.get(&path("copied/file1.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/file1.txt",
+        "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
+    );
+    assert_file_details(
+        committed_obj
+            .state
+            .get(&path("copied/b/file2.txt"))
+            .unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/b/file2.txt",
+        "b47592b10bc3e5c8ca8703d0862df10a6e409f43478804f93a08dd1844ae81b6",
+    );
+    assert_file_details(
+        committed_obj
+            .state
+            .get(&path("copied/d/e/file5.txt"))
+            .unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/d/e/file5.txt",
+        "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
+    );
+    assert_file_details(
+        committed_obj
+            .state
+            .get(&path("copied/f/file6.txt"))
+            .unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/f/file6.txt",
+        "ac055b59cef48e2c34706677198cd8445ad692689be5169f33f1d93f957581e0",
+    );
+
+    Ok(())
+}
+
+#[test]
+#[should_panic(
+    expected = "Conflicting logical path file3.txt/file1.txt: The path part file3.txt is an existing logical file"
+)]
+fn internal_copy_should_reject_conflicting_files() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "internal conflicting";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.copy_files_internal(
+        object_id,
+        None,
+        &vec!["a/file1.txt"],
+        "file3.txt/file1.txt",
+        false,
+    )
+    .unwrap();
+}
+
+#[test]
+#[should_panic(
+    expected = "Conflicting logical path a/b: This path is already in use as a directory"
+)]
+fn internal_copy_should_reject_conflicting_dirs() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "internal conflicting";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.copy_files_external(
+        object_id,
+        &vec![create_file(&temp, "b", "b").path()],
+        "b",
+        true,
+    )
+    .unwrap();
+
+    repo.copy_files_internal(object_id, None, &vec!["b"], "a", false)
+        .unwrap();
 }
 
 // TODO commit to a changed resource
@@ -1554,6 +1844,41 @@ fn create_simple_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
     repo.commit(object_id, None, None, None, None).unwrap();
 }
 
+/// # v1
+///
+/// - a/file1.txt
+/// - a/b/file2.txt
+/// - a/b/file3.txt
+/// - a/b/c/file4.txt
+/// - a/d/e/file5.txt
+/// - a/f/file6.txt
+///
+/// # v2
+///
+/// - a/file1.txt
+/// - a/b/file2.txt
+/// - a/d/e/file5.txt
+/// - a/f/file6.txt
+///
+///# v3
+///
+/// - file3.txt
+/// - a/file1.txt
+/// - a/b/file2.txt
+/// - a/d/e/file5.txt
+/// - a/f/file6.txt
+/// - something/file1.txt
+/// - something/new.txt
+///
+/// # v4
+///
+/// - file3.txt
+/// - a/file1.txt
+/// - a/file5.txt
+/// - a/b/file2.txt
+/// - a/f/file6.txt (updated)
+/// - something/file1.txt
+/// - something/new.txt
 fn create_example_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
     repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
         .unwrap();
@@ -1616,7 +1941,7 @@ fn create_example_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
     )
     .unwrap();
 
-    repo.move_files_internal(object_id, &vec!["a/file5.txt"], "a/d/e/file5.txt")
+    repo.move_files_internal(object_id, &vec!["a/d/e/file5.txt"], "a/file5.txt")
         .unwrap();
 
     repo.commit(object_id, None, None, None, None).unwrap();

@@ -87,6 +87,7 @@ pub enum Command {
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct ListCmd {
+    // TODO change this to be the default behavior
     /// Disables the interpretation of logical path segments as hierarchical virtual directories.
     /// With this flag set, all logical paths in an object are returned
     #[structopt(short, long)]
