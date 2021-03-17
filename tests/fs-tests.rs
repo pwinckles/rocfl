@@ -1743,6 +1743,458 @@ fn internal_copy_should_reject_conflicting_dirs() {
         .unwrap();
 }
 
+#[test]
+fn move_files_into_new_object() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "move files";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)?;
+
+    create_file(&temp, "test.txt", "testing");
+    create_dirs(&temp, "nested/dir");
+    create_file(&temp, "nested/1.txt", "File 1");
+    create_file(&temp, "nested/dir/2.txt", "File 2");
+    create_file(&temp, "nested/dir/3.txt", "File 3");
+
+    repo.move_files_external(
+        object_id,
+        &vec![
+            temp.child("test.txt").path(),
+            resolve_child(&temp, "nested").path(),
+        ],
+        "/",
+    )?;
+
+    temp.child("test.txt").assert(predicates::path::missing());
+    temp.child("nested").assert(predicates::path::missing());
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+    let obj_root = PathBuf::from(&staged_obj.object_root);
+
+    assert_eq!(4, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("test.txt")).unwrap(),
+        &obj_root,
+        "v1/content/test.txt",
+        "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
+                        30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("nested/1.txt")).unwrap(),
+        &obj_root,
+        "v1/content/nested/1.txt",
+        "9c614ba0d58c976d0b39f8f5536eb8af89fae745cbe3783ac2ca3e3055bb0b1e3687417a1d\
+                        1104288d2883a4368d3dacb9931460c6e523117ff3eaa28810481a",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("nested/dir/2.txt")).unwrap(),
+        &obj_root,
+        "v1/content/nested/dir/2.txt",
+        "70ffe50550ae07cd0fc154cc1cd3a47b71499b5f67921b52219750441791981fb36476cd47\
+                        8440601bc26da16b28c8a2be4478b36091f2615ac94a575581902c",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("nested/dir/3.txt")).unwrap(),
+        &obj_root,
+        "v1/content/nested/dir/3.txt",
+        "79c994f97612eb4ee6a3cb1fbbb45278da184ea73bfb483274bb783f0bce6a7bf8dd8cb0d4\
+                        fc0eb2b065ebd28b2959b59d9a489929edf9ea7db4dcda8a09a76f",
+    );
+
+    assert_obj_count(&repo, 0);
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    assert_staged_obj_count(&repo, 0);
+    assert_obj_count(&repo, 1);
+
+    let obj = repo.get_object(object_id, None)?;
+    let obj_root = PathBuf::from(&obj.object_root);
+
+    assert_eq!(4, obj.state.len());
+
+    assert_file_details(
+        obj.state.get(&path("test.txt")).unwrap(),
+        &obj_root,
+        "v1/content/test.txt",
+        "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
+                        30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
+    );
+    assert_file_details(
+        obj.state.get(&path("nested/1.txt")).unwrap(),
+        &obj_root,
+        "v1/content/nested/1.txt",
+        "9c614ba0d58c976d0b39f8f5536eb8af89fae745cbe3783ac2ca3e3055bb0b1e3687417a1d\
+                        1104288d2883a4368d3dacb9931460c6e523117ff3eaa28810481a",
+    );
+    assert_file_details(
+        obj.state.get(&path("nested/dir/2.txt")).unwrap(),
+        &obj_root,
+        "v1/content/nested/dir/2.txt",
+        "70ffe50550ae07cd0fc154cc1cd3a47b71499b5f67921b52219750441791981fb36476cd47\
+                        8440601bc26da16b28c8a2be4478b36091f2615ac94a575581902c",
+    );
+    assert_file_details(
+        obj.state.get(&path("nested/dir/3.txt")).unwrap(),
+        &obj_root,
+        "v1/content/nested/dir/3.txt",
+        "79c994f97612eb4ee6a3cb1fbbb45278da184ea73bfb483274bb783f0bce6a7bf8dd8cb0d4\
+                        fc0eb2b065ebd28b2959b59d9a489929edf9ea7db4dcda8a09a76f",
+    );
+
+    Ok(())
+}
+
+#[test]
+fn move_files_into_existing_object() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "move existing object";
+
+    create_example_object(object_id, &repo, &temp);
+
+    create_dirs(&temp, "nested/dir");
+    create_file(&temp, "nested/1.txt", "File 1");
+    create_file(&temp, "nested/dir/2.txt", "File 2");
+    create_file(&temp, "nested/dir/3.txt", "File 3");
+
+    repo.move_files_external(
+        object_id,
+        &vec![resolve_child(&temp, "nested/dir").path()],
+        "another",
+    )?;
+
+    resolve_child(&temp, "nested/1.txt").assert(predicates::path::exists());
+    resolve_child(&temp, "nested/dir").assert(predicates::path::missing());
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+    let staged_root = PathBuf::from(&staged_obj.object_root);
+
+    assert_eq!(9, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("another/2.txt")).unwrap(),
+        &staged_root,
+        "v5/content/another/2.txt",
+        "a87974a0f8d71939d4ef8db398cf8487a0cf5aef5842cf3dad733d07db9044d8",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("another/3.txt")).unwrap(),
+        &staged_root,
+        "v5/content/another/3.txt",
+        "d9c924093b541d5f76801cd8d7d0c74799fd52c221f51816b801ebb3385b0329",
+    );
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let obj = repo.get_object(object_id, None)?;
+    let object_root = PathBuf::from(&obj.object_root);
+
+    assert_eq!(9, obj.state.len());
+
+    assert_file_details(
+        obj.state.get(&path("another/2.txt")).unwrap(),
+        &object_root,
+        "v5/content/another/2.txt",
+        "a87974a0f8d71939d4ef8db398cf8487a0cf5aef5842cf3dad733d07db9044d8",
+    );
+    assert_file_details(
+        obj.state.get(&path("another/3.txt")).unwrap(),
+        &object_root,
+        "v5/content/another/3.txt",
+        "d9c924093b541d5f76801cd8d7d0c74799fd52c221f51816b801ebb3385b0329",
+    );
+
+    Ok(())
+}
+
+#[test]
+fn move_files_should_dedup_on_commit() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "move dedup";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "test.txt", "testing").path()],
+        "test.txt",
+    )?;
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "test.txt", "testing").path()],
+        "/dir/file.txt",
+    )?;
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "test.txt", "testing").path()],
+        "another/copy/here/surprise.txt",
+    )?;
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let obj = repo.get_object(object_id, None)?;
+    let object_root = PathBuf::from(&obj.object_root);
+
+    assert_eq!(3, obj.state.len());
+
+    assert_file_details(
+        obj.state.get(&path("test.txt")).unwrap(),
+        &object_root,
+        "v1/content/test.txt",
+        "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
+    );
+    assert_file_details(
+        obj.state.get(&path("dir/file.txt")).unwrap(),
+        &object_root,
+        "v1/content/test.txt",
+        "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
+    );
+    assert_file_details(
+        obj.state
+            .get(&path("another/copy/here/surprise.txt"))
+            .unwrap(),
+        &object_root,
+        "v1/content/test.txt",
+        "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
+    );
+
+    Ok(())
+}
+
+#[test]
+#[should_panic(
+    expected = "Conflicting logical path test.txt/is/not/a/directory/test.txt: The path part test.txt is an existing logical file"
+)]
+fn move_should_reject_conflicting_files() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "conflicting-move";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+        .unwrap();
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "test.txt", "testing").path()],
+        "test.txt",
+    )
+    .unwrap();
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "test.txt", "testing").path()],
+        "test.txt/is/not/a/directory/test.txt",
+    )
+    .unwrap();
+}
+
+#[test]
+#[should_panic(
+    expected = "Conflicting logical path dir: This path is already in use as a directory"
+)]
+fn move_should_reject_conflicting_dirs() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "conflicting-move-dirs";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+        .unwrap();
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "test.txt", "testing").path()],
+        "dir/sub/test.txt",
+    )
+    .unwrap();
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "dir", "conflict").path()],
+        "/",
+    )
+    .unwrap();
+}
+
+#[test]
+fn move_into_dir_when_dst_ends_with_slash() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "move inside";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "test.txt", "testing").path()],
+        "dir/",
+    )?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+    let staged_root = PathBuf::from(&staged_obj.object_root);
+
+    assert_eq!(1, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("dir/test.txt")).unwrap(),
+        &staged_root,
+        "v1/content/dir/test.txt",
+        "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
+    );
+
+    Ok(())
+}
+
+#[test]
+fn move_into_dir_when_dest_is_existing_dir() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "existing dir";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "test.txt", "testing").path()],
+        "a/dir/here/test.txt",
+    )?;
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "different.txt", "different").path()],
+        "a/dir",
+    )?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+    let staged_root = PathBuf::from(&staged_obj.object_root);
+
+    assert_eq!(2, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("a/dir/here/test.txt")).unwrap(),
+        &staged_root,
+        "v1/content/a/dir/here/test.txt",
+        "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("a/dir/different.txt")).unwrap(),
+        &staged_root,
+        "v1/content/a/dir/different.txt",
+        "9d6f965ac832e40a5df6c06afe983e3b449c07b843ff51ce76204de05c690d11",
+    );
+
+    Ok(())
+}
+
+#[test]
+#[should_panic(expected = "Not found: Object does-not-exist")]
+fn fail_move_when_target_obj_does_not_exist() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    repo.move_files_external(
+        "does-not-exist",
+        &vec![create_file(&temp, "test.txt", "testing").path()],
+        "test.txt",
+    )
+    .unwrap();
+}
+
+#[test]
+#[should_panic(expected = "test.txt: Does not exist")]
+fn fail_move_when_src_does_not_exist() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let object_id = "partial success";
+
+    let repo = default_repo(root.path());
+
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
+        .unwrap();
+
+    repo.move_files_external(object_id, &vec![temp.child("test.txt").path()], "test.txt")
+        .unwrap();
+}
+
+#[test]
+fn move_should_partially_succeed_when_multiple_src_and_some_fail() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let object_id = "missing";
+
+    let repo = default_repo(root.path());
+
+    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
+        .unwrap();
+
+    create_file(&temp, "test.txt", "testing");
+
+    let result = repo.move_files_external(
+        object_id,
+        &vec![temp.child("bogus").path(), temp.child("test.txt").path()],
+        "dst",
+    );
+
+    match result {
+        Err(RocflError::CopyMoveError(e)) => {
+            assert_eq!(1, e.0.len());
+            assert!(e.0.get(0).unwrap().contains("bogus: Does not exist"));
+        }
+        _ => panic!("Expected copy to return an error"),
+    }
+
+    let staged_obj = repo.get_staged_object(object_id).unwrap();
+    let staged_root = PathBuf::from(&staged_obj.object_root);
+
+    assert_eq!(1, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("dst/test.txt")).unwrap(),
+        &staged_root,
+        "v1/content/dst/test.txt",
+        "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
+                        30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
+    );
+}
+
+// TODO move internal
+// TODO remove
+// TODO revert
+// TODO cat staged
+// TODO purge object
+// TODO diff staged
+
 // TODO commit to a changed resource
 // TODO object in root has wrong id
 // TODO copy file into object, then make an internal copy, and then overwrite the original
