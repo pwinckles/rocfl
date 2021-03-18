@@ -2398,12 +2398,172 @@ fn internal_move_should_reject_conflicting_dirs() {
         .unwrap();
 }
 
-// TODO remove
+#[test]
+fn remove_existing_file() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "remove file";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.remove_files(object_id, &vec!["a/file5.txt"], false)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(6, staged_obj.state.len());
+    assert!(staged_obj.state.get(&path("a/file5.txt")).is_none());
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let committed_obj = repo.get_object(object_id, None)?;
+
+    assert_eq!(6, committed_obj.state.len());
+    assert!(committed_obj.state.get(&path("a/file5.txt")).is_none());
+
+    let previous_version = repo.get_object(object_id, Some(VersionNum::new(4)))?;
+
+    assert!(previous_version.state.get(&path("a/file5.txt")).is_some());
+
+    Ok(())
+}
+
+#[test]
+fn remove_multiple_existing_files() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "remove files";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.remove_files(object_id, &vec!["a/file5.txt", "something/new.txt"], false)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(5, staged_obj.state.len());
+    assert!(staged_obj.state.get(&path("a/file5.txt")).is_none());
+    assert!(staged_obj.state.get(&path("something/new.txt")).is_none());
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let committed_obj = repo.get_object(object_id, None)?;
+
+    assert_eq!(5, committed_obj.state.len());
+    assert!(committed_obj.state.get(&path("a/file5.txt")).is_none());
+    assert!(committed_obj
+        .state
+        .get(&path("something/new.txt"))
+        .is_none());
+
+    let previous_version = repo.get_object(object_id, Some(VersionNum::new(4)))?;
+
+    assert!(previous_version.state.get(&path("a/file5.txt")).is_some());
+    assert!(previous_version
+        .state
+        .get(&path("something/new.txt"))
+        .is_some());
+
+    Ok(())
+}
+
+#[test]
+fn remove_globs() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "remove files";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.remove_files(object_id, &vec!["a/*"], false)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(5, staged_obj.state.len());
+    assert!(staged_obj.state.get(&path("a/file5.txt")).is_none());
+    assert!(staged_obj.state.get(&path("a/file1.txt")).is_none());
+    assert!(staged_obj.state.get(&path("a/f/file6.txt")).is_some());
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let committed_obj = repo.get_object(object_id, None)?;
+
+    assert_eq!(5, committed_obj.state.len());
+    assert!(committed_obj.state.get(&path("a/file5.txt")).is_none());
+    assert!(committed_obj.state.get(&path("a/file1.txt")).is_none());
+
+    let previous_version = repo.get_object(object_id, Some(VersionNum::new(4)))?;
+
+    assert!(previous_version.state.get(&path("a/file5.txt")).is_some());
+    assert!(previous_version.state.get(&path("a/file1.txt")).is_some());
+
+    Ok(())
+}
+
+#[test]
+fn remove_recursive() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "remove files";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.remove_files(object_id, &vec!["*/*"], true)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(1, staged_obj.state.len());
+    assert!(staged_obj.state.get(&path("file3.txt")).is_some());
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let committed_obj = repo.get_object(object_id, None)?;
+
+    assert_eq!(1, committed_obj.state.len());
+    assert!(committed_obj.state.get(&path("file3.txt")).is_some());
+
+    Ok(())
+}
+
+#[test]
+fn remove_files_that_do_not_exist_should_do_nothing() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "remove files";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.remove_files(object_id, &vec!["bogus", "file3.txt"], true)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(6, staged_obj.state.len());
+    assert!(staged_obj.state.get(&path("file3.txt")).is_none());
+
+    Ok(())
+}
+
 // TODO revert
 // TODO cat staged
 // TODO purge object
 // TODO diff staged
+// TODO commit options
 
+// TODO internal cp/mv src does not exist
+// TODO internal cp/mv partial success
 // TODO commit to a changed resource
 // TODO object in root has wrong id
 // TODO copy file into object, then make an internal copy, and then overwrite the original
