@@ -2555,7 +2555,294 @@ fn remove_files_that_do_not_exist_should_do_nothing() -> Result<()> {
     Ok(())
 }
 
-// TODO revert
+#[test]
+fn revert_newly_added_files() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "revert";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.move_files_external(
+        object_id,
+        &vec![
+            create_file(&temp, "new.txt", "new file").path(),
+            create_file(&temp, "new2.txt", "new file2").path(),
+        ],
+        "/",
+    )?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+    let staged_root = PathBuf::from(&staged_obj.object_root);
+
+    assert_eq!(9, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("new.txt")).unwrap(),
+        &staged_root,
+        "v5/content/new.txt",
+        "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("new2.txt")).unwrap(),
+        &staged_root,
+        "v5/content/new2.txt",
+        "104d021d7891c889c85c12e83e35ba1c5327c4415878c69372fe71e8f3992a28",
+    );
+
+    repo.revert(object_id, &vec!["new.txt"], false)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(8, staged_obj.state.len());
+
+    assert!(staged_obj.state.get(&path("new.txt")).is_none());
+    assert!(staged_obj.state.get(&path("new2.txt")).is_some());
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let obj = repo.get_object(object_id, None)?;
+    let object_root = PathBuf::from(&obj.object_root);
+
+    assert_eq!(8, obj.state.len());
+
+    assert!(obj.state.get(&path("new.txt")).is_none());
+    assert!(!object_root
+        .join("v5")
+        .join("content")
+        .join("new.txt")
+        .exists());
+
+    assert_file_details(
+        obj.state.get(&path("new2.txt")).unwrap(),
+        &object_root,
+        "v5/content/new2.txt",
+        "104d021d7891c889c85c12e83e35ba1c5327c4415878c69372fe71e8f3992a28",
+    );
+
+    Ok(())
+}
+
+#[test]
+fn revert_copied_file() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "revert dup";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "new.txt", "new file").path()],
+        "/",
+    )?;
+
+    repo.copy_files_internal(object_id, None, &vec!["new.txt"], "new (copy).txt", false)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+    let staged_root = PathBuf::from(&staged_obj.object_root);
+
+    assert_eq!(9, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("new.txt")).unwrap(),
+        &staged_root,
+        "v5/content/new.txt",
+        "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("new (copy).txt")).unwrap(),
+        &staged_root,
+        "v5/content/new.txt",
+        "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
+    );
+
+    repo.revert(object_id, &vec!["new.txt"], false)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(8, staged_obj.state.len());
+
+    assert!(staged_obj.state.get(&path("new.txt")).is_none());
+    assert!(staged_obj.state.get(&path("new (copy).txt")).is_some());
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let obj = repo.get_object(object_id, None)?;
+    let object_root = PathBuf::from(&obj.object_root);
+
+    assert_eq!(8, obj.state.len());
+
+    assert!(obj.state.get(&path("new.txt")).is_none());
+
+    assert_file_details(
+        obj.state.get(&path("new (copy).txt")).unwrap(),
+        &object_root,
+        "v5/content/new.txt",
+        "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
+    );
+
+    Ok(())
+}
+
+#[test]
+fn revert_changes_to_existing_files() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "revert updates";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.move_files_external(
+        object_id,
+        &vec![
+            create_file(&temp, "file1.txt", "update").path(),
+            create_file(&temp, "file5.txt", "update 2").path(),
+        ],
+        "a",
+    )?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+    let staged_root = PathBuf::from(&staged_obj.object_root);
+
+    assert_eq!(7, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("a/file1.txt")).unwrap(),
+        &staged_root,
+        "v5/content/a/file1.txt",
+        "2937013f2181810606b2a799b05bda2849f3e369a20982a4138f0e0a55984ce4",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("a/file5.txt")).unwrap(),
+        &staged_root,
+        "v5/content/a/file5.txt",
+        "0c23cc2b5985555eeb46bda05d886e2281c00731bcfc5aca22e00a4d4baa6100",
+    );
+
+    repo.revert(object_id, &vec!["a/*"], false)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(7, staged_obj.state.len());
+
+    let object_root = repo.get_object(object_id, None)?.object_root;
+
+    assert_file_details(
+        staged_obj.state.get(&path("a/file1.txt")).unwrap(),
+        &Path::new(&object_root),
+        "v1/content/a/file1.txt",
+        "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("a/file5.txt")).unwrap(),
+        &Path::new(&object_root),
+        "v1/content/a/d/e/file5.txt",
+        "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
+    );
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let obj = repo.get_object(object_id, None)?;
+
+    assert_eq!(7, obj.state.len());
+
+    assert_file_details(
+        obj.state.get(&path("a/file1.txt")).unwrap(),
+        &Path::new(&obj.object_root),
+        "v1/content/a/file1.txt",
+        "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
+    );
+    assert_file_details(
+        obj.state.get(&path("a/file5.txt")).unwrap(),
+        &Path::new(&obj.object_root),
+        "v1/content/a/d/e/file5.txt",
+        "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
+    );
+
+    Ok(())
+}
+
+#[test]
+fn revert_removed_file() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "revert";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.remove_files(object_id, &vec!["a"], true)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(3, staged_obj.state.len());
+
+    assert!(staged_obj.state.get(&path("a/file1.txt")).is_none());
+    assert!(staged_obj.state.get(&path("a/file5.txt")).is_none());
+    assert!(staged_obj.state.get(&path("a/b/file2.txt")).is_none());
+    assert!(staged_obj.state.get(&path("a/f/file6.txt")).is_none());
+
+    repo.revert(object_id, &vec!["a/f"], true)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(4, staged_obj.state.len());
+
+    assert!(staged_obj.state.get(&path("a/file1.txt")).is_none());
+    assert!(staged_obj.state.get(&path("a/file5.txt")).is_none());
+
+    let object_root = PathBuf::from(repo.get_object(object_id, None)?.object_root);
+
+    assert_file_details(
+        staged_obj.state.get(&path("a/f/file6.txt")).unwrap(),
+        &object_root,
+        "v4/content/a/f/file6.txt",
+        "df21fb2fb83c1c64015a00e7677ccceb8da5377cba716611570230fb91d32bc9",
+    );
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let obj = repo.get_object(object_id, None)?;
+
+    assert_eq!(4, obj.state.len());
+
+    assert!(staged_obj.state.get(&path("a/file1.txt")).is_none());
+    assert!(staged_obj.state.get(&path("a/file5.txt")).is_none());
+
+    assert_file_details(
+        obj.state.get(&path("a/f/file6.txt")).unwrap(),
+        &object_root,
+        "v4/content/a/f/file6.txt",
+        "df21fb2fb83c1c64015a00e7677ccceb8da5377cba716611570230fb91d32bc9",
+    );
+
+    Ok(())
+}
+
+// TODO revert all
+
+// TODO complex revert that avoids conflict
+
+// TODO complex revert that has conflict
+
+// TODO revert path does not exist
+
+// TODO revert object does not exist
+
+// TODO revert object has no changes
+
 // TODO cat staged
 // TODO purge object
 // TODO diff staged
@@ -2564,9 +2851,11 @@ fn remove_files_that_do_not_exist_should_do_nothing() -> Result<()> {
 // TODO internal cp/mv src does not exist
 // TODO internal cp/mv partial success
 // TODO commit to a changed resource
+// TODO commit on tampered staged version
 // TODO object in root has wrong id
 // TODO copy file into object, then make an internal copy, and then overwrite the original
-// TODO validate state, manifest, disk
+
+// TODO validate all test created inventories after adding validation API
 
 fn assert_staged_obj_count(repo: &OcflRepo, count: usize) {
     assert_eq!(count, repo.list_staged_objects(None).unwrap().count());
