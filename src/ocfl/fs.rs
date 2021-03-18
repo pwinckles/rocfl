@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::fs::{self, File, ReadDir};
 use std::io::{self, Read, Write};
 use std::ops::Deref;
@@ -14,17 +15,14 @@ use grep_searcher::sinks::UTF8;
 use grep_searcher::Searcher;
 use log::{error, info};
 use once_cell::sync::Lazy;
+use walkdir::WalkDir;
 
+use super::OcflStore;
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
-use crate::ocfl::{specs, util};
-use crate::ocfl::{InventoryPath, OcflLayout, VersionNum};
-
-use super::OcflStore;
-use std::convert::TryFrom;
-use walkdir::WalkDir;
+use crate::ocfl::{specs, util, InventoryPath, OcflLayout, VersionNum};
 
 static OBJECT_ID_MATCHER: Lazy<RegexMatcher> =
     Lazy::new(|| RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap());

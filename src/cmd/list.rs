@@ -4,11 +4,9 @@ use std::convert::TryInto;
 
 use globset::GlobBuilder;
 
-use crate::cmd::opts::ListCmd;
-use crate::cmd::opts::*;
-use crate::cmd::style;
+use crate::cmd::opts::{ListCmd, *};
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, Separator, TableView, TextCell};
-use crate::cmd::{Cmd, GlobalArgs, DATE_FORMAT};
+use crate::cmd::{style, Cmd, GlobalArgs, DATE_FORMAT};
 use crate::ocfl::{
     FileDetails, InventoryPath, ObjectVersion, ObjectVersionDetails, OcflRepo, Result,
 };

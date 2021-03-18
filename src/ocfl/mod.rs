@@ -26,19 +26,18 @@ use rusoto_core::Region;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
-use crate::ocfl::consts::*;
-use crate::ocfl::digest::HexDigest;
-use crate::ocfl::error::MultiError;
-pub use crate::ocfl::error::{Result, RocflError};
-use crate::ocfl::inventory::Inventory;
-use crate::ocfl::layout::StorageLayout;
-
 pub use self::digest::DigestAlgorithm;
 use self::fs::FsOcflStore;
 use self::layout::LayoutExtensionName;
 #[cfg(feature = "s3")]
 use self::s3::S3OcflStore;
 pub use self::types::*;
+use crate::ocfl::consts::*;
+use crate::ocfl::digest::HexDigest;
+use crate::ocfl::error::MultiError;
+pub use crate::ocfl::error::{Result, RocflError};
+use crate::ocfl::inventory::Inventory;
+use crate::ocfl::layout::StorageLayout;
 
 mod bimap;
 mod consts;

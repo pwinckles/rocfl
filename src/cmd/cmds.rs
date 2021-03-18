@@ -4,10 +4,9 @@ use std::io;
 use log::info;
 
 use crate::cmd::opts::{
-    CatCmd, CommitCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, Field, ListCmd, MoveCmd, NewCmd,
-    PurgeCmd, RemoveCmd, RevertCmd, ShowCmd, StatusCmd,
+    CatCmd, CommitCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, Field, InitCmd, Layout, ListCmd,
+    MoveCmd, NewCmd, PurgeCmd, RemoveCmd, RevertCmd, RocflArgs, ShowCmd, StatusCmd, Storage,
 };
-use crate::cmd::opts::{InitCmd, Layout, RocflArgs, Storage};
 use crate::cmd::{print, println, Cmd, GlobalArgs};
 use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
 use crate::ocfl::{DigestAlgorithm, OcflRepo, Result};

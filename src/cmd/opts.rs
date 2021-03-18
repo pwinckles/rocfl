@@ -2,13 +2,13 @@ use std::fmt::{self, Display, Formatter};
 use std::num::ParseIntError;
 use std::str::FromStr;
 
+use chrono::{DateTime, Local};
 use clap::arg_enum;
 use enum_dispatch::enum_dispatch;
 use structopt::clap::AppSettings::{ColorAuto, ColoredHelp, DisableVersion};
 use structopt::StructOpt;
 
 use crate::ocfl::VersionNum;
-use chrono::{DateTime, Local};
 
 // TODO review all of these docs so that the language agrees
 

@@ -8,7 +8,6 @@ use assert_fs::prelude::*;
 use assert_fs::TempDir;
 use chrono::DateTime;
 use maplit::hashmap;
-
 use rocfl::ocfl::layout::{LayoutExtensionName, StorageLayout};
 use rocfl::ocfl::{
     Diff, DigestAlgorithm, FileDetails, InventoryPath, ObjectVersion, ObjectVersionDetails,
@@ -2567,6 +2566,7 @@ fn remove_files_that_do_not_exist_should_do_nothing() -> Result<()> {
 // TODO commit to a changed resource
 // TODO object in root has wrong id
 // TODO copy file into object, then make an internal copy, and then overwrite the original
+// TODO validate state, manifest, disk
 
 fn assert_staged_obj_count(repo: &OcflRepo, count: usize) {
     assert_eq!(count, repo.list_staged_objects(None).unwrap().count());

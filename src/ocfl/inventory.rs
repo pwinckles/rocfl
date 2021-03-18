@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryInto;
 use std::mem;
@@ -14,7 +15,6 @@ use crate::ocfl::consts::{DEFAULT_CONTENT_DIR, INVENTORY_TYPE};
 use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
 use crate::ocfl::error::{not_found, not_found_path, Result, RocflError};
 use crate::ocfl::{Diff, InventoryPath, VersionNum};
-use std::borrow::Cow;
 
 const STAGING_MESSAGE: &str = "Staging new version";
 const ROCFL_USER: &str = "rocfl";

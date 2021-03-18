@@ -1,12 +1,10 @@
 use std::process;
 
-use log::error;
-use log::LevelFilter;
-use structopt::StructOpt;
-
+use log::{error, LevelFilter};
 use rocfl::cmd;
 use rocfl::cmd::opts::*;
 use rocfl::ocfl::RocflError;
+use structopt::StructOpt;
 
 fn main() {
     let args = RocflArgs::from_args();
