@@ -2188,7 +2188,216 @@ fn move_should_partially_succeed_when_multiple_src_and_some_fail() {
     );
 }
 
-// TODO move internal
+#[test]
+fn internal_move_single_existing_file() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let object_id = "InternalMove";
+
+    let repo = default_repo(root.path());
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.move_files_internal(object_id, &vec!["a/file1.txt"], "new/blah.txt")?;
+
+    let committed_obj = repo.get_object(object_id, None)?;
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(7, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("new/blah.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/file1.txt",
+        "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
+    );
+
+    assert!(staged_obj.state.get(&path("a/file1.txt")).is_none());
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let committed_obj = repo.get_object(object_id, None)?;
+
+    assert_eq!(7, committed_obj.state.len());
+
+    assert_file_details(
+        committed_obj.state.get(&path("new/blah.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/file1.txt",
+        "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
+    );
+
+    assert!(committed_obj.state.get(&path("a/file1.txt")).is_none());
+
+    Ok(())
+}
+
+#[test]
+fn internal_move_multiple_existing_file() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let object_id = "InternalMoveMulti";
+
+    let repo = default_repo(root.path());
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.move_files_internal(object_id, &vec!["a/*.txt", "a/b"], "new-dir")?;
+
+    let committed_obj = repo.get_object(object_id, None)?;
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(7, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("new-dir/file1.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/file1.txt",
+        "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("new-dir/file5.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/d/e/file5.txt",
+        "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("new-dir/b/file2.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/b/file2.txt",
+        "b47592b10bc3e5c8ca8703d0862df10a6e409f43478804f93a08dd1844ae81b6",
+    );
+
+    assert!(staged_obj.state.get(&path("a/file1.txt")).is_none());
+    assert!(staged_obj.state.get(&path("a/file5.txt")).is_none());
+    assert!(staged_obj.state.get(&path("a/b/file2.txt")).is_none());
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let committed_obj = repo.get_object(object_id, None)?;
+
+    assert_eq!(7, committed_obj.state.len());
+
+    assert_file_details(
+        committed_obj.state.get(&path("new-dir/file1.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/file1.txt",
+        "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
+    );
+    assert_file_details(
+        committed_obj.state.get(&path("new-dir/file5.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/d/e/file5.txt",
+        "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
+    );
+    assert_file_details(
+        committed_obj
+            .state
+            .get(&path("new-dir/b/file2.txt"))
+            .unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/b/file2.txt",
+        "b47592b10bc3e5c8ca8703d0862df10a6e409f43478804f93a08dd1844ae81b6",
+    );
+
+    assert!(committed_obj.state.get(&path("a/file1.txt")).is_none());
+    assert!(committed_obj.state.get(&path("a/file5.txt")).is_none());
+    assert!(committed_obj.state.get(&path("a/b/file2.txt")).is_none());
+
+    Ok(())
+}
+
+#[test]
+fn internal_move_files_added_in_staged_version() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let object_id = "InternalMove staged version";
+
+    let repo = default_repo(root.path());
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "just in.txt", "new file").path()],
+        "just in.txt",
+    )?;
+
+    repo.move_files_internal(object_id, &vec!["just in.txt"], "just-in.txt")?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(8, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("just-in.txt")).unwrap(),
+        &Path::new(&staged_obj.object_root),
+        "v5/content/just in.txt",
+        "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
+    );
+
+    assert!(staged_obj.state.get(&path("just in.txt")).is_none());
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let committed_obj = repo.get_object(object_id, None)?;
+
+    assert_eq!(8, committed_obj.state.len());
+
+    assert_file_details(
+        committed_obj.state.get(&path("just-in.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v5/content/just in.txt",
+        "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
+    );
+
+    assert!(committed_obj.state.get(&path("just in.txt")).is_none());
+
+    Ok(())
+}
+
+#[test]
+#[should_panic(
+    expected = "Conflicting logical path file3.txt/file1.txt: The path part file3.txt is an existing logical file"
+)]
+fn internal_move_should_reject_conflicting_files() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "internal conflicting";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.move_files_internal(object_id, &vec!["a/file1.txt"], "file3.txt/file1.txt")
+        .unwrap();
+}
+
+#[test]
+#[should_panic(
+    expected = "Conflicting logical path a/b: This path is already in use as a directory"
+)]
+fn internal_move_should_reject_conflicting_dirs() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "internal conflicting";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.move_files_external(object_id, &vec![create_file(&temp, "b", "b").path()], "b")
+        .unwrap();
+
+    repo.move_files_internal(object_id, &vec!["b"], "a")
+        .unwrap();
+}
+
 // TODO remove
 // TODO revert
 // TODO cat staged
