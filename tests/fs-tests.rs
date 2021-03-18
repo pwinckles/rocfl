@@ -2831,17 +2831,175 @@ fn revert_removed_file() -> Result<()> {
     Ok(())
 }
 
-// TODO revert all
+#[test]
+#[should_panic(expected = "does not have a staged version")]
+fn revert_all() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
 
-// TODO complex revert that avoids conflict
+    let repo = default_repo(root.path());
 
-// TODO complex revert that has conflict
+    let object_id = "revert all";
 
-// TODO revert path does not exist
+    create_example_object(object_id, &repo, &temp);
 
-// TODO revert object does not exist
+    repo.remove_files(object_id, &vec!["*"], true).unwrap();
 
-// TODO revert object has no changes
+    let staged_obj = repo.get_staged_object(object_id).unwrap();
+
+    assert_eq!(0, staged_obj.state.len());
+
+    repo.revert_all(object_id).unwrap();
+
+    repo.get_staged_object(object_id).unwrap();
+}
+
+#[test]
+fn revert_complex_changes_without_conflict() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "revert";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.remove_files(object_id, &vec!["a"], true)?;
+
+    repo.move_files_external(object_id, &vec![create_file(&temp, "b", "b").path()], "a/b")?;
+
+    repo.move_files_internal(object_id, &vec!["file3.txt"], "a/file1.txt/file3.txt")?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(4, staged_obj.state.len());
+
+    assert!(staged_obj.state.get(&path("a/file1.txt")).is_none());
+    assert!(staged_obj.state.get(&path("a/file5.txt")).is_none());
+    assert!(staged_obj.state.get(&path("a/b/file2.txt")).is_none());
+    assert!(staged_obj.state.get(&path("a/f/file6.txt")).is_none());
+
+    assert!(staged_obj.state.get(&path("a/b")).is_some());
+    assert!(staged_obj
+        .state
+        .get(&path("a/file1.txt/file3.txt"))
+        .is_some());
+
+    repo.revert(object_id, &vec!["*"], true)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(7, staged_obj.state.len());
+
+    assert!(staged_obj.state.get(&path("a/b")).is_none());
+    assert!(staged_obj
+        .state
+        .get(&path("a/file1.txt/file3.txt"))
+        .is_none());
+
+    Ok(())
+}
+
+#[test]
+#[should_panic(
+    expected = "Conflicting logical path a/file1.txt: This path is already in use as a directory"
+)]
+fn fail_revert_when_conflicted() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "revert conflict";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.remove_files(object_id, &vec!["a"], true).unwrap();
+
+    repo.move_files_external(object_id, &vec![create_file(&temp, "b", "b").path()], "a/b")
+        .unwrap();
+
+    repo.move_files_internal(object_id, &vec!["file3.txt"], "a/file1.txt/file3.txt")
+        .unwrap();
+
+    let staged_obj = repo.get_staged_object(object_id).unwrap();
+
+    assert_eq!(4, staged_obj.state.len());
+
+    assert!(staged_obj.state.get(&path("a/file1.txt")).is_none());
+    assert!(staged_obj.state.get(&path("a/file5.txt")).is_none());
+    assert!(staged_obj.state.get(&path("a/b/file2.txt")).is_none());
+    assert!(staged_obj.state.get(&path("a/f/file6.txt")).is_none());
+
+    assert!(staged_obj.state.get(&path("a/b")).is_some());
+    assert!(staged_obj
+        .state
+        .get(&path("a/file1.txt/file3.txt"))
+        .is_some());
+
+    repo.revert(object_id, &vec!["a/file1.txt"], false).unwrap();
+}
+
+#[test]
+fn revert_should_do_nothing_when_path_does_not_exist() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "revert";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.remove_files(object_id, &vec!["a"], true)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+    assert_eq!(3, staged_obj.state.len());
+
+    repo.revert(object_id, &vec!["bogus"], true)?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+    assert_eq!(3, staged_obj.state.len());
+
+    Ok(())
+}
+
+#[test]
+fn revert_should_do_nothing_if_object_has_no_changes() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "revert";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.revert(object_id, &vec!["bogus"], true)?;
+
+    if let Err(RocflError::NotFound(_)) = repo.get_staged_object(object_id) {
+        Ok(())
+    } else {
+        panic!("Expected the staged object to not be found");
+    }
+}
+
+#[test]
+fn revert_should_do_nothing_if_object_does_not_exist() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let repo = default_repo(root.path());
+
+    let object_id = "missing";
+
+    repo.revert(object_id, &vec!["bogus"], true)?;
+
+    if let Err(RocflError::NotFound(_)) = repo.get_staged_object(object_id) {
+        Ok(())
+    } else {
+        panic!("Expected the staged object to not be found");
+    }
+}
 
 // TODO cat staged
 // TODO purge object

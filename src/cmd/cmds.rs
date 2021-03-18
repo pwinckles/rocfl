@@ -117,7 +117,11 @@ impl Cmd for RemoveCmd {
 
 impl Cmd for RevertCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
-        repo.revert(&self.object_id, &self.paths, self.recursive)
+        if self.paths.is_empty() {
+            repo.revert(&self.object_id, &self.paths, self.recursive)
+        } else {
+            repo.revert_all(&self.object_id)
+        }
     }
 }
 

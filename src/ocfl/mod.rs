@@ -567,19 +567,24 @@ impl OcflRepo {
         Ok(())
     }
 
-    /// Reverts staged changes to an object. If no paths are specified, then the entire object
-    /// is removed from staging, dropping all changes.
+    /// Reverts all staged changes for an object by dropping the object's staged version completely.
+    pub fn revert_all(&self, object_id: &str) -> Result<()> {
+        self.get_staging()?.purge_object(object_id)
+    }
+
+    /// Reverts to specified staged changes to an object. Paths may be a glob and is resolved
+    /// against both the staged version and the previous version. Matches in the staged version
+    /// are treated as add/update reverts and matches in the previous version are treated as
+    /// remove reverts.
     pub fn revert<P: AsRef<str>>(
         &self,
         object_id: &str,
         paths: &[P],
         recursive: bool,
     ) -> Result<()> {
-        let staging = self.get_staging()?;
+        if !paths.is_empty() {
+            let staging = self.get_staging()?;
 
-        if paths.is_empty() {
-            staging.purge_object(object_id)
-        } else {
             let mut inventory = match staging.get_inventory(&object_id) {
                 Ok(inventory) => inventory,
                 Err(RocflError::NotFound(_)) => return Ok(()),
@@ -638,9 +643,9 @@ impl OcflRepo {
 
             inventory.head_version_mut().created = Local::now();
             staging.stage_inventory(&inventory, false)?;
-
-            Ok(())
         }
+
+        Ok(())
     }
 
     /// Commits all of an object's staged changes
