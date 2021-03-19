@@ -38,7 +38,7 @@ fn list_all_objects() -> Result<()> {
                 .to_string(),
             digest_algorithm: DigestAlgorithm::Sha512,
             version_details: VersionDetails {
-                version_num: VersionNum::try_from(1).unwrap(),
+                version_num: VersionNum::new(1),
                 created: DateTime::parse_from_rfc3339("2019-08-05T15:57:53Z")
                     .unwrap()
                     .into(),
@@ -78,7 +78,7 @@ fn list_all_objects() -> Result<()> {
                 .to_string(),
             digest_algorithm: DigestAlgorithm::Sha512,
             version_details: VersionDetails {
-                version_num: VersionNum::try_from(2).unwrap(),
+                version_num: VersionNum::new(2),
                 created: DateTime::parse_from_rfc3339("2019-08-05T15:57:53Z")
                     .unwrap()
                     .into(),
@@ -114,7 +114,7 @@ fn list_single_object_from_glob() -> Result<()> {
                 .to_string(),
             digest_algorithm: DigestAlgorithm::Sha512,
             version_details: VersionDetails {
-                version_num: VersionNum::try_from(1).unwrap(),
+                version_num: VersionNum::new(1),
                 created: DateTime::parse_from_rfc3339("2019-08-05T15:57:53Z")
                     .unwrap()
                     .into(),
@@ -219,7 +219,7 @@ fn get_object_version_when_exists() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root)?;
 
-    let object = repo.get_object("o2", Some(VersionNum::try_from(2)?))?;
+    let object = repo.get_object("o2", Some(VersionNum::new(2)))?;
 
     let object_root = repo_root
         .join("925")
@@ -336,8 +336,7 @@ fn error_when_object_not_exists_with_layout() {
 fn error_when_version_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root).unwrap();
-    repo.get_object("o2", Some(VersionNum::try_from(4).unwrap()))
-        .unwrap();
+    repo.get_object("o2", Some(VersionNum::new(4))).unwrap();
 }
 
 #[test]
@@ -401,11 +400,7 @@ fn diff_when_left_and_right_specified() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root)?;
 
-    let mut diff = repo.diff(
-        "o2",
-        Some(VersionNum::try_from(1).unwrap()),
-        VersionNum::try_from(3).unwrap(),
-    )?;
+    let mut diff = repo.diff("o2", Some(VersionNum::new(1)), VersionNum::new(3))?;
 
     sort_diffs(&mut diff);
 
@@ -422,7 +417,7 @@ fn diff_with_previous_when_left_not_specified() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root)?;
 
-    let mut diff = repo.diff("o2", None, VersionNum::try_from(3).unwrap())?;
+    let mut diff = repo.diff("o2", None, VersionNum::new(3))?;
 
     sort_diffs(&mut diff);
 
@@ -439,7 +434,7 @@ fn diff_first_version_all_adds() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root)?;
 
-    let mut diff = repo.diff("o2", None, VersionNum::try_from(1).unwrap())?;
+    let mut diff = repo.diff("o2", None, VersionNum::new(1))?;
 
     sort_diffs(&mut diff);
 
@@ -456,26 +451,19 @@ fn diff_same_version_no_diff() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root)?;
 
-    let diff = repo.diff(
-        "o2",
-        Some(VersionNum::try_from(2).unwrap()),
-        VersionNum::try_from(2).unwrap(),
-    )?;
+    let diff = repo.diff("o2", Some(VersionNum::new(2)), VersionNum::new(2))?;
 
     assert_eq!(0, diff.len());
 
     Ok(())
 }
 
-// TODO diff rename test
-
 #[test]
 #[should_panic(expected = "Not found: Object o6")]
 fn diff_object_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root).unwrap();
-    repo.diff("o6", None, VersionNum::try_from(2).unwrap())
-        .unwrap();
+    repo.diff("o6", None, VersionNum::new(2)).unwrap();
 }
 
 #[test]
@@ -483,8 +471,7 @@ fn diff_object_not_exists() {
 fn diff_version_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root).unwrap();
-    repo.diff("o1", None, VersionNum::try_from(2).unwrap())
-        .unwrap();
+    repo.diff("o1", None, VersionNum::new(2)).unwrap();
 }
 
 #[test]
@@ -493,7 +480,7 @@ fn get_object_file_when_exists() -> Result<()> {
     let repo = OcflRepo::fs_repo(&repo_root)?;
 
     let id = "o2";
-    let version = VersionNum::try_from(2)?;
+    let version = VersionNum::new(2);
     let mut out: Vec<u8> = Vec::new();
 
     repo.get_object_file(id, &"dir1/file3".try_into()?, Some(version), &mut out)?;
@@ -510,7 +497,7 @@ fn fail_get_object_file_when_does_not_exist() {
     let repo = OcflRepo::fs_repo(&repo_root).unwrap();
 
     let id = "o2";
-    let version = VersionNum::try_from(2).unwrap();
+    let version = VersionNum::new(2);
     let mut out: Vec<u8> = Vec::new();
 
     repo.get_object_file(
@@ -3292,7 +3279,213 @@ fn fail_get_staged_object_file_when_does_not_exist() {
         .unwrap();
 }
 
-// TODO diff staged
+#[test]
+fn diff_should_detect_simple_rename() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "simple rename";
+
+    create_example_object(object_id, &repo, &temp);
+
+    let mut diff = repo.diff(object_id, None, VersionNum::new(4))?;
+
+    assert_eq!(2, diff.len());
+
+    sort_diffs(&mut diff);
+
+    assert_eq!(
+        Diff::Renamed {
+            original: vec![path_rc("a/d/e/file5.txt")],
+            renamed: vec![path_rc("a/file5.txt")],
+        },
+        diff.remove(0)
+    );
+    assert_eq!(Diff::Modified(path_rc("a/f/file6.txt")), diff.remove(0));
+
+    Ok(())
+}
+
+#[test]
+fn diff_should_detect_multi_origin_rename() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "multi origin rename";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+
+    let file = create_file(&temp, "file.txt", "some file");
+
+    repo.copy_files_external(object_id, &vec![file.path()], "file-1.txt", false)?;
+    repo.copy_files_external(object_id, &vec![file.path()], "file-2.txt", false)?;
+    repo.copy_files_external(object_id, &vec![file.path()], "file-3.txt", false)?;
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    repo.move_files_internal(object_id, &vec!["file-1.txt"], "moved.txt")?;
+    repo.remove_files(object_id, &vec!["file-2.txt"], false)?;
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let mut diff = repo.diff(object_id, None, VersionNum::new(2))?;
+
+    assert_eq!(1, diff.len());
+
+    assert_eq!(
+        Diff::Renamed {
+            original: vec![path_rc("file-1.txt"), path_rc("file-2.txt")],
+            renamed: vec![path_rc("moved.txt")],
+        },
+        diff.remove(0)
+    );
+
+    Ok(())
+}
+
+#[test]
+fn diff_should_detect_multi_dest_rename() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "multi dst rename";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+
+    let file = create_file(&temp, "file.txt", "some file");
+
+    repo.copy_files_external(object_id, &vec![file.path()], "file-1.txt", false)?;
+    repo.copy_files_external(object_id, &vec![file.path()], "file-2.txt", false)?;
+    repo.copy_files_external(object_id, &vec![file.path()], "file-3.txt", false)?;
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    repo.move_files_internal(object_id, &vec!["file-1.txt"], "moved.txt")?;
+    repo.copy_files_internal(object_id, None, &vec!["file-2.txt"], "moved-2.txt", false)?;
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let mut diff = repo.diff(object_id, None, VersionNum::new(2))?;
+
+    assert_eq!(1, diff.len());
+
+    assert_eq!(
+        Diff::Renamed {
+            original: vec![path_rc("file-1.txt")],
+            renamed: vec![path_rc("moved-2.txt"), path_rc("moved.txt")],
+        },
+        diff.remove(0)
+    );
+
+    Ok(())
+}
+
+#[test]
+fn diff_should_detect_multi_src_multi_dest_rename() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "multi multi rename";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+
+    let file = create_file(&temp, "file.txt", "some file");
+
+    repo.copy_files_external(object_id, &vec![file.path()], "file-1.txt", false)?;
+    repo.copy_files_external(object_id, &vec![file.path()], "file-2.txt", false)?;
+    repo.copy_files_external(object_id, &vec![file.path()], "file-3.txt", false)?;
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    repo.move_files_internal(object_id, &vec!["file-1.txt"], "moved.txt")?;
+    repo.move_files_internal(object_id, &vec!["file-2.txt"], "moved-2.txt")?;
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let mut diff = repo.diff(object_id, None, VersionNum::new(2))?;
+
+    assert_eq!(1, diff.len());
+
+    assert_eq!(
+        Diff::Renamed {
+            original: vec![path_rc("file-1.txt"), path_rc("file-2.txt")],
+            renamed: vec![path_rc("moved-2.txt"), path_rc("moved.txt")],
+        },
+        diff.remove(0)
+    );
+
+    Ok(())
+}
+
+#[test]
+fn diff_staged_changes_when_some() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "staged rename";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.remove_files(object_id, &vec!["a/file5.txt"], false)?;
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "new.txt", "new").path()],
+        "/",
+    )?;
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "update.txt", "update").path()],
+        "a/file1.txt",
+    )?;
+    repo.move_files_internal(object_id, &vec!["a/f/file6.txt"], "a")?;
+
+    let mut diff = repo.diff_staged(object_id)?;
+
+    sort_diffs(&mut diff);
+
+    assert_eq!(4, diff.len());
+
+    assert_eq!(
+        Diff::Renamed {
+            original: vec![path_rc("a/f/file6.txt")],
+            renamed: vec![path_rc("a/file6.txt")],
+        },
+        diff.remove(0)
+    );
+    assert_eq!(Diff::Modified(path_rc("a/file1.txt")), diff.remove(0));
+    assert_eq!(Diff::Deleted(path_rc("a/file5.txt")), diff.remove(0));
+    assert_eq!(Diff::Added(path_rc("new.txt")), diff.remove(0));
+
+    Ok(())
+}
+
+#[test]
+fn diff_empty_when_no_staged_changes() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "staged rename";
+
+    create_example_object(object_id, &repo, &temp);
+
+    let diff = repo.diff_staged(object_id)?;
+
+    assert_eq!(0, diff.len());
+
+    Ok(())
+}
 
 // TODO internal cp/mv src does not exist
 // TODO internal cp/mv partial success
@@ -3529,7 +3722,7 @@ fn read_spec(name: &str) -> String {
 
 fn o2_v1_details() -> VersionDetails {
     VersionDetails {
-        version_num: VersionNum::try_from(1).unwrap(),
+        version_num: VersionNum::new(1),
         created: DateTime::parse_from_rfc3339("2019-08-05T15:57:53Z")
             .unwrap()
             .into(),
@@ -3541,7 +3734,7 @@ fn o2_v1_details() -> VersionDetails {
 
 fn o2_v2_details() -> VersionDetails {
     VersionDetails {
-        version_num: VersionNum::try_from(2).unwrap(),
+        version_num: VersionNum::new(2),
         created: DateTime::parse_from_rfc3339("2019-08-05T16:59:56Z")
             .unwrap()
             .into(),
@@ -3553,7 +3746,7 @@ fn o2_v2_details() -> VersionDetails {
 
 fn o2_v3_details() -> VersionDetails {
     VersionDetails {
-        version_num: VersionNum::try_from(3).unwrap(),
+        version_num: VersionNum::new(3),
         created: DateTime::parse_from_rfc3339("2019-08-07T12:37:43Z")
             .unwrap()
             .into(),
