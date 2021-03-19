@@ -6,7 +6,7 @@ use std::rc::Rc;
 use assert_fs::fixture::ChildPath;
 use assert_fs::prelude::*;
 use assert_fs::TempDir;
-use chrono::DateTime;
+use chrono::{DateTime, Local, TimeZone};
 use maplit::hashmap;
 use rocfl::ocfl::layout::{LayoutExtensionName, StorageLayout};
 use rocfl::ocfl::{
@@ -2994,17 +2994,305 @@ fn revert_should_do_nothing_if_object_does_not_exist() -> Result<()> {
 
     repo.revert(object_id, &vec!["bogus"], true)?;
 
-    if let Err(RocflError::NotFound(_)) = repo.get_staged_object(object_id) {
-        Ok(())
-    } else {
-        panic!("Expected the staged object to not be found");
-    }
+    assert_staged_obj_not_exists(&repo, object_id);
+
+    Ok(())
 }
 
-// TODO cat staged
-// TODO purge object
+#[test]
+fn purge_should_remove_object_from_repo() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "purge me";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.purge_object(object_id)?;
+
+    assert_obj_not_exists(&repo, object_id);
+
+    Ok(())
+}
+
+#[test]
+fn purge_should_remove_object_from_repo_and_staging() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "purge me2";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "blah", "blah").path()],
+        "blah",
+    )?;
+
+    repo.purge_object(object_id)?;
+
+    assert_obj_not_exists(&repo, object_id);
+    assert_staged_obj_not_exists(&repo, object_id);
+
+    Ok(())
+}
+
+#[test]
+fn purge_should_do_nothing_when_obj_does_not_exist() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let repo = default_repo(root.path());
+
+    let object_id = "missing";
+
+    repo.purge_object(object_id)?;
+
+    assert_obj_not_exists(&repo, object_id);
+    assert_staged_obj_not_exists(&repo, object_id);
+
+    Ok(())
+}
+
+#[test]
+fn commit_should_use_custom_meta_when_provided() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "commit meta";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "blah", "blah").path()],
+        "blah",
+    )?;
+
+    let name = "name";
+    let address = "address";
+    let message = "message";
+    let created = Local.ymd(2021, 3, 19).and_hms(6, 1, 30);
+
+    repo.commit(
+        object_id,
+        Some(&name),
+        Some(&address),
+        Some(&message),
+        Some(created),
+    )?;
+
+    let obj = repo.get_object(object_id, None)?;
+
+    assert_eq!(name, obj.version_details.user_name.unwrap());
+    assert_eq!(address, obj.version_details.user_address.unwrap());
+    assert_eq!(message, obj.version_details.message.unwrap());
+    assert_eq!(created, obj.version_details.created);
+
+    Ok(())
+}
+
+#[test]
+fn commit_should_use_custom_meta_when_mixture_provided() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "commit meta";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "blah", "blah").path()],
+        "blah",
+    )?;
+
+    let message = "new message";
+    let created = Local.ymd(2020, 3, 19).and_hms(6, 1, 30);
+
+    repo.commit(object_id, None, None, Some(&message), Some(created))?;
+
+    let obj = repo.get_object(object_id, None)?;
+
+    assert!(obj.version_details.user_name.is_none());
+    assert!(obj.version_details.user_address.is_none());
+    assert_eq!(message, obj.version_details.message.unwrap());
+    assert_eq!(created, obj.version_details.created);
+
+    Ok(())
+}
+
+#[test]
+#[should_panic(expected = "User name must be set when user address is set")]
+fn commit_should_fail_when_address_and_no_name() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "commit missing name";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+        .unwrap();
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "blah", "blah").path()],
+        "blah",
+    )
+    .unwrap();
+
+    repo.commit(object_id, None, Some("address"), None, None)
+        .unwrap();
+}
+
+#[test]
+#[should_panic(expected = "No staged changes found for object")]
+fn commit_should_fail_when_object_has_no_changes() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "commit missing name";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+        .unwrap();
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "blah", "blah").path()],
+        "blah",
+    )
+    .unwrap();
+
+    repo.commit(object_id, None, None, None, None).unwrap();
+
+    repo.commit(object_id, None, None, None, None).unwrap();
+}
+
+#[test]
+#[should_panic(expected = "No staged changes found for object")]
+fn commit_should_fail_when_object_does_not_exist() {
+    let root = TempDir::new().unwrap();
+    let repo = default_repo(root.path());
+
+    let object_id = "does not exist";
+
+    repo.commit(object_id, None, None, None, None).unwrap();
+}
+
+#[test]
+fn commit_should_remove_staged_object() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "commit meta";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "blah", "blah").path()],
+        "blah",
+    )?;
+
+    repo.commit(object_id, None, None, None, None)?;
+
+    let _obj = repo.get_object(object_id, None)?;
+
+    assert_staged_obj_not_exists(&repo, object_id);
+
+    Ok(())
+}
+
+#[test]
+fn get_staged_object_file_when_exists_in_staged_version() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "get file";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "blah", "blah").path()],
+        "blah",
+    )?;
+
+    let mut out: Vec<u8> = Vec::new();
+
+    repo.get_staged_object_file(object_id, &path("blah"), &mut out)?;
+
+    assert_eq!("blah", String::from_utf8(out).unwrap());
+
+    Ok(())
+}
+
+#[test]
+fn get_staged_object_file_when_exists_in_prior_version() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "get file";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "blah", "blah").path()],
+        "blah",
+    )?;
+
+    let mut out: Vec<u8> = Vec::new();
+
+    repo.get_staged_object_file(object_id, &path("a/file1.txt"), &mut out)?;
+
+    assert_eq!("File One", String::from_utf8(out).unwrap());
+
+    Ok(())
+}
+
+#[test]
+#[should_panic(expected = "Path a/b/file3.txt not found in object get file version v5")]
+fn fail_get_staged_object_file_when_does_not_exist() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "get file";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "blah", "blah").path()],
+        "blah",
+    )
+    .unwrap();
+
+    let mut out: Vec<u8> = Vec::new();
+
+    repo.get_staged_object_file(object_id, &path("a/b/file3.txt"), &mut out)
+        .unwrap();
+}
+
 // TODO diff staged
-// TODO commit options
 
 // TODO internal cp/mv src does not exist
 // TODO internal cp/mv partial success
@@ -3012,6 +3300,7 @@ fn revert_should_do_nothing_if_object_does_not_exist() -> Result<()> {
 // TODO commit on tampered staged version
 // TODO object in root has wrong id
 // TODO copy file into object, then make an internal copy, and then overwrite the original
+// TODO object with mutable head
 
 // TODO validate all test created inventories after adding validation API
 
@@ -3021,6 +3310,20 @@ fn assert_staged_obj_count(repo: &OcflRepo, count: usize) {
 
 fn assert_obj_count(repo: &OcflRepo, count: usize) {
     assert_eq!(count, repo.list_objects(None).unwrap().count());
+}
+
+fn assert_obj_not_exists(repo: &OcflRepo, object_id: &str) {
+    match repo.get_object(object_id, None) {
+        Err(RocflError::NotFound(_)) => (),
+        _ => panic!("Expected object '{}' to not be found", object_id),
+    }
+}
+
+fn assert_staged_obj_not_exists(repo: &OcflRepo, object_id: &str) {
+    match repo.get_staged_object(object_id) {
+        Err(RocflError::NotFound(_)) => (),
+        _ => panic!("Expected staged object '{}' to not be found", object_id),
+    }
 }
 
 fn assert_file_details(

@@ -475,12 +475,12 @@ impl Version {
 
     pub fn update_meta(
         &mut self,
-        name: Option<String>,
-        address: Option<String>,
-        message: Option<String>,
+        name: Option<&str>,
+        address: Option<&str>,
+        message: Option<&str>,
         created: Option<DateTime<Local>>,
     ) {
-        self.message = message;
+        self.message = message.map(|e| e.to_string());
         self.user = match name {
             Some(name) => Some(User::new(name, address)),
             None => None,
@@ -753,10 +753,10 @@ impl Version {
 }
 
 impl User {
-    pub fn new(name: String, address: Option<String>) -> Self {
+    pub fn new(name: &str, address: Option<&str>) -> Self {
         Self {
-            name: Some(name),
-            address,
+            name: Some(name.to_string()),
+            address: address.map(|e| e.to_string()),
         }
     }
 }

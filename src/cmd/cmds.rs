@@ -129,9 +129,9 @@ impl Cmd for CommitCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
         repo.commit(
             &self.object_id,
-            self.user_name.clone(),
-            self.user_address.clone(),
-            self.message.clone(),
+            self.user_name.as_deref(),
+            self.user_address.as_deref(),
+            self.message.as_deref(),
             self.created,
         )?;
 

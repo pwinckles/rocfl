@@ -648,24 +648,32 @@ impl OcflRepo {
         Ok(())
     }
 
-    /// Commits all of an object's staged changes
+    /// Commits all of an object's staged changes. If `user_address` is provided, then `user_name`
+    /// must also be. If `created` is not provided, then it defaults to the current time.
     pub fn commit(
         &self,
         object_id: &str,
-        user_name: Option<String>,
-        user_address: Option<String>,
-        message: Option<String>,
+        user_name: Option<&str>,
+        user_address: Option<&str>,
+        message: Option<&str>,
         created: Option<DateTime<Local>>,
     ) -> Result<()> {
+        if user_address.is_some() && user_name.is_none() {
+            return Err(RocflError::IllegalArgument(
+                "User name must be set when user address is set.".to_string(),
+            ));
+        }
+
         let staging = self.get_staging()?;
 
         let mut inventory = match staging.get_inventory(&object_id) {
             Ok(inventory) => inventory,
             Err(RocflError::NotFound(_)) => {
                 // TODO should this be an error?
-                return Err(RocflError::General(
-                    "No staged changed found for the specified object".to_string(),
-                ));
+                return Err(RocflError::General(format!(
+                    "No staged changes found for object {}",
+                    object_id
+                )));
             }
             Err(e) => return Err(e),
         };
