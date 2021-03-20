@@ -148,6 +148,28 @@ impl FsOcflStore {
         Ok(())
     }
 
+    /// Copies an existing staged file to a new location
+    pub(super) fn copy_staged_file(
+        &self,
+        inventory: &Inventory,
+        src_content: &InventoryPath,
+        dst_logical: &InventoryPath,
+    ) -> Result<()> {
+        // TODO any validation that the staged object exist?
+
+        let storage_path = self.storage_root.join(&inventory.object_root);
+
+        let dst_content = inventory.new_content_path_head(&dst_logical)?;
+
+        let src_storage = storage_path.join(src_content.as_ref());
+        let dst_storage = storage_path.join(dst_content.as_ref());
+
+        fs::create_dir_all(dst_storage.parent().unwrap())?;
+        fs::copy(&src_storage, &dst_storage)?;
+
+        Ok(())
+    }
+
     /// Moves a file in the staging area
     pub(super) fn stage_file_move(
         &self,
@@ -169,21 +191,39 @@ impl FsOcflStore {
         Ok(())
     }
 
+    /// Moves an existing staged file to a new location
+    pub(super) fn move_staged_file(
+        &self,
+        inventory: &Inventory,
+        src_content: &InventoryPath,
+        dst_logical: &InventoryPath,
+    ) -> Result<()> {
+        // TODO any validation that the staged object exist?
+
+        let storage_path = self.storage_root.join(&inventory.object_root);
+
+        let dst_content = inventory.new_content_path_head(&dst_logical)?;
+
+        let src_storage = storage_path.join(src_content.as_ref());
+        let dst_storage = storage_path.join(dst_content.as_ref());
+
+        fs::create_dir_all(dst_storage.parent().unwrap())?;
+        fs::rename(&src_storage, &dst_storage)?;
+
+        Ok(())
+    }
+
     /// Deletes staged content files.
     pub(super) fn rm_staged_files(
         &self,
         inventory: &Inventory,
-        // TODO fix other sigs: Rc<T> -> impl AsRef<T>
-        paths: &[impl AsRef<InventoryPath>],
+        paths: &[&InventoryPath],
     ) -> Result<()> {
         let object_root = self.storage_root.join(&inventory.object_root);
 
         for path in paths.iter() {
-            let full_path = object_root.join(&path.as_ref().as_ref());
-            info!(
-                "Deleting duplicate staged file: {}",
-                full_path.to_string_lossy()
-            );
+            let full_path = object_root.join(path.as_ref());
+            info!("Deleting staged file: {}", full_path.to_string_lossy());
             fs::remove_file(&full_path)?;
             util::clean_dirs_up(full_path.parent().unwrap())?;
         }

@@ -434,8 +434,11 @@ impl ObjectVersion {
             // No versions left to compare to; any remaining files were last updated here
             if version_details.version_num.number == 1 {
                 for (target_path, target_digest) in target_path_map {
-                    let content_path = inventory
-                        .content_path_for_digest(&target_digest, Some(current_version_num))?;
+                    let content_path = inventory.content_path_for_digest(
+                        &target_digest,
+                        Some(current_version_num),
+                        Some(&target_path),
+                    )?;
 
                     let storage_path = ObjectVersion::storage_path(
                         content_path.as_ref().as_ref(),
@@ -468,8 +471,11 @@ impl ObjectVersion {
                 let entry = previous_path_map.remove_path(&target_path);
 
                 if entry.is_none() || entry.unwrap().1 != target_digest {
-                    let content_path = inventory
-                        .content_path_for_digest(&target_digest, Some(current_version_num))?;
+                    let content_path = inventory.content_path_for_digest(
+                        &target_digest,
+                        Some(current_version_num),
+                        Some(&target_path),
+                    )?;
 
                     let storage_path = ObjectVersion::storage_path(
                         content_path.as_ref().as_ref(),
