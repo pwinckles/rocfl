@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use chrono::{DateTime, Local};
 use globset::GlobBuilder;
-use log::{error, info};
+use log::error;
 use once_cell::unsync::OnceCell;
 use serde::{Deserialize, Serialize};
 
@@ -140,17 +140,23 @@ impl Inventory {
     /// Returns the first content path associated with the specified digest, or an error if it does
     /// not exist.
     ///
-    /// If a version is specified, then the content path must exist in the specified version
+    /// If `version_num` is specified, then the content path must exist in the specified version
     /// or earlier.
+    ///
+    /// If `logical_path` is specified and multiple content paths for the digest are found, then
+    /// then the path that maps directly to the logical path is selected or the first if none match.
     pub fn content_path_for_digest(
         &self,
         digest: &HexDigest,
         version_num: Option<VersionNum>,
+        logical_path: Option<&InventoryPath>,
     ) -> Result<&Rc<InventoryPath>> {
         let version_num = version_num.unwrap_or(self.head);
 
         match self.manifest.get_paths(digest) {
             Some(paths) => {
+                let mut matches = Vec::new();
+
                 for path in paths {
                     // TODO move this to `ContentPath` after it's created
                     if let Some(slash) = path.as_ref().as_ref().find('/') {
@@ -158,15 +164,30 @@ impl Inventory {
                         let version: VersionNum = version_str.try_into()?;
 
                         if version <= version_num {
+                            matches.push(path);
+                        }
+                    }
+                }
+
+                if matches.is_empty() {
+                    return Err(RocflError::CorruptObject {
+                        object_id: self.id.clone(),
+                        message: format!("Digest {} is not mapped to any content paths", digest),
+                    });
+                } else if matches.len() > 1 && logical_path.is_some() {
+                    let suffix = format!(
+                        "/{}/{}",
+                        self.defaulted_content_dir(),
+                        logical_path.unwrap()
+                    );
+                    for path in matches.iter() {
+                        if path.as_ref().as_ref().ends_with(&suffix) {
                             return Ok(path);
                         }
                     }
                 }
 
-                Err(RocflError::CorruptObject {
-                    object_id: self.id.clone(),
-                    message: format!("Digest {} is not mapped to any content paths", digest),
-                })
+                Ok(matches.first().unwrap())
             }
             None => Err(RocflError::CorruptObject {
                 object_id: self.id.clone(),
@@ -195,7 +216,7 @@ impl Inventory {
             }
         };
 
-        self.content_path_for_digest(digest, Some(version_num))
+        self.content_path_for_digest(digest, Some(version_num), Some(logical_path))
     }
 
     /// Returns the diffs of two versions. An error is returned if either of the specified versions
@@ -325,31 +346,60 @@ impl Inventory {
         Ok(())
     }
 
-    /// Removes the specified path from the HEAD version's state. If the HEAD version has
-    /// no more references to the removed file's digest, then any content paths that were
-    /// introduced with that digest are removed from the manifest.
-    pub fn remove_logical_path_from_head(&mut self, logical_path: &InventoryPath) {
+    /// This method should **only** be used for internal move operations on files that are
+    /// new to the head version where the moved file was physically moved to a new location
+    /// on disk.
+    ///
+    /// This method differs from `move_file_in_head` in that in addition to updating the head
+    /// version state, it also removes the old file's manifest entry and adds a new entry for
+    /// the new location.
+    pub fn move_new_in_head_file(
+        &mut self,
+        digest: HexDigest,
+        src_path: &InventoryPath,
+        dst_path: InventoryPath,
+    ) -> Result<()> {
+        let digest_rc = match self.manifest.get_id_rc(&digest) {
+            Some(digest_rc) => digest_rc.clone(),
+            None => Rc::new(digest),
+        };
+
+        let src_content_path = self.new_content_path_head(&src_path)?;
+        self.manifest.remove_path(&src_content_path);
+
+        let content_path = self.new_content_path_head(&dst_path)?;
+        self.manifest
+            .insert_rc(digest_rc.clone(), Rc::new(content_path));
+
+        let head = self.head_version_mut();
+        head.add_file(digest_rc, dst_path)?;
+        head.remove_file(src_path);
+
+        Ok(())
+    }
+
+    /// Removes the specified path from the HEAD version's state. If the path was added in the
+    /// HEAD version, then the corresponding content path is also removed from the manifest
+    /// and returned.
+    pub fn remove_logical_path_from_head(
+        &mut self,
+        logical_path: &InventoryPath,
+    ) -> Option<InventoryPath> {
         let head = self.head_version_mut();
 
-        if let Some((_path, digest)) = head.remove_file(logical_path) {
-            if !head.contains_digest(&digest) {
-                let prefix = format!("{}/", self.head.to_string());
-                let mut to_remove = Vec::new();
-
-                if let Some(content_paths) = self.manifest.get_paths(&digest) {
-                    for content_path in content_paths {
-                        if content_path.as_ref().as_ref().starts_with(&prefix) {
-                            to_remove.push(content_path.clone());
-                        }
+        if head.remove_file(logical_path).is_some() {
+            // Remove the path from the manifest if it was added in the HEAD version
+            match self.new_content_path_head(logical_path) {
+                Ok(content_path) => {
+                    if self.manifest.remove_path(&content_path).is_some() {
+                        return Some(content_path);
                     }
                 }
-
-                for content_path in to_remove {
-                    info!("Removing orphaned path from manifest: {}", content_path);
-                    self.manifest.remove_path(&content_path);
-                }
+                Err(e) => error!("Failed to create content path for {}: {}", logical_path, e),
             }
         }
+
+        None
     }
 
     /// Returns a new content path for the specified logical path, assuming a direct one-to-one

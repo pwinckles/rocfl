@@ -462,17 +462,49 @@ impl OcflRepo {
 
         // TODO continue on error
 
+        let staging = self.get_staging()?;
+        let staging_prefix = format!("{}/", inventory.head);
+
         for (src_path, dst_path) in to_copy {
             info!(
                 "Copying file {} from {} to {}",
                 src_path, src_version_num, dst_path
             );
 
-            inventory.copy_file_to_head(src_version_num, &src_path, dst_path)?;
+            // TODO dedup and move this somewhere else
+            let content = match inventory
+                .get_version(src_version_num)?
+                .lookup_digest(&src_path)
+            {
+                Some(digest) => {
+                    let content_path =
+                        inventory.content_path_for_digest(&digest, None, Some(&src_path))?;
+
+                    if content_path.as_ref().as_ref().starts_with(&staging_prefix) {
+                        Some((digest.as_ref().clone(), content_path.clone()))
+                    } else {
+                        None
+                    }
+                }
+                None => {
+                    return Err(RocflError::IllegalState(format!(
+                        "Failed to find digest for {}",
+                        src_path
+                    )))
+                }
+            };
+
+            // Copies of files new in the staged version must be copied on disk as well
+            if let Some((digest, content_path)) = content {
+                staging.copy_staged_file(&inventory, &content_path, &dst_path)?;
+                inventory.add_file_to_head(digest, dst_path)?;
+            } else {
+                inventory.copy_file_to_head(src_version_num, &src_path, dst_path)?;
+            }
         }
 
         inventory.head_version_mut().created = Local::now();
-        self.get_staging()?.stage_inventory(&inventory, false)?;
+        staging.stage_inventory(&inventory, false)?;
 
         Ok(())
     }
@@ -525,13 +557,42 @@ impl OcflRepo {
 
         // TODO continue on error
 
+        let staging = self.get_staging()?;
+        let staging_prefix = format!("{}/", inventory.head);
+
         for (src_path, dst_path) in to_copy {
             info!("Moving {} to {}", src_path, dst_path);
-            inventory.move_file_in_head(&src_path, dst_path)?;
+
+            let content = match inventory.head_version().lookup_digest(&src_path) {
+                Some(digest) => {
+                    let content_path =
+                        inventory.content_path_for_digest(&digest, None, Some(&src_path))?;
+
+                    if content_path.as_ref().as_ref().starts_with(&staging_prefix) {
+                        Some((digest.as_ref().clone(), content_path.clone()))
+                    } else {
+                        None
+                    }
+                }
+                None => {
+                    return Err(RocflError::IllegalState(format!(
+                        "Failed to find digest for {}",
+                        src_path
+                    )))
+                }
+            };
+
+            // Moves of files new in the staged version must be moved on disk as well
+            if let Some((digest, content_path)) = content {
+                staging.move_staged_file(&inventory, &content_path, &dst_path)?;
+                inventory.move_new_in_head_file(digest, &src_path, dst_path)?;
+            } else {
+                inventory.move_file_in_head(&src_path, dst_path)?;
+            }
         }
 
         inventory.head_version_mut().created = Local::now();
-        self.get_staging()?.stage_inventory(&inventory, false)?;
+        staging.stage_inventory(&inventory, false)?;
 
         Ok(())
     }
@@ -557,12 +618,16 @@ impl OcflRepo {
             paths_to_remove.extend(version.resolve_glob(path.as_ref(), recursive)?);
         }
 
+        let staging = self.get_staging()?;
+
         for path in paths_to_remove {
             info!("Removing path from staged version: {}", path);
-            inventory.remove_logical_path_from_head(&path);
+            if let Some(content_path) = inventory.remove_logical_path_from_head(&path) {
+                staging.rm_staged_files(&inventory, &[&content_path])?;
+            }
         }
 
-        self.get_staging()?.stage_inventory(&inventory, false)?;
+        staging.stage_inventory(&inventory, false)?;
 
         Ok(())
     }
@@ -625,7 +690,9 @@ impl OcflRepo {
 
             // Need to apply add reverts first to attempt to avoid revert path conflicts
             for path in revert_adds {
-                inventory.remove_logical_path_from_head(&path);
+                if let Some(content_path) = inventory.remove_logical_path_from_head(&path) {
+                    staging.rm_staged_files(&inventory, &[&content_path])?;
+                }
             }
 
             for path in revert_updates {
@@ -685,7 +752,13 @@ impl OcflRepo {
             .update_meta(user_name, user_address, message, created);
 
         staging.stage_inventory(&inventory, true)?;
-        staging.rm_staged_files(&inventory, &duplicates)?;
+        staging.rm_staged_files(
+            &inventory,
+            &duplicates
+                .iter()
+                .map(|p| p.as_ref())
+                .collect::<Vec<&InventoryPath>>(),
+        )?;
         staging.rm_orphaned_files(&inventory)?;
 
         if inventory.is_new() {
