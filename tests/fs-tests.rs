@@ -1,5 +1,6 @@
 use std::convert::{TryFrom, TryInto};
 use std::fs;
+use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -751,7 +752,7 @@ fn copy_files_into_new_object() -> Result<()> {
     let deduped_path = assert_deduped_path(
         &obj_root,
         obj.state.get(&path("test.txt")).unwrap(),
-        vec!["v1/content/another/test.txt", "v1/content/test.txt"],
+        &["v1/content/another/test.txt", "v1/content/test.txt"],
     );
 
     assert_file_details(
@@ -1562,7 +1563,7 @@ fn internal_copy_files_added_in_staged_version() -> Result<()> {
     let deduped_path = assert_deduped_path(
         &Path::new(&committed_obj.object_root),
         committed_obj.state.get(&path("just in.txt")).unwrap(),
-        vec!["v5/content/just in.txt", "v5/content/just-in.txt"],
+        &["v5/content/just in.txt", "v5/content/just-in.txt"],
     );
 
     assert_file_details(
@@ -1924,6 +1925,25 @@ fn move_files_should_dedup_on_commit() -> Result<()> {
         &vec![create_file(&temp, "test.txt", "testing").path()],
         "another/copy/here/surprise.txt",
     )?;
+
+    let staged_obj = repo.get_staged_object(object_id)?;
+    let staged_root = PathBuf::from(&staged_obj.object_root);
+
+    assert_file_details(
+        staged_obj.state.get(&path("dir/file.txt")).unwrap(),
+        &staged_root,
+        "v2/content/dir/file.txt",
+        "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
+    );
+    assert_file_details(
+        staged_obj
+            .state
+            .get(&path("another/copy/here/surprise.txt"))
+            .unwrap(),
+        &staged_root,
+        "v2/content/another/copy/here/surprise.txt",
+        "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
+    );
 
     repo.commit(object_id, None, None, None, None)?;
 
@@ -3572,9 +3592,85 @@ fn internal_move_of_new_file_should_copy_file_on_disk() {
     );
 }
 
-// TODO add more dedup tests
-// TODO verify file contents
-// TODO add complicated test
+#[test]
+fn internal_copy_of_duplicate_file_should_operate_on_staged_version() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "copy dupe overwrite";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+        .unwrap();
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "a-file.txt", "contents").path()],
+        "/",
+    )
+    .unwrap();
+
+    repo.commit(object_id, None, None, None, None).unwrap();
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "a-file-2.txt", "contents").path()],
+        "/",
+    )
+    .unwrap();
+
+    repo.copy_files_internal(object_id, None, &vec!["a-file-2.txt"], "b-file.txt", false)
+        .unwrap();
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "a-file.txt", "different!").path()],
+        "/",
+    )
+    .unwrap();
+
+    let staged = repo.get_staged_object(object_id).unwrap();
+    let staged_root = PathBuf::from(&staged.object_root);
+
+    assert_eq!(3, staged.state.len());
+
+    assert_file_details(
+        staged.state.get(&path("a-file.txt")).unwrap(),
+        &staged_root,
+        "v2/content/a-file.txt",
+        "3b6bb43dcbbaa5b3db412a2fd63b1a4c0db38d0a03a65694af8a3e3cc2d78347",
+    );
+    assert_file_details(
+        staged.state.get(&path("b-file.txt")).unwrap(),
+        &staged_root,
+        "v2/content/b-file.txt",
+        "d1b2a59fbea7e20077af9f91b27e95e865061b270be03ff539ab3b73587882e8",
+    );
+    assert_file_details(
+        staged.state.get(&path("a-file-2.txt")).unwrap(),
+        &staged_root,
+        "v2/content/a-file-2.txt",
+        "d1b2a59fbea7e20077af9f91b27e95e865061b270be03ff539ab3b73587882e8",
+    );
+
+    repo.commit(object_id, None, None, None, None).unwrap();
+
+    let committed_obj = repo.get_object(object_id, None).unwrap();
+    let object_root = PathBuf::from(&committed_obj.object_root);
+
+    assert_file_details(
+        committed_obj.state.get(&path("b-file.txt")).unwrap(),
+        &object_root,
+        "v1/content/a-file.txt",
+        "d1b2a59fbea7e20077af9f91b27e95e865061b270be03ff539ab3b73587882e8",
+    );
+    assert_file_details(
+        committed_obj.state.get(&path("a-file-2.txt")).unwrap(),
+        &object_root,
+        "v1/content/a-file.txt",
+        "d1b2a59fbea7e20077af9f91b27e95e865061b270be03ff539ab3b73587882e8",
+    );
+}
 
 // TODO internal cp/mv src does not exist
 // TODO internal cp/mv partial success
@@ -3629,14 +3725,31 @@ fn assert_file_details(
             .to_string(),
         actual.storage_path
     );
-    assert_eq!(Rc::new(digest.into()), actual.digest);
     assert!(Path::new(&actual.storage_path).is_file());
+    if digest.len() == 64 {
+        assert_eq!(
+            digest,
+            DigestAlgorithm::Sha256
+                .hash_hex(&mut File::open(&actual.storage_path).unwrap())
+                .unwrap()
+                .as_ref()
+        )
+    } else {
+        assert_eq!(
+            digest,
+            DigestAlgorithm::Sha512
+                .hash_hex(&mut File::open(&actual.storage_path).unwrap())
+                .unwrap()
+                .as_ref()
+        )
+    }
+    assert_eq!(Rc::new(digest.into()), actual.digest);
 }
 
 fn assert_deduped_path(
     object_root: impl AsRef<Path>,
     details: &FileDetails,
-    possible_paths: Vec<&str>,
+    possible_paths: &[&str],
 ) -> Rc<InventoryPath> {
     assert!(possible_paths.contains(&details.content_path.as_ref().as_ref().as_str()));
 
