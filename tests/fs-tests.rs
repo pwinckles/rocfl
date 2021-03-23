@@ -8,6 +8,7 @@ use assert_fs::fixture::ChildPath;
 use assert_fs::prelude::*;
 use assert_fs::TempDir;
 use chrono::{DateTime, Local, TimeZone};
+use fs_extra::dir::CopyOptions;
 use maplit::hashmap;
 use rocfl::ocfl::layout::{LayoutExtensionName, StorageLayout};
 use rocfl::ocfl::{
@@ -3861,7 +3862,73 @@ fn internal_copy_of_duplicate_file_should_operate_on_staged_version() {
     );
 }
 
-// TODO commit to a changed resource (in main repo)
+#[test]
+fn fail_commit_when_staged_version_out_of_sync_with_main() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "out-of-sync";
+    let id_hash = "46acfc156ff00023c6ff7c5cfc923eaf43123f63dd558579e90293f0eba1e574";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "a-file.txt", "contents").path()],
+        "/",
+    )
+    .unwrap();
+
+    let staged = repo.get_staged_object(object_id).unwrap();
+    let staged_root = PathBuf::from(&staged.object_root);
+
+    let mut options = CopyOptions::new();
+    options.copy_inside = true;
+
+    fs_extra::dir::copy(&staged_root, temp.path(), &options).unwrap();
+
+    repo.commit(object_id, None, None, None, None).unwrap();
+
+    fs_extra::dir::copy(temp.child(id_hash).path(), &staged_root, &options).unwrap();
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "b-file.txt", "another").path()],
+        "/",
+    )
+    .unwrap();
+
+    if let Err(e) = repo.commit(object_id, None, None, None, None) {
+        assert_eq!("Illegal state: Cannot create version v5 in object out-of-sync because the HEAD is at v5",
+                   e.to_string());
+    } else {
+        panic!("Commit should have thrown an error");
+    }
+
+    let staged = repo.get_staged_object(object_id).unwrap();
+
+    assert_file_details(
+        staged.state.get(&path("a-file.txt")).unwrap(),
+        &staged_root,
+        "v5/content/a-file.txt",
+        "3b6bb43dcbbaa5b3db412a2fd63b1a4c0db38d0a03a65694af8a3e3cc2d78347",
+    );
+    assert_file_details(
+        staged.state.get(&path("b-file.txt")).unwrap(),
+        &staged_root,
+        "v5/content/b-file.txt",
+        "ae448ac86c4e8e4dec645729708ef41873ae79c6dff84eff73360989487f08e5",
+    );
+
+    let committed_obj = repo.get_object(object_id, None).unwrap();
+    assert_eq!(
+        VersionNum::new(5),
+        committed_obj.version_details.version_num
+    );
+}
+
 // TODO commit on tampered staged version
 // TODO object in root has wrong id
 // TODO object with mutable head
