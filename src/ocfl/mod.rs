@@ -456,34 +456,41 @@ impl OcflRepo {
 
         let mut inventory = self.get_or_created_staged_inventory(object_id)?;
         let src_version_num = version_num.unwrap_or(inventory.head);
-
-        let to_copy =
-            self.resolve_internal_moves(&inventory, src_version_num, src, dst, recursive)?;
-
-        // TODO continue on error
-
         let staging = self.get_staging()?;
 
+        let (to_copy, mut errors) =
+            self.resolve_internal_moves(&inventory, src_version_num, src, dst, recursive)?;
+
         for (src_path, dst_path) in to_copy {
-            info!(
-                "Copying file {} from {} to {}",
-                src_path, src_version_num, dst_path
-            );
+            let attempt = || -> Result<()> {
+                info!(
+                    "Copying file {} from {} to {}",
+                    src_path, src_version_num, dst_path
+                );
 
-            let digest_and_path =
-                lookup_staged_digest_and_content_path(&inventory, src_version_num, &src_path)?;
+                let digest_and_path =
+                    lookup_staged_digest_and_content_path(&inventory, src_version_num, &src_path)?;
 
-            // Copies of files new in the staged version must be copied on disk as well
-            if let Some((digest, content_path)) = digest_and_path {
-                staging.copy_staged_file(&inventory, &content_path, &dst_path)?;
-                inventory.add_file_to_head(digest, dst_path)?;
-            } else {
-                inventory.copy_file_to_head(src_version_num, &src_path, dst_path)?;
+                // Copies of files new in the staged version must be copied on disk as well
+                if let Some((digest, content_path)) = digest_and_path {
+                    staging.copy_staged_file(&inventory, &content_path, &dst_path)?;
+                    inventory.add_file_to_head(digest, dst_path)
+                } else {
+                    inventory.copy_file_to_head(src_version_num, &src_path, dst_path)
+                }
+            };
+
+            if let Err(e) = attempt() {
+                errors.push(format!("Failed to copy file {}: {}", src_path, e));
             }
         }
 
         inventory.head_version_mut().created = Local::now();
         staging.stage_inventory(&inventory, false)?;
+
+        if !errors.is_empty() {
+            return Err(RocflError::CopyMoveError(MultiError(errors)));
+        }
 
         Ok(())
     }
@@ -531,30 +538,38 @@ impl OcflRepo {
         // TODO abstract the before and after?
 
         let mut inventory = self.get_or_created_staged_inventory(object_id)?;
-
-        let to_copy = self.resolve_internal_moves(&inventory, inventory.head, src, dst, true)?;
-
-        // TODO continue on error
-
         let staging = self.get_staging()?;
 
-        for (src_path, dst_path) in to_copy {
+        let (to_move, mut errors) =
+            self.resolve_internal_moves(&inventory, inventory.head, src, dst, true)?;
+
+        for (src_path, dst_path) in to_move {
             info!("Moving {} to {}", src_path, dst_path);
 
-            let digest_and_path =
-                lookup_staged_digest_and_content_path(&inventory, inventory.head, &src_path)?;
+            let attempt = || -> Result<()> {
+                let digest_and_path =
+                    lookup_staged_digest_and_content_path(&inventory, inventory.head, &src_path)?;
 
-            // Moves of files new in the staged version must be moved on disk as well
-            if let Some((digest, content_path)) = digest_and_path {
-                staging.move_staged_file(&inventory, &content_path, &dst_path)?;
-                inventory.move_new_in_head_file(digest, &src_path, dst_path)?;
-            } else {
-                inventory.move_file_in_head(&src_path, dst_path)?;
+                // Moves of files new in the staged version must be moved on disk as well
+                if let Some((digest, content_path)) = digest_and_path {
+                    staging.move_staged_file(&inventory, &content_path, &dst_path)?;
+                    inventory.move_new_in_head_file(digest, &src_path, dst_path)
+                } else {
+                    inventory.move_file_in_head(&src_path, dst_path)
+                }
+            };
+
+            if let Err(e) = attempt() {
+                errors.push(format!("Failed to move file {}: {}", src_path, e));
             }
         }
 
         inventory.head_version_mut().created = Local::now();
         staging.stage_inventory(&inventory, false)?;
+
+        if !errors.is_empty() {
+            return Err(RocflError::CopyMoveError(MultiError(errors)));
+        }
 
         Ok(())
     }
@@ -921,6 +936,7 @@ impl OcflRepo {
 
     /// Returns a map of source logical paths to destination logical paths that represent a source
     /// logical path being copied or moved from to the destination.
+    #[allow(clippy::type_complexity)]
     fn resolve_internal_moves(
         &self,
         inventory: &Inventory,
@@ -928,8 +944,9 @@ impl OcflRepo {
         src: &[impl AsRef<str>],
         dst: &str,
         recursive: bool,
-    ) -> Result<HashMap<Rc<InventoryPath>, InventoryPath>> {
+    ) -> Result<(HashMap<Rc<InventoryPath>, InventoryPath>, Vec<String>)> {
         let mut to_move = HashMap::new();
+        let mut errors = Vec::new();
 
         let dst_path = dst.try_into()?;
         let dst_dir_exists = inventory.head_version().is_dir(&dst_path);
@@ -940,11 +957,24 @@ impl OcflRepo {
 
         for path in src {
             let mut has_matches = false;
-            let files = version.resolve_glob(path.as_ref(), false)?;
+
+            let files = match version.resolve_glob(path.as_ref(), false) {
+                Ok(files) => files,
+                Err(e) => {
+                    errors.push(format!("Failed to resolve path {}: {}", path.as_ref(), e));
+                    continue;
+                }
+            };
             let many_files = files.len() > 1;
 
             if recursive {
-                let dirs = version.resolve_glob_to_dirs(path.as_ref())?;
+                let dirs = match version.resolve_glob_to_dirs(path.as_ref()) {
+                    Ok(dirs) => dirs,
+                    Err(e) => {
+                        errors.push(format!("Failed to resolve path {}: {}", path.as_ref(), e));
+                        HashSet::new()
+                    }
+                };
                 let many_dirs = dirs.len() > 1;
 
                 for dir in dirs {
@@ -952,50 +982,64 @@ impl OcflRepo {
                     let many_children = children.len() > 1;
 
                     for file in children {
-                        let logical_path = if dst_dir_exists
-                            || src_is_many
-                            || many_children
-                            || many_dirs
-                            || !files.is_empty()
-                        {
-                            logical_path_in_dst_dir_internal(&file, &dir.parent(), dst)?
-                        } else {
-                            logical_path_in_dst_dir_internal(&file, &dir, dst)?
+                        let mut attempt = || -> Result<()> {
+                            let logical_path = if dst_dir_exists
+                                || src_is_many
+                                || many_children
+                                || many_dirs
+                                || !files.is_empty()
+                            {
+                                logical_path_in_dst_dir_internal(&file, &dir.parent(), dst)?
+                            } else {
+                                logical_path_in_dst_dir_internal(&file, &dir, dst)?
+                            };
+
+                            has_matches = true;
+                            to_move.insert(file.clone(), logical_path);
+                            Ok(())
                         };
 
-                        has_matches = true;
-                        to_move.insert(file.clone(), logical_path);
+                        if let Err(e) = attempt() {
+                            errors.push(format!("Failed to copy/move file {}: {}", file, e));
+                        }
                     }
                 }
             }
 
             for file in files {
-                let logical_path = if dst_dir_exists
-                    || src_is_many
-                    || dst_has_slash
-                    || many_files
-                    || !to_move.is_empty()
-                {
-                    dst_path.resolve(&file.filename().try_into()?)
-                } else {
-                    dst_path.clone()
+                let mut attempt = || -> Result<()> {
+                    let logical_path = if dst_dir_exists
+                        || src_is_many
+                        || dst_has_slash
+                        || many_files
+                        || !to_move.is_empty()
+                    {
+                        dst_path.resolve(&file.filename().try_into()?)
+                    } else {
+                        dst_path.clone()
+                    };
+
+                    has_matches = true;
+                    to_move.insert(file.clone(), logical_path);
+                    Ok(())
                 };
 
-                has_matches = true;
-                to_move.insert(file.clone(), logical_path);
+                if let Err(e) = attempt() {
+                    errors.push(format!("Failed to copy/move file {}: {}", file, e));
+                }
             }
 
             if !has_matches {
-                error!(
-                    "Object {} version {} does not contain: {}",
+                errors.push(format!(
+                    "Object {} version {} does not contain any files at {}",
                     inventory.id,
                     src_version_num,
                     path.as_ref()
-                );
+                ));
             }
         }
 
-        Ok(to_move)
+        Ok((to_move, errors))
     }
 
     fn get_staging(&self) -> Result<&FsOcflStore> {

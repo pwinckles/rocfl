@@ -1154,6 +1154,29 @@ fn fail_copy_when_src_dir_and_recursion_not_enabled() {
 }
 
 #[test]
+#[should_panic(
+    expected = "Illegal argument: Paths may not contain '.', '..', or '' parts. Found: some/../../dir"
+)]
+fn copy_should_reject_bad_dst() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "internal bad dst";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.copy_files_external(
+        object_id,
+        &vec![create_file(&temp, "test.txt", "test").path()],
+        "some/../../dir",
+        false,
+    )
+    .unwrap();
+}
+
+#[test]
 fn copy_should_partially_succeed_when_multiple_src_and_some_fail() {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
@@ -1724,6 +1747,79 @@ fn internal_copy_should_reject_conflicting_dirs() {
 }
 
 #[test]
+#[should_panic(
+    expected = "Illegal argument: Paths may not contain '.', '..', or '' parts. Found: some/../../dir"
+)]
+fn internal_copy_should_reject_bad_dst() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "internal bad dst";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.copy_files_internal(object_id, None, &vec!["file3.txt"], "some/../../dir", false)
+        .unwrap();
+}
+
+#[test]
+fn internal_copy_should_continue_on_partial_success() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let object_id = "int-copy-partial-success";
+
+    let repo = default_repo(root.path());
+
+    create_example_object(object_id, &repo, &temp);
+
+    let result = repo.copy_files_internal(
+        object_id,
+        None,
+        &vec!["a/file1.txt", "bogus.txt", "a/file5.txt"],
+        "new-dir",
+        false,
+    );
+
+    match result {
+        Err(RocflError::CopyMoveError(e)) => {
+            assert_eq!(1, e.0.len());
+            assert!(e
+                .0
+                .get(0)
+                .unwrap()
+                .contains("does not contain any files at bogus.txt"));
+        }
+        _ => panic!("Expected copy to return an error"),
+    }
+
+    let committed_obj = repo.get_object(object_id, None)?;
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(9, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("new-dir/file1.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/file1.txt",
+        "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("new-dir/file5.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/d/e/file5.txt",
+        "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
+    );
+
+    assert!(staged_obj.state.get(&path("a/file1.txt")).is_some());
+    assert!(staged_obj.state.get(&path("a/file5.txt")).is_some());
+
+    Ok(())
+}
+
+#[test]
 fn move_files_into_new_object() -> Result<()> {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
@@ -2037,6 +2133,28 @@ fn move_should_reject_conflicting_dirs() {
 }
 
 #[test]
+#[should_panic(
+    expected = "Illegal argument: Paths may not contain '.', '..', or '' parts. Found: some/../../dir"
+)]
+fn move_should_reject_bad_dst() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "move bad dst";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "test.txt", "testing").path()],
+        "some/../../dir",
+    )
+    .unwrap();
+}
+
+#[test]
 fn move_into_dir_when_dst_ends_with_slash() -> Result<()> {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
@@ -2309,6 +2427,59 @@ fn internal_move_multiple_existing_file() -> Result<()> {
 }
 
 #[test]
+fn internal_move_should_continue_on_partial_success() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let object_id = "int-move-partial-success";
+
+    let repo = default_repo(root.path());
+
+    create_example_object(object_id, &repo, &temp);
+
+    let result = repo.move_files_internal(
+        object_id,
+        &vec!["a/file1.txt", "bogus.txt", "a/file5.txt"],
+        "new-dir",
+    );
+
+    match result {
+        Err(RocflError::CopyMoveError(e)) => {
+            assert_eq!(1, e.0.len());
+            assert!(e
+                .0
+                .get(0)
+                .unwrap()
+                .contains("does not contain any files at bogus.txt"));
+        }
+        _ => panic!("Expected copy to return an error"),
+    }
+
+    let committed_obj = repo.get_object(object_id, None)?;
+    let staged_obj = repo.get_staged_object(object_id)?;
+
+    assert_eq!(7, staged_obj.state.len());
+
+    assert_file_details(
+        staged_obj.state.get(&path("new-dir/file1.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/file1.txt",
+        "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
+    );
+    assert_file_details(
+        staged_obj.state.get(&path("new-dir/file5.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/a/d/e/file5.txt",
+        "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
+    );
+
+    assert!(staged_obj.state.get(&path("a/file1.txt")).is_none());
+    assert!(staged_obj.state.get(&path("a/file5.txt")).is_none());
+
+    Ok(())
+}
+
+#[test]
 fn internal_move_files_added_in_staged_version() {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
@@ -2394,6 +2565,24 @@ fn internal_move_should_reject_conflicting_dirs() {
         .unwrap();
 
     repo.move_files_internal(object_id, &vec!["b"], "a")
+        .unwrap();
+}
+
+#[test]
+#[should_panic(
+    expected = "Illegal argument: Paths may not contain '.', '..', or '' parts. Found: some/../../dir"
+)]
+fn internal_move_should_reject_bad_dst() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "internal mv bad dst";
+
+    create_example_object(object_id, &repo, &temp);
+
+    repo.move_files_internal(object_id, &vec!["file1.txt"], "some/../../dir")
         .unwrap();
 }
 
@@ -3672,8 +3861,6 @@ fn internal_copy_of_duplicate_file_should_operate_on_staged_version() {
     );
 }
 
-// TODO internal cp/mv src does not exist
-// TODO internal cp/mv partial success
 // TODO commit to a changed resource (in main repo)
 // TODO commit on tampered staged version
 // TODO object in root has wrong id
