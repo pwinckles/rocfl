@@ -2536,13 +2536,13 @@ fn remove_files_that_do_not_exist_should_do_nothing() -> Result<()> {
 }
 
 #[test]
-fn revert_newly_added_files() -> Result<()> {
+fn reset_newly_added_files() -> Result<()> {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
 
     let repo = default_repo(root.path());
 
-    let object_id = "revert";
+    let object_id = "reset";
 
     create_example_object(object_id, &repo, &temp);
 
@@ -2573,7 +2573,7 @@ fn revert_newly_added_files() -> Result<()> {
         "104d021d7891c889c85c12e83e35ba1c5327c4415878c69372fe71e8f3992a28",
     );
 
-    repo.revert(object_id, &vec!["new.txt"], false)?;
+    repo.reset(object_id, &vec!["new.txt"], false)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -2607,13 +2607,13 @@ fn revert_newly_added_files() -> Result<()> {
 }
 
 #[test]
-fn revert_copied_file() -> Result<()> {
+fn reset_copied_file() -> Result<()> {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
 
     let repo = default_repo(root.path());
 
-    let object_id = "revert dup";
+    let object_id = "reset dup";
 
     create_example_object(object_id, &repo, &temp);
 
@@ -2643,7 +2643,7 @@ fn revert_copied_file() -> Result<()> {
         "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
     );
 
-    repo.revert(object_id, &vec!["new.txt"], false)?;
+    repo.reset(object_id, &vec!["new.txt"], false)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -2672,13 +2672,13 @@ fn revert_copied_file() -> Result<()> {
 }
 
 #[test]
-fn revert_changes_to_existing_files() -> Result<()> {
+fn reset_changes_to_existing_files() -> Result<()> {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
 
     let repo = default_repo(root.path());
 
-    let object_id = "revert updates";
+    let object_id = "reset updates";
 
     create_example_object(object_id, &repo, &temp);
 
@@ -2709,7 +2709,7 @@ fn revert_changes_to_existing_files() -> Result<()> {
         "0c23cc2b5985555eeb46bda05d886e2281c00731bcfc5aca22e00a4d4baa6100",
     );
 
-    repo.revert(object_id, &vec!["a/*"], false)?;
+    repo.reset(object_id, &vec!["a/*"], false)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -2753,13 +2753,13 @@ fn revert_changes_to_existing_files() -> Result<()> {
 }
 
 #[test]
-fn revert_removed_file() -> Result<()> {
+fn reset_removed_file() -> Result<()> {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
 
     let repo = default_repo(root.path());
 
-    let object_id = "revert";
+    let object_id = "reset";
 
     create_example_object(object_id, &repo, &temp);
 
@@ -2774,7 +2774,7 @@ fn revert_removed_file() -> Result<()> {
     assert!(staged_obj.state.get(&path("a/b/file2.txt")).is_none());
     assert!(staged_obj.state.get(&path("a/f/file6.txt")).is_none());
 
-    repo.revert(object_id, &vec!["a/f"], true)?;
+    repo.reset(object_id, &vec!["a/f"], true)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -2813,13 +2813,13 @@ fn revert_removed_file() -> Result<()> {
 
 #[test]
 #[should_panic(expected = "does not have a staged version")]
-fn revert_all() {
+fn reset_all() {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
 
     let repo = default_repo(root.path());
 
-    let object_id = "revert all";
+    let object_id = "reset all";
 
     create_example_object(object_id, &repo, &temp);
 
@@ -2829,19 +2829,19 @@ fn revert_all() {
 
     assert_eq!(0, staged_obj.state.len());
 
-    repo.revert_all(object_id).unwrap();
+    repo.reset_all(object_id).unwrap();
 
     repo.get_staged_object(object_id).unwrap();
 }
 
 #[test]
-fn revert_complex_changes_without_conflict() -> Result<()> {
+fn reset_complex_changes_without_conflict() -> Result<()> {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
 
     let repo = default_repo(root.path());
 
-    let object_id = "revert";
+    let object_id = "reset";
 
     create_example_object(object_id, &repo, &temp);
 
@@ -2866,7 +2866,7 @@ fn revert_complex_changes_without_conflict() -> Result<()> {
         .get(&path("a/file1.txt/file3.txt"))
         .is_some());
 
-    repo.revert(object_id, &vec!["*"], true)?;
+    repo.reset(object_id, &vec!["*"], true)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -2885,13 +2885,13 @@ fn revert_complex_changes_without_conflict() -> Result<()> {
 #[should_panic(
     expected = "Conflicting logical path a/file1.txt: This path is already in use as a directory"
 )]
-fn fail_revert_when_conflicted() {
+fn fail_reset_when_conflicted() {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
 
     let repo = default_repo(root.path());
 
-    let object_id = "revert conflict";
+    let object_id = "reset conflict";
 
     create_example_object(object_id, &repo, &temp);
 
@@ -2918,17 +2918,17 @@ fn fail_revert_when_conflicted() {
         .get(&path("a/file1.txt/file3.txt"))
         .is_some());
 
-    repo.revert(object_id, &vec!["a/file1.txt"], false).unwrap();
+    repo.reset(object_id, &vec!["a/file1.txt"], false).unwrap();
 }
 
 #[test]
-fn revert_should_do_nothing_when_path_does_not_exist() -> Result<()> {
+fn reset_should_do_nothing_when_path_does_not_exist() -> Result<()> {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
 
     let repo = default_repo(root.path());
 
-    let object_id = "revert";
+    let object_id = "reset";
 
     create_example_object(object_id, &repo, &temp);
 
@@ -2937,7 +2937,7 @@ fn revert_should_do_nothing_when_path_does_not_exist() -> Result<()> {
     let staged_obj = repo.get_staged_object(object_id)?;
     assert_eq!(3, staged_obj.state.len());
 
-    repo.revert(object_id, &vec!["bogus"], true)?;
+    repo.reset(object_id, &vec!["bogus"], true)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
     assert_eq!(3, staged_obj.state.len());
@@ -2946,17 +2946,17 @@ fn revert_should_do_nothing_when_path_does_not_exist() -> Result<()> {
 }
 
 #[test]
-fn revert_should_do_nothing_if_object_has_no_changes() -> Result<()> {
+fn reset_should_do_nothing_if_object_has_no_changes() -> Result<()> {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
 
     let repo = default_repo(root.path());
 
-    let object_id = "revert";
+    let object_id = "reset";
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.revert(object_id, &vec!["bogus"], true)?;
+    repo.reset(object_id, &vec!["bogus"], true)?;
 
     if let Err(RocflError::NotFound(_)) = repo.get_staged_object(object_id) {
         Ok(())
@@ -2966,13 +2966,13 @@ fn revert_should_do_nothing_if_object_has_no_changes() -> Result<()> {
 }
 
 #[test]
-fn revert_should_do_nothing_if_object_does_not_exist() -> Result<()> {
+fn reset_should_do_nothing_if_object_does_not_exist() -> Result<()> {
     let root = TempDir::new().unwrap();
     let repo = default_repo(root.path());
 
     let object_id = "missing";
 
-    repo.revert(object_id, &vec!["bogus"], true)?;
+    repo.reset(object_id, &vec!["bogus"], true)?;
 
     assert_staged_obj_not_exists(&repo, object_id);
 

@@ -73,7 +73,7 @@ pub struct Version {
 
     /// All of the logical path parts that should be treated as directories
     #[serde(skip)]
-    virtual_dirs: OnceCell<HashSet<InventoryPath>>,
+    logical_dirs: OnceCell<HashSet<InventoryPath>>,
 }
 
 /// OCFL user serialization object
@@ -161,6 +161,7 @@ impl Inventory {
                     // TODO move this to `ContentPath` after it's created
                     if let Some(slash) = path.as_ref().as_ref().find('/') {
                         let version_str = &path.as_ref().as_ref().as_str()[0..slash];
+                        // TODO THIS WILL FAIL FOR MUTABLE HEAD!!!!!!!!!
                         let version: VersionNum = version_str.try_into()?;
 
                         if version <= version_num {
@@ -519,7 +520,7 @@ impl Version {
                 address: Some(ROCFL_ADDRESS.to_string()),
             }),
             state,
-            virtual_dirs: OnceCell::default(),
+            logical_dirs: OnceCell::default(),
         }
     }
 
@@ -550,8 +551,8 @@ impl Version {
 
     /// Moves the current state map out, replacing it when an empty state
     pub fn remove_state(&mut self) -> PathBiMap {
-        if self.virtual_dirs.get().is_some() {
-            self.virtual_dirs = OnceCell::default();
+        if self.logical_dirs.get().is_some() {
+            self.logical_dirs = OnceCell::default();
         }
         mem::replace(&mut self.state, PathBiMap::new())
     }
@@ -562,7 +563,7 @@ impl Version {
         self.state.get_id(logical_path)
     }
 
-    /// Returns true if the specified path exists as either a logical file or virtual directory
+    /// Returns true if the specified path exists as either a logical file or directory
     pub fn exists(&self, path: &InventoryPath) -> bool {
         self.is_file(&path) || self.is_dir(path)
     }
@@ -572,9 +573,9 @@ impl Version {
         self.state.contains_path(path)
     }
 
-    // Returns true if the specified path exists and is a virtual directory
+    // Returns true if the specified path exists and is a logical directory
     pub fn is_dir(&self, path: &InventoryPath) -> bool {
-        self.get_virtual_dirs().contains(path)
+        self.get_logical_dirs().contains(path)
     }
 
     /// Returns true if the version's state contains an entry for the digest
@@ -631,7 +632,7 @@ impl Version {
         }
 
         if recursive {
-            for dir in self.get_virtual_dirs() {
+            for dir in self.get_logical_dirs() {
                 if (glob_trailing_slash && matcher.is_match(format!("{}/", dir)))
                     || (!glob_trailing_slash && matcher.is_match(dir.as_ref()))
                 {
@@ -643,7 +644,7 @@ impl Version {
         Ok(matches)
     }
 
-    /// Returns a set of all of the virtual dirs that match the glob
+    /// Returns a set of all of the logical dirs that match the glob
     pub fn resolve_glob_to_dirs(&self, glob: &str) -> Result<HashSet<&InventoryPath>> {
         let mut matches = HashSet::new();
 
@@ -656,7 +657,7 @@ impl Version {
             .build()?
             .compile_matcher();
 
-        for dir in self.get_virtual_dirs() {
+        for dir in self.get_logical_dirs() {
             if matcher.is_match(dir.as_ref()) {
                 matches.insert(dir);
             }
@@ -755,11 +756,11 @@ impl Version {
         diffs
     }
 
-    /// Adds a new logical path to the version, and updates the virtual directory set, if needed.
+    /// Adds a new logical path to the version, and updates the logical directory set, if needed.
     /// This path MUST be added to the inventory manifest separately for the inventory to be valid.
     fn add_file(&mut self, digest: Rc<HexDigest>, logical_path: InventoryPath) -> Result<()> {
         self.validate_non_conflicting(&logical_path)?;
-        if let Some(dirs) = self.virtual_dirs.get_mut() {
+        if let Some(dirs) = self.logical_dirs.get_mut() {
             if let Err(e) = foreach_dir(&logical_path, |dir| {
                 dirs.insert(dir);
                 Ok(())
@@ -775,16 +776,16 @@ impl Version {
 
     /// Removes a logical path from the version's state
     fn remove_file(&mut self, path: &InventoryPath) -> Option<(Rc<InventoryPath>, Rc<HexDigest>)> {
-        // must invalidate the virtual dirs
-        if self.virtual_dirs.get().is_some() {
-            self.virtual_dirs = OnceCell::default();
+        // must invalidate the logical dirs
+        if self.logical_dirs.get().is_some() {
+            self.logical_dirs = OnceCell::default();
         }
         self.state.remove_path(path)
     }
 
-    /// Initializes a HashSet containing all of the virtual directories within a version.
-    fn get_virtual_dirs(&self) -> &HashSet<InventoryPath> {
-        self.virtual_dirs.get_or_init(|| {
+    /// Initializes a HashSet containing all of the logical directories within a version.
+    fn get_logical_dirs(&self) -> &HashSet<InventoryPath> {
+        self.logical_dirs.get_or_init(|| {
             let mut dirs: HashSet<InventoryPath> = HashSet::with_capacity(self.state.len());
             for (path, _) in self.state.iter() {
                 if let Err(e) = foreach_dir(path, |dir| {
@@ -811,7 +812,7 @@ impl User {
     }
 }
 
-/// Executes the `consumer` on every virtual directory that is part of the input path.
+/// Executes the `consumer` on every logical directory that is part of the input path.
 fn foreach_dir<F: FnMut(InventoryPath) -> Result<()>>(
     path: &InventoryPath,
     mut consumer: F,

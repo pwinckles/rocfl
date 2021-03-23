@@ -73,8 +73,8 @@ pub enum Command {
     Move(MoveCmd),
     #[structopt(name = "rm")]
     Remove(RemoveCmd),
-    #[structopt(name = "revert")]
-    Revert(RevertCmd),
+    #[structopt(name = "reset")]
+    Reset(ResetCmd),
     #[structopt(name = "commit")]
     Commit(CommitCmd),
     #[structopt(name = "status")]
@@ -88,7 +88,7 @@ pub enum Command {
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct ListCmd {
     // TODO change this to be the default behavior
-    /// Disables the interpretation of logical path segments as hierarchical virtual directories.
+    /// Disables the interpretation of logical path segments as hierarchical logical directories.
     /// With this flag set, all logical paths in an object are returned
     #[structopt(short, long)]
     pub all: bool,
@@ -338,7 +338,7 @@ pub struct MoveCmd {
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct RemoveCmd {
-    /// Indicates that virtual directories should be removed recursively
+    /// Indicates that logical directories should be removed recursively
     #[structopt(short, long)]
     pub recursive: bool,
 
@@ -377,21 +377,21 @@ pub struct CommitCmd {
     pub object_id: String,
 }
 
-/// Reverts changes staged to an object. Additions are removed, deletions are restored, and
+/// Resets changes staged to an object. Additions are removed, deletions are restored, and
 /// modifications are returned to their original state.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
-pub struct RevertCmd {
-    /// Indicates that virtual directories should be reverted recursively
+pub struct ResetCmd {
+    /// Indicates that logical directories should be reset recursively
     #[structopt(short, long)]
     pub recursive: bool,
 
-    /// The ID of the object to revert
+    /// The ID of the object to reset
     #[structopt(name = "OBJ_ID")]
     pub object_id: String,
 
-    /// The logical paths of the files to revert. This may be a glob pattern. If no paths are
-    /// specified the entire object is reverted.
+    /// The logical paths of the files to reset. This may be a glob pattern. If no paths are
+    /// specified the entire object is reset.
     #[structopt(name = "PATH")]
     pub paths: Vec<String>,
 }
