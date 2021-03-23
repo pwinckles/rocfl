@@ -5,7 +5,7 @@ use log::info;
 
 use crate::cmd::opts::{
     CatCmd, CommitCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, Field, InitCmd, Layout, ListCmd,
-    MoveCmd, NewCmd, PurgeCmd, RemoveCmd, RevertCmd, RocflArgs, ShowCmd, StatusCmd, Storage,
+    MoveCmd, NewCmd, PurgeCmd, RemoveCmd, ResetCmd, RocflArgs, ShowCmd, StatusCmd, Storage,
 };
 use crate::cmd::{print, println, Cmd, GlobalArgs};
 use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
@@ -115,12 +115,12 @@ impl Cmd for RemoveCmd {
     }
 }
 
-impl Cmd for RevertCmd {
+impl Cmd for ResetCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
         if self.paths.is_empty() {
-            repo.revert(&self.object_id, &self.paths, self.recursive)
+            repo.reset(&self.object_id, &self.paths, self.recursive)
         } else {
-            repo.revert_all(&self.object_id)
+            repo.reset_all(&self.object_id)
         }
     }
 }

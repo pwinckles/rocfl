@@ -99,7 +99,7 @@ impl OcflRepo {
         })
     }
 
-    /// Creates a new `OcflRepo` instance backed by S3. `prefix` used to specify a virtual
+    /// Creates a new `OcflRepo` instance backed by S3. `prefix` used to specify a
     /// sub directory within a bucket that the OCFL repository is rooted in.
     #[cfg(feature = "s3")]
     pub fn s3_repo(region: Region, bucket: &str, prefix: Option<&str>) -> Result<Self> {
@@ -463,7 +463,6 @@ impl OcflRepo {
         // TODO continue on error
 
         let staging = self.get_staging()?;
-        let staging_prefix = format!("{}/", inventory.head);
 
         for (src_path, dst_path) in to_copy {
             info!(
@@ -471,31 +470,11 @@ impl OcflRepo {
                 src_path, src_version_num, dst_path
             );
 
-            // TODO dedup and move this somewhere else
-            let content = match inventory
-                .get_version(src_version_num)?
-                .lookup_digest(&src_path)
-            {
-                Some(digest) => {
-                    let content_path =
-                        inventory.content_path_for_digest(&digest, None, Some(&src_path))?;
-
-                    if content_path.as_ref().as_ref().starts_with(&staging_prefix) {
-                        Some((digest.as_ref().clone(), content_path.clone()))
-                    } else {
-                        None
-                    }
-                }
-                None => {
-                    return Err(RocflError::IllegalState(format!(
-                        "Failed to find digest for {}",
-                        src_path
-                    )))
-                }
-            };
+            let digest_and_path =
+                lookup_staged_digest_and_content_path(&inventory, src_version_num, &src_path)?;
 
             // Copies of files new in the staged version must be copied on disk as well
-            if let Some((digest, content_path)) = content {
+            if let Some((digest, content_path)) = digest_and_path {
                 staging.copy_staged_file(&inventory, &content_path, &dst_path)?;
                 inventory.add_file_to_head(digest, dst_path)?;
             } else {
@@ -558,32 +537,15 @@ impl OcflRepo {
         // TODO continue on error
 
         let staging = self.get_staging()?;
-        let staging_prefix = format!("{}/", inventory.head);
 
         for (src_path, dst_path) in to_copy {
             info!("Moving {} to {}", src_path, dst_path);
 
-            let content = match inventory.head_version().lookup_digest(&src_path) {
-                Some(digest) => {
-                    let content_path =
-                        inventory.content_path_for_digest(&digest, None, Some(&src_path))?;
-
-                    if content_path.as_ref().as_ref().starts_with(&staging_prefix) {
-                        Some((digest.as_ref().clone(), content_path.clone()))
-                    } else {
-                        None
-                    }
-                }
-                None => {
-                    return Err(RocflError::IllegalState(format!(
-                        "Failed to find digest for {}",
-                        src_path
-                    )))
-                }
-            };
+            let digest_and_path =
+                lookup_staged_digest_and_content_path(&inventory, inventory.head, &src_path)?;
 
             // Moves of files new in the staged version must be moved on disk as well
-            if let Some((digest, content_path)) = content {
+            if let Some((digest, content_path)) = digest_and_path {
                 staging.move_staged_file(&inventory, &content_path, &dst_path)?;
                 inventory.move_new_in_head_file(digest, &src_path, dst_path)?;
             } else {
@@ -632,16 +594,16 @@ impl OcflRepo {
         Ok(())
     }
 
-    /// Reverts all staged changes for an object by dropping the object's staged version completely.
-    pub fn revert_all(&self, object_id: &str) -> Result<()> {
+    /// Reset all staged changes for an object by dropping the object's staged version completely.
+    pub fn reset_all(&self, object_id: &str) -> Result<()> {
         self.get_staging()?.purge_object(object_id)
     }
 
-    /// Reverts to specified staged changes to an object. Paths may be a glob and is resolved
+    /// Resets to specified staged changes to an object. Paths may be a glob and is resolved
     /// against both the staged version and the previous version. Matches in the staged version
-    /// are treated as add/update reverts and matches in the previous version are treated as
-    /// remove reverts.
-    pub fn revert<P: AsRef<str>>(
+    /// are treated as add/update resets and matches in the previous version are treated as
+    /// remove resets.
+    pub fn reset<P: AsRef<str>>(
         &self,
         object_id: &str,
         paths: &[P],
@@ -677,31 +639,31 @@ impl OcflRepo {
                 }
             }
 
-            let mut revert_updates = HashSet::new();
-            let mut revert_adds = HashSet::new();
+            let mut reset_updates = HashSet::new();
+            let mut reset_adds = HashSet::new();
 
             for head_path in head_paths {
                 if previous_paths.remove(&head_path) {
-                    revert_updates.insert(head_path);
+                    reset_updates.insert(head_path);
                 } else {
-                    revert_adds.insert(head_path);
+                    reset_adds.insert(head_path);
                 }
             }
 
-            // Need to apply add reverts first to attempt to avoid revert path conflicts
-            for path in revert_adds {
+            // Need to apply add resets first to attempt to avoid path conflicts
+            for path in reset_adds {
                 if let Some(content_path) = inventory.remove_logical_path_from_head(&path) {
                     staging.rm_staged_files(&inventory, &[&content_path])?;
                 }
             }
 
-            for path in revert_updates {
+            for path in reset_updates {
                 if let Some(previous_num) = previous_num {
                     inventory.copy_file_to_head(previous_num, &path, path.as_ref().clone())?;
                 }
             }
 
-            // The remaining paths are deletes to revert
+            // The remaining paths are deletes to reset
             for path in previous_paths {
                 if let Some(previous_num) = previous_num {
                     inventory.copy_file_to_head(previous_num, &path, path.as_ref().clone())?;
@@ -1172,4 +1134,35 @@ fn logical_path_in_dst_dir_internal(
 
     logical_path.push_str(&src.as_ref().as_str()[base_length..]);
     logical_path.try_into()
+}
+
+/// Looks up the digest of the specified logical path in the specified version, and then
+/// attempts to resolve the digest to a content path within the staging directory. If it
+/// is able to, then the digest and content path are returned. If it is not, nothing is
+/// returned.
+fn lookup_staged_digest_and_content_path(
+    inventory: &Inventory,
+    src_version_num: VersionNum,
+    src_path: &InventoryPath,
+) -> Result<Option<(HexDigest, Rc<InventoryPath>)>> {
+    let staging_prefix = format!("{}/", inventory.head);
+
+    match inventory
+        .get_version(src_version_num)?
+        .lookup_digest(&src_path)
+    {
+        Some(digest) => {
+            let content_path = inventory.content_path_for_digest(&digest, None, Some(&src_path))?;
+
+            if content_path.as_ref().as_ref().starts_with(&staging_prefix) {
+                Ok(Some((digest.as_ref().clone(), content_path.clone())))
+            } else {
+                Ok(None)
+            }
+        }
+        None => Err(RocflError::IllegalState(format!(
+            "Failed to find digest for {}",
+            src_path
+        ))),
+    }
 }
