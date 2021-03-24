@@ -139,12 +139,12 @@ impl ListCmd {
         let glob_trailing_slash = glob.ends_with('/');
 
         let matcher = GlobBuilder::new(&glob)
-            .literal_separator(self.logical)
+            .literal_separator(self.logical_dirs)
             .backslash_escape(true)
             .build()?
             .compile_matcher();
 
-        let virt_dirs = if self.logical {
+        let virt_dirs = if self.logical_dirs {
             Some(create_virt_dirs(&object))
         } else {
             None
@@ -163,7 +163,7 @@ impl ListCmd {
             }
         }
 
-        if self.logical {
+        if self.logical_dirs {
             let mut dir_matches = HashSet::new();
             let mut not_matched_dirs = HashSet::new();
 
