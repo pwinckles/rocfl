@@ -420,9 +420,6 @@ impl OcflRepo {
 
     /// Copies files from outside the OCFL repository into the specified OCFL object.
     /// A destination of `/` specifies the object's root.
-    ///
-    /// If `force` is `false` and the copy operation attempts to write a file to a logical
-    /// path where there is already a file, then the new file will **not** be copied.
     pub fn copy_files_external(
         &self,
         object_id: &str,
@@ -497,9 +494,6 @@ impl OcflRepo {
 
     /// Moves files from outside the OCFL repository into the specified OCFL object.
     /// A destination of `/` specifies the object's root.
-    ///
-    /// If `force` is `false` and the copy operation attempts to write a file to a logical
-    /// path where there is already a file, then the new file will **not** be copied.
     pub fn move_files_external(
         &self,
         object_id: &str,
@@ -763,6 +757,15 @@ impl OcflRepo {
             Ok(inventory) => Ok(inventory),
             Err(RocflError::NotFound(_)) => {
                 let mut inventory = self.store.get_inventory(&object_id)?;
+
+                // TODO should we refuse to stage changes for unknown extensions?
+                if inventory.mutable_head {
+                    return Err(RocflError::IllegalState(
+                        "Cannot stage changes for object because it has an active mutable HEAD."
+                            .to_string(),
+                    ));
+                }
+
                 inventory.create_staging_head()?;
                 staging.stage_object(&mut inventory)?;
                 Ok(inventory)

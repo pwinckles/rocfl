@@ -270,6 +270,7 @@ fn get_object_version_when_exists() -> Result<()> {
 
     Ok(())
 }
+
 #[test]
 fn get_object_with_mutable_head() -> Result<()> {
     let repo_root = create_repo_root("mutable");
@@ -3968,9 +3969,29 @@ fn fail_commit_when_staged_version_out_of_sync_with_main() {
     );
 }
 
+#[test]
+#[should_panic(expected = "Cannot stage changes for object because it has an active mutable HEAD.")]
+fn do_not_stage_changes_for_objects_with_mutable_heads() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    copy_existing_repo("mutable", &root);
+
+    let repo = OcflRepo::fs_repo(root.child("mutable").path()).unwrap();
+    let object_id = "o1";
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "test.txt", "testing").path()],
+        "/",
+    )
+    .unwrap();
+}
+
 // TODO commit on tampered staged version
 // TODO object in root has wrong id
-// TODO object with mutable head
+
+// TODO add cli sanity tests
 
 // TODO validate all test created inventories after adding validation API
 
@@ -4298,6 +4319,14 @@ fn create_repo_root(name: &str) -> PathBuf {
     path.push("repos");
     path.push(name);
     path
+}
+
+fn copy_existing_repo(name: &str, root: &TempDir) {
+    let path = create_repo_root(name);
+
+    let options = CopyOptions::new();
+
+    fs_extra::dir::copy(&path, root.path(), &options).unwrap();
 }
 
 fn sort_obj_details(objects: &mut Vec<ObjectVersionDetails>) {

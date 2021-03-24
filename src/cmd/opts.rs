@@ -88,8 +88,8 @@ pub enum Command {
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct ListCmd {
     /// Enables the interpretation of logical path parts as logical directories
-    #[structopt(short = "L", long)]
-    pub logical: bool,
+    #[structopt(short = "D", long)]
+    pub logical_dirs: bool,
 
     /// Enables long output format: Version, Updated, Name (Object ID or Logical Path)
     #[structopt(short, long)]
