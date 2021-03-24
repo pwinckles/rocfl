@@ -270,6 +270,45 @@ fn get_object_version_when_exists() -> Result<()> {
 
     Ok(())
 }
+#[test]
+fn get_object_with_mutable_head() -> Result<()> {
+    let repo_root = create_repo_root("mutable");
+    let repo = OcflRepo::fs_repo(&repo_root)?;
+
+    let object = repo.get_object("o1", None)?;
+    let object_root = PathBuf::from(&object.object_root);
+
+    assert_file_details(
+        object.state.get(&path("dir1/file3")).unwrap(),
+        &object_root,
+        "extensions/0005-mutable-head/head/content/r1/dir1/file3",
+        "b10ff867df18165a0e100d99cd3d27f845f7ef9ad84eeb627a53aabaea04805940c3693154b8a32541a31887dd\
+        a9fb1e667e93307473b1c581021714768bd032",
+    );
+    assert_file_details(
+        object.state.get(&path("dir1/file4")).unwrap(),
+        &object_root,
+        "extensions/0005-mutable-head/head/content/r1/dir1/file3",
+        "b10ff867df18165a0e100d99cd3d27f845f7ef9ad84eeb627a53aabaea04805940c3693154b8a32541a31887dd\
+        a9fb1e667e93307473b1c581021714768bd032",
+    );
+    assert_file_details(
+        object.state.get(&path("file1")).unwrap(),
+        &object_root,
+        "v1/content/file1",
+        "96a26e7629b55187f9ba3edc4acc940495d582093b8a88cb1f0303cf3399fe6b1f5283d76dfd561fc401a0cdf8\
+        78c5aad9f2d6e7e2d9ceee678757bb5d95c39e",
+    );
+    assert_file_details(
+        object.state.get(&path("file2")).unwrap(),
+        &object_root,
+        "v1/content/file2",
+        "4cf0ff5673ec65d9900df95502ed92b2605fc602ca20b6901652c7561b302668026095813af6adb0e663bdcdbe\
+        1f276d18bf0de254992a78573ad6574e7ae1f6",
+    );
+
+    Ok(())
+}
 
 #[test]
 #[should_panic(expected = "Not found: Object o4")]
@@ -3913,7 +3952,7 @@ fn fail_commit_when_staged_version_out_of_sync_with_main() {
         staged.state.get(&path("a-file.txt")).unwrap(),
         &staged_root,
         "v5/content/a-file.txt",
-        "3b6bb43dcbbaa5b3db412a2fd63b1a4c0db38d0a03a65694af8a3e3cc2d78347",
+        "d1b2a59fbea7e20077af9f91b27e95e865061b270be03ff539ab3b73587882e8",
     );
     assert_file_details(
         staged.state.get(&path("b-file.txt")).unwrap(),

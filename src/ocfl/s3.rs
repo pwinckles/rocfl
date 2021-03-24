@@ -93,7 +93,7 @@ impl S3OcflStore {
         let bytes = self.get_inventory_bytes(&object_root)?;
         // TODO should validate hash
 
-        if let Some(bytes) = bytes {
+        if let Some((bytes, mutable_head)) = bytes {
             let mut inventory = match self.parse_inventory_bytes(&bytes) {
                 Ok(inventory) => inventory,
                 Err(e) => {
@@ -111,6 +111,7 @@ impl S3OcflStore {
             } else {
                 inventory.object_root.clone()
             };
+            inventory.mutable_head = mutable_head;
 
             Ok(Some(inventory))
         } else {
@@ -124,18 +125,18 @@ impl S3OcflStore {
         Ok(inventory)
     }
 
-    fn get_inventory_bytes(&self, object_root: &str) -> Result<Option<Vec<u8>>> {
+    fn get_inventory_bytes(&self, object_root: &str) -> Result<Option<(Vec<u8>, bool)>> {
         let mutable_head_inv = join(object_root, MUTABLE_HEAD_INVENTORY_FILE);
 
         match self.s3_client.get_object(&mutable_head_inv)? {
             Some(bytes) => {
                 info!("Found mutable HEAD at {}", &mutable_head_inv);
-                Ok(Some(bytes))
+                Ok(Some((bytes, true)))
             }
             None => {
                 let inv_path = join(object_root, INVENTORY_FILE);
                 match self.s3_client.get_object(&inv_path)? {
-                    Some(bytes) => Ok(Some(bytes)),
+                    Some(bytes) => Ok(Some((bytes, false))),
                     None => Ok(None),
                 }
             }

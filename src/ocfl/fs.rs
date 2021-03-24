@@ -730,7 +730,7 @@ where
     A: AsRef<Path>,
     B: AsRef<Path>,
 {
-    let inventory_path = resolve_inventory_path(&object_root);
+    let (inventory_path, mutable_head) = resolve_inventory_path(&object_root);
     // TODO should validate hash
     let mut inventory = match parse_inventory_file(&inventory_path) {
         Ok(inventory) => inventory,
@@ -751,6 +751,7 @@ where
     inventory.object_root = relative;
     inventory.storage_path =
         util::convert_forwardslash_to_back(&object_root.as_ref().to_string_lossy()).into();
+    inventory.mutable_head = mutable_head;
     Ok(inventory)
 }
 
@@ -761,16 +762,16 @@ fn parse_inventory_file<P: AsRef<Path>>(inventory_file: P) -> Result<Inventory> 
     Ok(inventory)
 }
 
-fn resolve_inventory_path<P: AsRef<Path>>(object_root: P) -> PathBuf {
+fn resolve_inventory_path<P: AsRef<Path>>(object_root: P) -> (PathBuf, bool) {
     let mutable_head_inv = object_root.as_ref().join(MUTABLE_HEAD_INVENTORY_FILE);
     if mutable_head_inv.exists() {
         info!(
             "Found mutable HEAD at {}",
             mutable_head_inv.to_string_lossy()
         );
-        return mutable_head_inv;
+        return (mutable_head_inv, true);
     }
-    object_root.as_ref().join(INVENTORY_FILE)
+    (object_root.as_ref().join(INVENTORY_FILE), false)
 }
 
 fn load_storage_layout<P: AsRef<Path>>(storage_root: P) -> Option<StorageLayout> {
