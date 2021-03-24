@@ -155,7 +155,7 @@ impl Cmd for StatusCmd {
                 version: None,
                 path: None,
                 staged: true,
-                all: false,
+                logical: false,
                 digest: false,
                 objects: false,
                 header: true,
