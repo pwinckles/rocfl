@@ -11,7 +11,7 @@ use once_cell::unsync::OnceCell;
 use serde::{Deserialize, Serialize};
 
 use crate::ocfl::bimap::{IntoIter, Iter, PathBiMap};
-use crate::ocfl::consts::{DEFAULT_CONTENT_DIR, INVENTORY_TYPE};
+use crate::ocfl::consts::{DEFAULT_CONTENT_DIR, INVENTORY_TYPE, MUTABLE_HEAD_EXT_DIR};
 use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
 use crate::ocfl::error::{not_found, not_found_path, Result, RocflError};
 use crate::ocfl::{Diff, InventoryPath, VersionNum};
@@ -45,6 +45,9 @@ pub struct Inventory {
     #[serde(skip)]
     /// Physical path to the object's root
     pub storage_path: String,
+    #[serde(skip)]
+    /// Indicates if the head version is a mutable head extension version
+    pub mutable_head: bool,
 }
 
 /// Used to construct new inventories. This is not currently a general purposes builder. It is
@@ -161,8 +164,15 @@ impl Inventory {
                     // TODO move this to `ContentPath` after it's created
                     if let Some(slash) = path.as_ref().as_ref().find('/') {
                         let version_str = &path.as_ref().as_ref().as_str()[0..slash];
-                        // TODO THIS WILL FAIL FOR MUTABLE HEAD!!!!!!!!!
-                        let version: VersionNum = version_str.try_into()?;
+
+                        // Unfortunately, mutable head extension paths do not contain a version num
+                        let version = if self.mutable_head
+                            && path.as_ref().as_ref().starts_with(MUTABLE_HEAD_EXT_DIR)
+                        {
+                            self.head
+                        } else {
+                            version_str.try_into()?
+                        };
 
                         if version <= version_num {
                             matches.push(path);
@@ -492,6 +502,7 @@ impl InventoryBuilder {
             fixity: None,
             object_root: self.object_root,
             storage_path: self.storage_path,
+            mutable_head: false,
         };
 
         inventory.validate()?;
