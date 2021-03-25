@@ -26,6 +26,7 @@ use rusoto_core::Region;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
+// TODO review these re-exports
 pub use self::digest::DigestAlgorithm;
 use self::fs::FsOcflStore;
 use self::layout::LayoutExtensionName;
