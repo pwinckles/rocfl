@@ -13,7 +13,7 @@ use grep_matcher::{Captures, Matcher};
 use grep_regex::RegexMatcher;
 use grep_searcher::sinks::UTF8;
 use grep_searcher::Searcher;
-use log::{error, info};
+use log::{error, info, warn};
 use once_cell::sync::Lazy;
 use walkdir::WalkDir;
 
@@ -340,6 +340,22 @@ impl OcflStore for FsOcflStore {
         }
 
         Ok(())
+    }
+
+    /// Returns a list of all of the extension names that are associated with the object
+    fn list_object_extensions(&self, object_id: &str) -> Result<Vec<String>> {
+        let object_root = self.lookup_or_find_object_root_path(object_id)?;
+        let extensions_dir = Path::new(&object_root).join(EXTENSIONS_DIR);
+
+        let mut extensions = Vec::new();
+
+        if extensions_dir.exists() {
+            for entry in fs::read_dir(extensions_dir)? {
+                extensions.push(entry?.file_name().to_string_lossy().to_string());
+            }
+        }
+
+        Ok(extensions)
     }
 }
 
@@ -775,7 +791,10 @@ fn check_extensions(storage_root: impl AsRef<Path>) {
                     Ok(entry) => {
                         let name = entry.file_name().to_string_lossy().to_string();
                         if !SUPPORTED_EXTENSIONS.contains(&name.as_ref()) {
-                            info!("Extension {} is not supported at this time", name);
+                            warn!(
+                                "Storage root extension {} is not supported at this time",
+                                name
+                            );
                         }
                     }
                     Err(e) => error!("Failed to list storage root extensions: {}", e),

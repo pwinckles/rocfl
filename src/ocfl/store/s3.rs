@@ -8,7 +8,7 @@ use std::path::Path;
 use std::vec::IntoIter;
 
 use globset::GlobBuilder;
-use log::{error, info};
+use log::{error, info, warn};
 use once_cell::sync::Lazy;
 use rusoto_core::{Region, RusotoError};
 use rusoto_s3::{
@@ -214,6 +214,12 @@ impl OcflStore for S3OcflStore {
     }
 
     fn purge_object(&self, _object_id: &str) -> Result<()> {
+        // TODO s3
+        unimplemented!()
+    }
+
+    /// Returns a list of all of the extension names that are associated with the object
+    fn list_object_extensions(&self, _object_id: &str) -> Result<Vec<String>> {
         // TODO s3
         unimplemented!()
     }
@@ -456,7 +462,10 @@ fn check_extensions(s3_client: &S3Client) {
         Ok(result) => {
             for entry in result.directories {
                 if !SUPPORTED_EXTENSIONS.contains(&entry.as_str()) {
-                    info!("Extension {} is not supported at this time", entry);
+                    warn!(
+                        "Storage root extension {} is not supported at this time",
+                        entry
+                    );
                 }
             }
         }

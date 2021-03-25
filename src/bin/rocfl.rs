@@ -14,7 +14,7 @@ fn main() {
     } else if args.verbose {
         LevelFilter::Info
     } else {
-        LevelFilter::Error
+        LevelFilter::Warn
     };
 
     env_logger::builder()
