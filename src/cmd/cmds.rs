@@ -8,8 +8,7 @@ use crate::cmd::opts::{
     MoveCmd, NewCmd, PurgeCmd, RemoveCmd, ResetCmd, RocflArgs, ShowCmd, StatusCmd, Storage,
 };
 use crate::cmd::{print, println, Cmd, GlobalArgs};
-use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
-use crate::ocfl::{DigestAlgorithm, OcflRepo, Result};
+use crate::ocfl::{DigestAlgorithm, LayoutExtensionName, OcflRepo, Result, StorageLayout};
 
 impl Cmd for CatCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {

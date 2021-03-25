@@ -449,7 +449,7 @@ fn validate_digest_algorithm(
 mod tests {
     use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 
-    use crate::ocfl::layout::{
+    use super::{
         lower_percent_escape, HashedNTupleLayoutExtension, HashedNTupleObjectIdLayoutExtension,
     };
     use crate::ocfl::Result;
