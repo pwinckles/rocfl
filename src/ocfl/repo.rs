@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use chrono::{DateTime, Local};
-use log::{error, info};
+use log::{error, info, warn};
 use once_cell::unsync::OnceCell;
 #[cfg(feature = "s3")]
 use rusoto_core::Region;
@@ -727,12 +727,18 @@ impl OcflRepo {
             Err(RocflError::NotFound(_)) => {
                 let mut inventory = self.store.get_inventory(&object_id)?;
 
-                // TODO should we refuse to stage changes for unknown extensions?
                 if inventory.mutable_head {
                     return Err(RocflError::IllegalState(
                         "Cannot stage changes for object because it has an active mutable HEAD."
                             .to_string(),
                     ));
+                }
+
+                for extension in self.store.list_object_extensions(object_id)? {
+                    if !SUPPORTED_EXTENSIONS.contains(&extension.as_ref()) {
+                        warn!("Object {} uses unsupported extension {}. Modifying this object may have unintended consequences.",
+                              object_id, extension);
+                    }
                 }
 
                 inventory.create_staging_head()?;
