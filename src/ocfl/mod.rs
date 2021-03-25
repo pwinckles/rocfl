@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::fmt::Debug;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -734,12 +734,10 @@ impl OcflRepo {
 
         if inventory.is_new() {
             let object_root = staging.object_staging_path(&inventory);
-            self.store
-                .write_new_object(&inventory, &object_root.as_ref().to_path_buf())?;
+            self.store.write_new_object(&inventory, &object_root)?;
         } else {
             let version_root = staging.version_staging_path(&inventory);
-            self.store
-                .write_new_version(&inventory, &version_root.as_ref().to_path_buf())?;
+            self.store.write_new_version(&inventory, &version_root)?;
         }
 
         staging.purge_object(object_id)?;
@@ -1098,6 +1096,60 @@ trait OcflStore {
     /// nothing happens. Any dangling directories that were created as a result of purging
     /// the object are also removed.
     fn purge_object(&self, object_id: &str) -> Result<()>;
+}
+
+/// Operations related to staging versions of objects
+trait StagingStore: OcflStore {
+    /// Stages an OCFL object if there is not an existing object with the same ID.
+    fn stage_object(&self, inventory: &mut Inventory) -> Result<()>;
+
+    /// Copies a file in the staging area
+    fn stage_file_copy(
+        &self,
+        inventory: &Inventory,
+        source: &mut impl Read,
+        logical_path: &InventoryPath,
+    ) -> Result<()>;
+
+    /// Copies an existing staged file to a new location
+    fn copy_staged_file(
+        &self,
+        inventory: &Inventory,
+        src_content: &InventoryPath,
+        dst_logical: &InventoryPath,
+    ) -> Result<()>;
+
+    /// Moves a file in the staging area
+    fn stage_file_move(
+        &self,
+        inventory: &Inventory,
+        source: &impl AsRef<Path>,
+        logical_path: &InventoryPath,
+    ) -> Result<()>;
+
+    /// Moves an existing staged file to a new location
+    fn move_staged_file(
+        &self,
+        inventory: &Inventory,
+        src_content: &InventoryPath,
+        dst_logical: &InventoryPath,
+    ) -> Result<()>;
+
+    /// Deletes staged content files.
+    fn rm_staged_files(&self, inventory: &Inventory, paths: &[&InventoryPath]) -> Result<()>;
+
+    /// Deletes any staged files that are not referenced in the manifest
+    fn rm_orphaned_files(&self, inventory: &Inventory) -> Result<()>;
+
+    /// Serializes the inventory to the object's staging directory. If `finalize` is true,
+    /// then the inventory file will additionally be copied into the version directory.
+    fn stage_inventory(&self, inventory: &Inventory, finalize: bool) -> Result<()>;
+
+    /// Returns the path to the object's root staging directory
+    fn object_staging_path(&self, inventory: &Inventory) -> PathBuf;
+
+    /// Returns the path to the object version staging directory
+    fn version_staging_path(&self, inventory: &Inventory) -> PathBuf;
 }
 
 /// An iterator that adapts the output of a delegate `Inventory` iterator into another type.

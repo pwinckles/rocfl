@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::fs::{self, File, ReadDir};
+use std::fs::{self, File, OpenOptions, ReadDir};
 use std::io::{self, Read, Write};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -22,7 +22,7 @@ use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
-use crate::ocfl::{specs, util, InventoryPath, OcflLayout, VersionNum};
+use crate::ocfl::{specs, util, InventoryPath, OcflLayout, StagingStore, VersionNum};
 
 static OBJECT_ID_MATCHER: Lazy<RegexMatcher> =
     Lazy::new(|| RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap());
@@ -86,220 +86,6 @@ impl FsOcflStore {
         } else {
             Self::init(root, layout)
         }
-    }
-
-    // TODO all of this staging stuff should be moved into a trait
-
-    /// Stages an OCFL object if there is not an existing object with the same ID.
-    pub(super) fn stage_object(&self, inventory: &mut Inventory) -> Result<()> {
-        match self.get_inventory(&inventory.id) {
-            Err(RocflError::NotFound(_)) => (),
-            Err(e) => return Err(e),
-            _ => {
-                return Err(RocflError::IllegalState(format!(
-                    "Cannot create object {} because it already exists in staging",
-                    inventory.id
-                )));
-            }
-        }
-
-        info!("Staging OCFL object {} {}", &inventory.id, &inventory.head);
-
-        // If it's a new object, the object root path will not be known
-        if inventory.object_root.is_empty() {
-            let object_root = self.require_layout()?.map_object_id(&inventory.id);
-            inventory.object_root = object_root;
-        }
-
-        let storage_path = self.storage_root.join(&inventory.object_root);
-
-        // TODO existence?
-
-        fs::create_dir_all(&storage_path)?;
-
-        // TODO should we fail if already exists?
-        writeln!(
-            File::create(storage_path.join(OBJECT_NAMASTE_FILE))?,
-            "{}",
-            OCFL_OBJECT_VERSION
-        )?;
-        self.stage_inventory(&inventory, false)?;
-
-        Ok(())
-    }
-
-    /// Copies a file in the staging area
-    pub(super) fn stage_file_copy(
-        &self,
-        inventory: &Inventory,
-        source: &mut impl Read,
-        logical_path: &InventoryPath,
-    ) -> Result<()> {
-        // TODO any validation that the staged object exist?
-
-        let content_path = inventory.new_content_path_head(&logical_path)?;
-
-        let mut storage_path = self.storage_root.join(&inventory.object_root);
-        storage_path.push(&content_path.as_ref());
-
-        fs::create_dir_all(storage_path.parent().unwrap())?;
-        io::copy(source, &mut File::create(&storage_path)?)?;
-
-        Ok(())
-    }
-
-    /// Copies an existing staged file to a new location
-    pub(super) fn copy_staged_file(
-        &self,
-        inventory: &Inventory,
-        src_content: &InventoryPath,
-        dst_logical: &InventoryPath,
-    ) -> Result<()> {
-        // TODO any validation that the staged object exist?
-
-        let storage_path = self.storage_root.join(&inventory.object_root);
-
-        let dst_content = inventory.new_content_path_head(&dst_logical)?;
-
-        let src_storage = storage_path.join(src_content.as_ref());
-        let dst_storage = storage_path.join(dst_content.as_ref());
-
-        fs::create_dir_all(dst_storage.parent().unwrap())?;
-        fs::copy(&src_storage, &dst_storage)?;
-
-        Ok(())
-    }
-
-    /// Moves a file in the staging area
-    pub(super) fn stage_file_move(
-        &self,
-        inventory: &Inventory,
-        source: &impl AsRef<Path>,
-        logical_path: &InventoryPath,
-    ) -> Result<()> {
-        // TODO any validation that the staged object exist?
-
-        // TODO cleanup pathing
-        let content_path = inventory.new_content_path_head(&logical_path)?;
-
-        let mut storage_path = self.storage_root.join(&inventory.object_root);
-        storage_path.push(&content_path.as_ref());
-
-        fs::create_dir_all(storage_path.parent().unwrap())?;
-        fs::rename(source, &storage_path)?;
-
-        Ok(())
-    }
-
-    /// Moves an existing staged file to a new location
-    pub(super) fn move_staged_file(
-        &self,
-        inventory: &Inventory,
-        src_content: &InventoryPath,
-        dst_logical: &InventoryPath,
-    ) -> Result<()> {
-        // TODO any validation that the staged object exist?
-
-        let storage_path = self.storage_root.join(&inventory.object_root);
-
-        let dst_content = inventory.new_content_path_head(&dst_logical)?;
-
-        let src_storage = storage_path.join(src_content.as_ref());
-        let dst_storage = storage_path.join(dst_content.as_ref());
-
-        fs::create_dir_all(dst_storage.parent().unwrap())?;
-        fs::rename(&src_storage, &dst_storage)?;
-
-        Ok(())
-    }
-
-    /// Deletes staged content files.
-    pub(super) fn rm_staged_files(
-        &self,
-        inventory: &Inventory,
-        paths: &[&InventoryPath],
-    ) -> Result<()> {
-        let object_root = self.storage_root.join(&inventory.object_root);
-
-        for path in paths.iter() {
-            let full_path = object_root.join(path.as_ref());
-            info!("Deleting staged file: {}", full_path.to_string_lossy());
-            fs::remove_file(&full_path)?;
-            util::clean_dirs_up(full_path.parent().unwrap())?;
-        }
-
-        Ok(())
-    }
-
-    pub(super) fn rm_orphaned_files(&self, inventory: &Inventory) -> Result<()> {
-        // TODO need to centralize all of this path wrangling
-        let object_root = self.storage_root.join(&inventory.object_root);
-
-        let mut content_dir = object_root.join(inventory.head.to_string());
-        content_dir.push(inventory.defaulted_content_dir());
-
-        if content_dir.exists() {
-            for file in WalkDir::new(&content_dir) {
-                let file = file?;
-                if file.path().is_file() {
-                    let content_path = pathdiff::diff_paths(file.path(), &object_root).unwrap();
-                    if !inventory.contains_content_path(&InventoryPath::try_from(
-                        content_path.to_string_lossy(),
-                    )?) {
-                        info!("Deleting orphaned file: {}", file.path().to_string_lossy());
-                        fs::remove_file(file.path())?;
-                        util::clean_dirs_up(file.path().parent().unwrap())?;
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Serializes the inventory to the object's staging directory. If `finalize` is true,
-    /// then the inventory file will additionally be copied into the version directory.
-    pub(super) fn stage_inventory(&self, inventory: &Inventory, finalize: bool) -> Result<()> {
-        // TODO any validation that the staged object exist?
-
-        let object_root = self.storage_root.join(&inventory.object_root);
-        let inventory_path = object_root.join(INVENTORY_FILE);
-        let sidecar_name = format!(
-            "{}.{}",
-            INVENTORY_FILE,
-            inventory.digest_algorithm.to_string()
-        );
-        let sidecar_path = object_root.join(&sidecar_name);
-
-        let mut inv_writer = inventory
-            .digest_algorithm
-            .writer(File::create(&inventory_path)?)?;
-        serde_json::to_writer(&mut inv_writer, &inventory)?;
-
-        let digest = inv_writer.finalize_hex();
-
-        let mut sidecar_file = File::create(&sidecar_path)?;
-        writeln!(&mut sidecar_file, "{}  {}", digest, INVENTORY_FILE)?;
-
-        if finalize {
-            let version_path = object_root.join(inventory.head.to_string());
-            fs::create_dir_all(&version_path)?;
-            self.copy_inventory_files(&inventory, &object_root, &version_path)?;
-        }
-
-        Ok(())
-    }
-
-    /// Returns the path to the object's root staging directory
-    pub(super) fn object_staging_path(&self, inventory: &Inventory) -> impl AsRef<Path> {
-        self.storage_root.join(&inventory.object_root)
-    }
-
-    /// Returns the path to the object version staging directory
-    pub(super) fn version_staging_path(&self, inventory: &Inventory) -> impl AsRef<Path> {
-        self.object_staging_path(&inventory)
-            .as_ref()
-            .join(&inventory.head.to_string())
     }
 
     /// This method first attempts to locate the path to the object using the storage layout.
@@ -552,6 +338,215 @@ impl OcflStore for FsOcflStore {
         }
 
         Ok(())
+    }
+}
+
+impl StagingStore for FsOcflStore {
+    /// Stages an OCFL object if there is not an existing object with the same ID.
+    fn stage_object(&self, inventory: &mut Inventory) -> Result<()> {
+        match self.get_inventory(&inventory.id) {
+            Err(RocflError::NotFound(_)) => (),
+            Err(e) => return Err(e),
+            _ => {
+                return Err(RocflError::IllegalState(format!(
+                    "Cannot create object {} because it already exists in staging",
+                    inventory.id
+                )));
+            }
+        }
+
+        info!("Staging OCFL object {} {}", &inventory.id, &inventory.head);
+
+        // If it's a new object, the object root path will not be known
+        if inventory.object_root.is_empty() {
+            let object_root = self.require_layout()?.map_object_id(&inventory.id);
+            inventory.object_root = object_root;
+        }
+
+        let storage_path = self.storage_root.join(&inventory.object_root);
+
+        fs::create_dir_all(&storage_path)?;
+
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(storage_path.join(OBJECT_NAMASTE_FILE))?;
+
+        writeln!(file, "{}", OCFL_OBJECT_VERSION)?;
+        self.stage_inventory(&inventory, false)?;
+
+        Ok(())
+    }
+
+    /// Copies a file in the staging area
+    fn stage_file_copy(
+        &self,
+        inventory: &Inventory,
+        source: &mut impl Read,
+        logical_path: &InventoryPath,
+    ) -> Result<()> {
+        // TODO any validation that the staged object exist?
+
+        let content_path = inventory.new_content_path_head(&logical_path)?;
+
+        let mut storage_path = self.storage_root.join(&inventory.object_root);
+        storage_path.push(&content_path.as_ref());
+
+        fs::create_dir_all(storage_path.parent().unwrap())?;
+        io::copy(source, &mut File::create(&storage_path)?)?;
+
+        Ok(())
+    }
+
+    /// Copies an existing staged file to a new location
+    fn copy_staged_file(
+        &self,
+        inventory: &Inventory,
+        src_content: &InventoryPath,
+        dst_logical: &InventoryPath,
+    ) -> Result<()> {
+        // TODO any validation that the staged object exist?
+
+        let storage_path = self.storage_root.join(&inventory.object_root);
+
+        let dst_content = inventory.new_content_path_head(&dst_logical)?;
+
+        let src_storage = storage_path.join(src_content.as_ref());
+        let dst_storage = storage_path.join(dst_content.as_ref());
+
+        fs::create_dir_all(dst_storage.parent().unwrap())?;
+        fs::copy(&src_storage, &dst_storage)?;
+
+        Ok(())
+    }
+
+    /// Moves a file in the staging area
+    fn stage_file_move(
+        &self,
+        inventory: &Inventory,
+        source: &impl AsRef<Path>,
+        logical_path: &InventoryPath,
+    ) -> Result<()> {
+        // TODO any validation that the staged object exist?
+
+        // TODO cleanup pathing
+        let content_path = inventory.new_content_path_head(&logical_path)?;
+
+        let mut storage_path = self.storage_root.join(&inventory.object_root);
+        storage_path.push(&content_path.as_ref());
+
+        fs::create_dir_all(storage_path.parent().unwrap())?;
+        fs::rename(source, &storage_path)?;
+
+        Ok(())
+    }
+
+    /// Moves an existing staged file to a new location
+    fn move_staged_file(
+        &self,
+        inventory: &Inventory,
+        src_content: &InventoryPath,
+        dst_logical: &InventoryPath,
+    ) -> Result<()> {
+        // TODO any validation that the staged object exist?
+
+        let storage_path = self.storage_root.join(&inventory.object_root);
+
+        let dst_content = inventory.new_content_path_head(&dst_logical)?;
+
+        let src_storage = storage_path.join(src_content.as_ref());
+        let dst_storage = storage_path.join(dst_content.as_ref());
+
+        fs::create_dir_all(dst_storage.parent().unwrap())?;
+        fs::rename(&src_storage, &dst_storage)?;
+
+        Ok(())
+    }
+
+    /// Deletes staged content files.
+    fn rm_staged_files(&self, inventory: &Inventory, paths: &[&InventoryPath]) -> Result<()> {
+        let object_root = self.storage_root.join(&inventory.object_root);
+
+        for path in paths.iter() {
+            let full_path = object_root.join(path.as_ref());
+            info!("Deleting staged file: {}", full_path.to_string_lossy());
+            fs::remove_file(&full_path)?;
+            util::clean_dirs_up(full_path.parent().unwrap())?;
+        }
+
+        Ok(())
+    }
+
+    /// Deletes any staged files that are not referenced in the manifest
+    fn rm_orphaned_files(&self, inventory: &Inventory) -> Result<()> {
+        // TODO need to centralize all of this path wrangling
+        let object_root = self.storage_root.join(&inventory.object_root);
+
+        let mut content_dir = object_root.join(inventory.head.to_string());
+        content_dir.push(inventory.defaulted_content_dir());
+
+        if content_dir.exists() {
+            for file in WalkDir::new(&content_dir) {
+                let file = file?;
+                if file.path().is_file() {
+                    let content_path = pathdiff::diff_paths(file.path(), &object_root).unwrap();
+                    if !inventory.contains_content_path(&InventoryPath::try_from(
+                        content_path.to_string_lossy(),
+                    )?) {
+                        info!("Deleting orphaned file: {}", file.path().to_string_lossy());
+                        fs::remove_file(file.path())?;
+                        util::clean_dirs_up(file.path().parent().unwrap())?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Serializes the inventory to the object's staging directory. If `finalize` is true,
+    /// then the inventory file will additionally be copied into the version directory.
+    fn stage_inventory(&self, inventory: &Inventory, finalize: bool) -> Result<()> {
+        // TODO any validation that the staged object exist?
+
+        let object_root = self.storage_root.join(&inventory.object_root);
+        let inventory_path = object_root.join(INVENTORY_FILE);
+        let sidecar_name = format!(
+            "{}.{}",
+            INVENTORY_FILE,
+            inventory.digest_algorithm.to_string()
+        );
+        let sidecar_path = object_root.join(&sidecar_name);
+
+        let mut inv_writer = inventory
+            .digest_algorithm
+            .writer(File::create(&inventory_path)?)?;
+        serde_json::to_writer(&mut inv_writer, &inventory)?;
+
+        let digest = inv_writer.finalize_hex();
+
+        let mut sidecar_file = File::create(&sidecar_path)?;
+        writeln!(&mut sidecar_file, "{}  {}", digest, INVENTORY_FILE)?;
+
+        if finalize {
+            let version_path = object_root.join(inventory.head.to_string());
+            fs::create_dir_all(&version_path)?;
+            self.copy_inventory_files(&inventory, &object_root, &version_path)?;
+        }
+
+        Ok(())
+    }
+
+    /// Returns the path to the object's root staging directory
+    fn object_staging_path(&self, inventory: &Inventory) -> PathBuf {
+        self.storage_root.join(&inventory.object_root)
+    }
+
+    /// Returns the path to the object version staging directory
+    fn version_staging_path(&self, inventory: &Inventory) -> PathBuf {
+        let mut path = self.object_staging_path(&inventory);
+        path.push(&inventory.head.to_string());
+        path
     }
 }
 
