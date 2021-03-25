@@ -18,12 +18,12 @@ use rusoto_s3::{
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
 
-use super::OcflStore;
+use super::layout::StorageLayout;
+use super::{OcflLayout, OcflStore};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
-use crate::ocfl::layout::StorageLayout;
-use crate::ocfl::{InventoryPath, OcflLayout, VersionNum};
+use crate::ocfl::{InventoryPath, VersionNum};
 
 static EXTENSIONS_DIR_SUFFIX: Lazy<String> = Lazy::new(|| format!("/{}", EXTENSIONS_DIR));
 

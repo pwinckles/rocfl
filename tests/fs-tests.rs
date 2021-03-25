@@ -10,10 +10,9 @@ use assert_fs::TempDir;
 use chrono::{DateTime, Local, TimeZone};
 use fs_extra::dir::CopyOptions;
 use maplit::hashmap;
-use rocfl::ocfl::layout::{LayoutExtensionName, StorageLayout};
 use rocfl::ocfl::{
-    Diff, DigestAlgorithm, FileDetails, InventoryPath, ObjectVersion, ObjectVersionDetails,
-    OcflRepo, Result, RocflError, VersionDetails, VersionNum,
+    Diff, DigestAlgorithm, FileDetails, InventoryPath, LayoutExtensionName, ObjectVersion,
+    ObjectVersionDetails, OcflRepo, Result, RocflError, StorageLayout, VersionDetails, VersionNum,
 };
 
 #[test]
