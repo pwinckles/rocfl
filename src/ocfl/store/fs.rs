@@ -54,6 +54,8 @@ impl FsOcflStore {
             )));
         }
 
+        check_extensions(&storage_root);
+
         let storage_layout = load_storage_layout(&storage_root);
 
         Ok(Self {
@@ -757,6 +759,31 @@ fn resolve_inventory_path<P: AsRef<Path>>(object_root: P) -> (PathBuf, bool) {
         return (mutable_head_inv, true);
     }
     (object_root.as_ref().join(INVENTORY_FILE), false)
+}
+
+fn check_extensions(storage_root: impl AsRef<Path>) {
+    let extensions_dir = storage_root.as_ref().join(EXTENSIONS_DIR);
+
+    if !extensions_dir.exists() {
+        return;
+    }
+
+    match fs::read_dir(&extensions_dir) {
+        Ok(entries) => {
+            for entry in entries {
+                match entry {
+                    Ok(entry) => {
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        if !SUPPORTED_EXTENSIONS.contains(&name.as_ref()) {
+                            info!("Extension {} is not supported at this time", name);
+                        }
+                    }
+                    Err(e) => error!("Failed to list storage root extensions: {}", e),
+                }
+            }
+        }
+        Err(e) => error!("Failed to list storage root extensions: {}", e),
+    }
 }
 
 fn load_storage_layout<P: AsRef<Path>>(storage_root: P) -> Option<StorageLayout> {
