@@ -45,8 +45,6 @@ impl OcflRepo {
     /// Creates a new `OcflRepo` instance backed by the local filesystem. `storage_root` is the
     /// location of the OCFL repository to open. The OCFL repository must already exist.
     pub fn fs_repo<P: AsRef<Path>>(storage_root: P) -> Result<Self> {
-        // TODO need to warn about unsupported extensions
-
         let mut staging_root = storage_root.as_ref().join(EXTENSIONS_DIR);
         staging_root.push(ROCFL_STAGING_EXTENSION);
 
