@@ -57,6 +57,9 @@ pub trait OcflStore {
     /// nothing happens. Any dangling directories that were created as a result of purging
     /// the object are also removed.
     fn purge_object(&self, object_id: &str) -> Result<()>;
+
+    /// Returns a list of all of the extension names that are associated with the object
+    fn list_object_extensions(&self, object_id: &str) -> Result<Vec<String>>;
 }
 
 /// Operations related to staging versions of objects
