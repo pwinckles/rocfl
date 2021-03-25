@@ -40,6 +40,8 @@ impl S3OcflStore {
     /// Creates a new S3OcflStore
     pub fn new(region: Region, bucket: &str, prefix: Option<&str>) -> Result<Self> {
         let s3_client = S3Client::new(region, bucket, prefix)?;
+
+        check_extensions(&s3_client);
         let storage_layout = load_storage_layout(&s3_client);
 
         Ok(Self {
@@ -446,6 +448,19 @@ impl<'a> Iterator for InventoryIter<'a> {
                 }
             }
         }
+    }
+}
+
+fn check_extensions(s3_client: &S3Client) {
+    match s3_client.list_dir(EXTENSIONS_DIR) {
+        Ok(result) => {
+            for entry in result.directories {
+                if !SUPPORTED_EXTENSIONS.contains(&entry.as_str()) {
+                    info!("Extension {} is not supported at this time", entry);
+                }
+            }
+        }
+        Err(e) => error!("Failed to list storage root extensions: {}", e),
     }
 }
 
