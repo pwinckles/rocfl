@@ -17,12 +17,12 @@ use log::{error, info};
 use once_cell::sync::Lazy;
 use walkdir::WalkDir;
 
-use super::OcflStore;
+use super::layout::{LayoutExtensionName, StorageLayout};
+use super::{OcflLayout, OcflStore, StagingStore};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
-use crate::ocfl::layout::{LayoutExtensionName, StorageLayout};
-use crate::ocfl::{specs, util, InventoryPath, OcflLayout, StagingStore, VersionNum};
+use crate::ocfl::{specs, util, InventoryPath, VersionNum};
 
 static OBJECT_ID_MATCHER: Lazy<RegexMatcher> =
     Lazy::new(|| RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap());
