@@ -385,8 +385,6 @@ impl StagingStore for FsOcflStore {
         source: &mut impl Read,
         logical_path: &InventoryPath,
     ) -> Result<()> {
-        // TODO any validation that the staged object exist?
-
         let content_path = inventory.new_content_path_head(&logical_path)?;
 
         let mut storage_path = self.storage_root.join(&inventory.object_root);
@@ -405,8 +403,6 @@ impl StagingStore for FsOcflStore {
         src_content: &InventoryPath,
         dst_logical: &InventoryPath,
     ) -> Result<()> {
-        // TODO any validation that the staged object exist?
-
         let storage_path = self.storage_root.join(&inventory.object_root);
 
         let dst_content = inventory.new_content_path_head(&dst_logical)?;
@@ -427,8 +423,6 @@ impl StagingStore for FsOcflStore {
         source: &impl AsRef<Path>,
         logical_path: &InventoryPath,
     ) -> Result<()> {
-        // TODO any validation that the staged object exist?
-
         // TODO cleanup pathing
         let content_path = inventory.new_content_path_head(&logical_path)?;
 
@@ -448,8 +442,6 @@ impl StagingStore for FsOcflStore {
         src_content: &InventoryPath,
         dst_logical: &InventoryPath,
     ) -> Result<()> {
-        // TODO any validation that the staged object exist?
-
         let storage_path = self.storage_root.join(&inventory.object_root);
 
         let dst_content = inventory.new_content_path_head(&dst_logical)?;
@@ -507,8 +499,6 @@ impl StagingStore for FsOcflStore {
     /// Serializes the inventory to the object's staging directory. If `finalize` is true,
     /// then the inventory file will additionally be copied into the version directory.
     fn stage_inventory(&self, inventory: &Inventory, finalize: bool) -> Result<()> {
-        // TODO any validation that the staged object exist?
-
         let object_root = self.storage_root.join(&inventory.object_root);
         let inventory_path = object_root.join(INVENTORY_FILE);
         let sidecar_name = format!(
@@ -889,15 +879,14 @@ fn init_new_repo<P: AsRef<Path>>(root: P, layout: &StorageLayout) -> Result<()> 
         specs::OCFL_1_0_SPEC
     )?;
 
+    let extension_name = layout.extension_name().to_string();
+
     let ocfl_layout = OcflLayout {
         extension: layout.extension_name(),
-        // TODO what to do about this?
-        description: layout.extension_name().to_string(),
+        description: format!("See specification document {}.md", extension_name),
     };
 
     serde_json::to_writer_pretty(File::create(root.join(OCFL_LAYOUT_FILE))?, &ocfl_layout)?;
-
-    let extension_name = layout.extension_name().to_string();
 
     let mut layout_ext_dir = root.join(EXTENSIONS_DIR);
     layout_ext_dir.push(&extension_name);

@@ -248,8 +248,6 @@ impl FlatDirectLayoutExtension {
 
     /// One-to-one mapping from object ID to object root path
     fn map_object_id(&self, object_id: &str) -> String {
-        // TODO this is not validating that the object id can be safely mapped to a path
-        //      do we care as long as we aren't authoring objects?
         object_id.to_string()
     }
 }

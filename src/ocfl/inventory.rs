@@ -426,9 +426,6 @@ impl Inventory {
         version_num: VersionNum,
         logical_path: &InventoryPath,
     ) -> Result<InventoryPath> {
-        // TODO this is not correct for the mutable HEAD
-        // TODO should any other path cleanup be performed?
-        // TODO I think this is wrong for windows
         format!(
             "{}/{}/{}",
             version_num.to_string(),
@@ -605,15 +602,16 @@ impl Version {
             )));
         }
 
-        foreach_dir(&path, |dir| {
+        for dir in create_logical_dirs(path) {
             if self.is_file(&dir) {
                 return Err(RocflError::IllegalState(format!(
                     "Conflicting logical path {}: The path part {} is an existing logical file",
                     path, dir
                 )));
             }
-            Ok(())
-        })
+        }
+
+        Ok(())
     }
 
     /// Returns a set of all of the logical paths that match the provided glob pattern
@@ -772,13 +770,7 @@ impl Version {
     fn add_file(&mut self, digest: Rc<HexDigest>, logical_path: InventoryPath) -> Result<()> {
         self.validate_non_conflicting(&logical_path)?;
         if let Some(dirs) = self.logical_dirs.get_mut() {
-            if let Err(e) = foreach_dir(&logical_path, |dir| {
-                dirs.insert(dir);
-                Ok(())
-            }) {
-                // This should be impossible
-                error!("{}", e)
-            }
+            dirs.extend(create_logical_dirs(&logical_path));
         }
         self.state.insert_rc(digest, Rc::new(logical_path));
 
@@ -798,17 +790,13 @@ impl Version {
     fn get_logical_dirs(&self) -> &HashSet<InventoryPath> {
         self.logical_dirs.get_or_init(|| {
             let mut dirs: HashSet<InventoryPath> = HashSet::with_capacity(self.state.len());
-            for (path, _) in self.state.iter() {
-                if let Err(e) = foreach_dir(path, |dir| {
-                    dirs.insert(dir);
-                    Ok(())
-                }) {
-                    // This should be impossible
-                    error!("{}", e)
-                }
-            }
             // Add the root path
             dirs.insert("/".try_into().unwrap());
+
+            for (path, _) in self.state.iter() {
+                dirs.extend(create_logical_dirs(path));
+            }
+
             dirs
         })
     }
@@ -823,29 +811,15 @@ impl User {
     }
 }
 
-/// Executes the `consumer` on every logical directory that is part of the input path.
-fn foreach_dir<F: FnMut(InventoryPath) -> Result<()>>(
-    path: &InventoryPath,
-    mut consumer: F,
-) -> Result<()> {
-    // TODO I think all of this might be able to be replaced with calls to the new parent() method
-    let mut parts = path.parts();
-    let mut dir = String::new();
-    let mut current = parts.next();
-    let mut next = parts.next();
+fn create_logical_dirs(path: &InventoryPath) -> HashSet<InventoryPath> {
+    let mut dirs = HashSet::new();
 
-    while next.is_some() {
-        if !dir.is_empty() {
-            dir.push('/');
-        }
-        dir.push_str(current.unwrap());
-
-        let dir = dir.as_str().try_into()?;
-        consumer(dir)?;
-
-        current = next;
-        next = parts.next();
+    let mut parent = path.parent();
+    while parent.as_ref() != "" {
+        let next = parent.parent();
+        dirs.insert(parent);
+        parent = next;
     }
 
-    Ok(())
+    dirs
 }
