@@ -144,8 +144,8 @@ impl ListCmd {
             .build()?
             .compile_matcher();
 
-        let virt_dirs = if self.logical_dirs {
-            Some(create_virt_dirs(&object))
+        let logical_dirs = if self.logical_dirs {
+            Some(create_logical_dirs(&object))
         } else {
             None
         };
@@ -167,7 +167,7 @@ impl ListCmd {
             let mut dir_matches = HashSet::new();
             let mut not_matched_dirs = HashSet::new();
 
-            for dir in virt_dirs.unwrap() {
+            for dir in logical_dirs.unwrap() {
                 if (glob_trailing_slash && matcher.is_match(format!("{}/", dir)))
                     || (!glob_trailing_slash && matcher.is_match(dir.as_ref()))
                 {
@@ -275,7 +275,7 @@ fn cmp_listings(field: &Field, a: &Listing, b: &Listing) -> Ordering {
     }
 }
 
-fn create_virt_dirs(object: &ObjectVersion) -> HashSet<InventoryPath> {
+fn create_logical_dirs(object: &ObjectVersion) -> HashSet<InventoryPath> {
     let mut dirs = HashSet::with_capacity(object.state.len());
 
     dirs.insert("".try_into().unwrap());
