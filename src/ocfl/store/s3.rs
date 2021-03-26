@@ -203,12 +203,12 @@ impl OcflStore for S3OcflStore {
         self.s3_client.stream_object(&storage_path, sink)
     }
 
-    fn write_new_object(&self, _inventory: &Inventory, _object_path: &Path) -> Result<()> {
+    fn write_new_object(&self, _inventory: &mut Inventory, _object_path: &Path) -> Result<()> {
         // TODO s3
         unimplemented!()
     }
 
-    fn write_new_version(&self, _inventory: &Inventory, _version_path: &Path) -> Result<()> {
+    fn write_new_version(&self, _inventory: &mut Inventory, _version_path: &Path) -> Result<()> {
         // TODO s3
         unimplemented!()
     }

@@ -23,7 +23,7 @@ use crate::ocfl::store::layout::{LayoutExtensionName, StorageLayout};
 use crate::ocfl::store::s3::S3OcflStore;
 use crate::ocfl::store::{OcflStore, StagingStore};
 use crate::ocfl::{
-    util, Diff, DigestAlgorithm, InventoryPath, ObjectVersion, ObjectVersionDetails,
+    paths, util, Diff, DigestAlgorithm, InventoryPath, ObjectVersion, ObjectVersionDetails,
     VersionDetails, VersionNum,
 };
 
@@ -704,11 +704,12 @@ impl OcflRepo {
         staging.rm_orphaned_files(&inventory)?;
 
         if inventory.is_new() {
-            let object_root = staging.object_staging_path(&inventory);
-            self.store.write_new_object(&inventory, &object_root)?;
+            let object_root = PathBuf::from(&inventory.storage_path);
+            self.store.write_new_object(&mut inventory, &object_root)?;
         } else {
-            let version_root = staging.version_staging_path(&inventory);
-            self.store.write_new_version(&inventory, &version_root)?;
+            let version_root = paths::version_path(&inventory.storage_path, inventory.head);
+            self.store
+                .write_new_version(&mut inventory, &version_root)?;
         }
 
         staging.purge_object(object_id)?;

@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
@@ -44,14 +44,14 @@ pub trait OcflStore {
     /// object that is able to be moved into place with no additional modifications.
     ///
     /// The object must not already exist.
-    fn write_new_object(&self, inventory: &Inventory, object_path: &Path) -> Result<()>;
+    fn write_new_object(&self, inventory: &mut Inventory, object_path: &Path) -> Result<()>;
 
     /// Writes a new version to the OCFL object. The contents at `version_path` must be a fully
     /// formed OCFL version that is able to be moved into place within the object, requiring
     /// no additional modifications.
     ///
     /// The object must already exist, and the new version must not exist.
-    fn write_new_version(&self, inventory: &Inventory, version_path: &Path) -> Result<()>;
+    fn write_new_version(&self, inventory: &mut Inventory, version_path: &Path) -> Result<()>;
 
     /// Purges the specified object from the repository, if it exists. If it does not exist,
     /// nothing happens. Any dangling directories that were created as a result of purging
@@ -108,12 +108,6 @@ pub trait StagingStore: OcflStore {
     /// Serializes the inventory to the object's staging directory. If `finalize` is true,
     /// then the inventory file will additionally be copied into the version directory.
     fn stage_inventory(&self, inventory: &Inventory, finalize: bool) -> Result<()>;
-
-    /// Returns the path to the object's root staging directory
-    fn object_staging_path(&self, inventory: &Inventory) -> PathBuf;
-
-    /// Returns the path to the object version staging directory
-    fn version_staging_path(&self, inventory: &Inventory) -> PathBuf;
 }
 
 /// ocfl_layout.json serialization object
