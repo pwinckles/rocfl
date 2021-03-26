@@ -22,7 +22,7 @@ use super::{OcflLayout, OcflStore, StagingStore};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
-use crate::ocfl::{specs, util, InventoryPath, VersionNum};
+use crate::ocfl::{paths, specs, util, InventoryPath, VersionNum};
 
 static OBJECT_ID_MATCHER: Lazy<RegexMatcher> =
     Lazy::new(|| RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap());
@@ -216,7 +216,7 @@ impl OcflStore for FsOcflStore {
         let inventory = self.get_inventory(object_id)?;
 
         let content_path = inventory.content_path_for_logical_path(path, version_num)?;
-        let mut storage_path = self.storage_root.join(&inventory.object_root);
+        let mut storage_path = PathBuf::from(&inventory.storage_path);
         storage_path.push(content_path.as_ref().as_ref());
 
         let mut file = File::open(storage_path)?;
@@ -225,8 +225,8 @@ impl OcflStore for FsOcflStore {
         Ok(())
     }
 
-    fn write_new_object(&self, inventory: &Inventory, object_path: &Path) -> Result<()> {
-        let destination =
+    fn write_new_object(&self, inventory: &mut Inventory, object_path: &Path) -> Result<()> {
+        let storage_path =
             match self.get_object_root_path(&inventory.id) {
                 Some(object_root) => self.storage_root.join(object_root),
                 None => return Err(RocflError::IllegalState(
@@ -235,7 +235,7 @@ impl OcflStore for FsOcflStore {
                 )),
             };
 
-        if destination.exists() {
+        if storage_path.exists() {
             return Err(RocflError::IllegalState(format!(
                 "Cannot create object {} because it already exists",
                 inventory.id
@@ -244,13 +244,15 @@ impl OcflStore for FsOcflStore {
 
         info!("Creating new object {}", inventory.id);
 
-        fs::create_dir_all(destination.parent().unwrap())?;
-        fs::rename(object_path, &destination)?;
+        fs::create_dir_all(storage_path.parent().unwrap())?;
+        fs::rename(object_path, &storage_path)?;
+
+        inventory.storage_path = storage_path.to_string_lossy().into();
 
         Ok(())
     }
 
-    fn write_new_version(&self, inventory: &Inventory, version_path: &Path) -> Result<()> {
+    fn write_new_version(&self, inventory: &mut Inventory, version_path: &Path) -> Result<()> {
         if inventory.is_new() {
             return Err(RocflError::IllegalState(format!(
                 "Object {} must be created before adding new versions to it.",
@@ -291,6 +293,8 @@ impl OcflStore for FsOcflStore {
                 object_root.to_string_lossy()
             )));
         }
+
+        inventory.storage_path = object_root.to_string_lossy().into();
 
         Ok(())
     }
@@ -345,7 +349,7 @@ impl OcflStore for FsOcflStore {
     /// Returns a list of all of the extension names that are associated with the object
     fn list_object_extensions(&self, object_id: &str) -> Result<Vec<String>> {
         let object_root = self.lookup_or_find_object_root_path(object_id)?;
-        let extensions_dir = Path::new(&object_root).join(EXTENSIONS_DIR);
+        let extensions_dir = paths::extensions_path(&object_root);
 
         let mut extensions = Vec::new();
 
@@ -382,13 +386,15 @@ impl StagingStore for FsOcflStore {
         }
 
         let storage_path = self.storage_root.join(&inventory.object_root);
+        inventory.storage_path =
+            util::convert_forwardslash_to_back(&storage_path.to_string_lossy()).into();
 
         fs::create_dir_all(&storage_path)?;
 
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(storage_path.join(OBJECT_NAMASTE_FILE))?;
+            .open(paths::object_namaste_path(&storage_path))?;
 
         writeln!(file, "{}", OCFL_OBJECT_VERSION)?;
         self.stage_inventory(&inventory, false)?;
@@ -405,7 +411,7 @@ impl StagingStore for FsOcflStore {
     ) -> Result<()> {
         let content_path = inventory.new_content_path_head(&logical_path)?;
 
-        let mut storage_path = self.storage_root.join(&inventory.object_root);
+        let mut storage_path = PathBuf::from(&inventory.storage_path);
         storage_path.push(&content_path.as_ref());
 
         fs::create_dir_all(storage_path.parent().unwrap())?;
@@ -421,12 +427,12 @@ impl StagingStore for FsOcflStore {
         src_content: &InventoryPath,
         dst_logical: &InventoryPath,
     ) -> Result<()> {
-        let storage_path = self.storage_root.join(&inventory.object_root);
+        let object_root = PathBuf::from(&inventory.storage_path);
 
         let dst_content = inventory.new_content_path_head(&dst_logical)?;
 
-        let src_storage = storage_path.join(src_content.as_ref());
-        let dst_storage = storage_path.join(dst_content.as_ref());
+        let src_storage = object_root.join(src_content.as_ref());
+        let dst_storage = object_root.join(dst_content.as_ref());
 
         fs::create_dir_all(dst_storage.parent().unwrap())?;
         fs::copy(&src_storage, &dst_storage)?;
@@ -441,10 +447,9 @@ impl StagingStore for FsOcflStore {
         source: &impl AsRef<Path>,
         logical_path: &InventoryPath,
     ) -> Result<()> {
-        // TODO cleanup pathing
         let content_path = inventory.new_content_path_head(&logical_path)?;
 
-        let mut storage_path = self.storage_root.join(&inventory.object_root);
+        let mut storage_path = PathBuf::from(&inventory.storage_path);
         storage_path.push(&content_path.as_ref());
 
         fs::create_dir_all(storage_path.parent().unwrap())?;
@@ -460,12 +465,12 @@ impl StagingStore for FsOcflStore {
         src_content: &InventoryPath,
         dst_logical: &InventoryPath,
     ) -> Result<()> {
-        let storage_path = self.storage_root.join(&inventory.object_root);
+        let object_root = PathBuf::from(&inventory.storage_path);
 
         let dst_content = inventory.new_content_path_head(&dst_logical)?;
 
-        let src_storage = storage_path.join(src_content.as_ref());
-        let dst_storage = storage_path.join(dst_content.as_ref());
+        let src_storage = object_root.join(src_content.as_ref());
+        let dst_storage = object_root.join(dst_content.as_ref());
 
         fs::create_dir_all(dst_storage.parent().unwrap())?;
         fs::rename(&src_storage, &dst_storage)?;
@@ -475,7 +480,7 @@ impl StagingStore for FsOcflStore {
 
     /// Deletes staged content files.
     fn rm_staged_files(&self, inventory: &Inventory, paths: &[&InventoryPath]) -> Result<()> {
-        let object_root = self.storage_root.join(&inventory.object_root);
+        let object_root = PathBuf::from(&inventory.storage_path);
 
         for path in paths.iter() {
             let full_path = object_root.join(path.as_ref());
@@ -489,11 +494,9 @@ impl StagingStore for FsOcflStore {
 
     /// Deletes any staged files that are not referenced in the manifest
     fn rm_orphaned_files(&self, inventory: &Inventory) -> Result<()> {
-        // TODO need to centralize all of this path wrangling
-        let object_root = self.storage_root.join(&inventory.object_root);
+        let object_root = PathBuf::from(&inventory.storage_path);
 
-        let mut content_dir = object_root.join(inventory.head.to_string());
-        content_dir.push(inventory.defaulted_content_dir());
+        let content_dir = paths::head_content_path(&object_root, inventory);
 
         if content_dir.exists() {
             for file in WalkDir::new(&content_dir) {
@@ -517,14 +520,9 @@ impl StagingStore for FsOcflStore {
     /// Serializes the inventory to the object's staging directory. If `finalize` is true,
     /// then the inventory file will additionally be copied into the version directory.
     fn stage_inventory(&self, inventory: &Inventory, finalize: bool) -> Result<()> {
-        let object_root = self.storage_root.join(&inventory.object_root);
-        let inventory_path = object_root.join(INVENTORY_FILE);
-        let sidecar_name = format!(
-            "{}.{}",
-            INVENTORY_FILE,
-            inventory.digest_algorithm.to_string()
-        );
-        let sidecar_path = object_root.join(&sidecar_name);
+        let object_root = PathBuf::from(&inventory.storage_path);
+        let inventory_path = paths::inventory_path(&object_root);
+        let sidecar_path = paths::sidecar_path(&object_root, inventory.digest_algorithm);
 
         let mut inv_writer = inventory
             .digest_algorithm
@@ -537,24 +535,12 @@ impl StagingStore for FsOcflStore {
         writeln!(&mut sidecar_file, "{}  {}", digest, INVENTORY_FILE)?;
 
         if finalize {
-            let version_path = object_root.join(inventory.head.to_string());
+            let version_path = paths::version_path(&object_root, inventory.head);
             fs::create_dir_all(&version_path)?;
             self.copy_inventory_files(&inventory, &object_root, &version_path)?;
         }
 
         Ok(())
-    }
-
-    /// Returns the path to the object's root staging directory
-    fn object_staging_path(&self, inventory: &Inventory) -> PathBuf {
-        self.storage_root.join(&inventory.object_root)
-    }
-
-    /// Returns the path to the object version staging directory
-    fn version_staging_path(&self, inventory: &Inventory) -> PathBuf {
-        let mut path = self.object_staging_path(&inventory);
-        path.push(&inventory.head.to_string());
-        path
     }
 }
 
@@ -595,16 +581,16 @@ impl InventoryIter {
     }
 
     fn create_if_matches<P: AsRef<Path>>(&self, object_root: P) -> Option<Inventory> {
-        let inventory_path = object_root.as_ref().join(INVENTORY_FILE);
+        let inventory_path = paths::inventory_path(&object_root);
 
         if self.id_matcher.is_some() {
             if let Some(object_id) = self.extract_object_id(&inventory_path) {
                 if self.id_matcher.as_ref().unwrap().deref()(&object_id) {
-                    return parse_inventory_optional(&object_root, &self.root);
+                    return parse_inventory_optional(object_root, &self.root);
                 }
             }
         } else {
-            return parse_inventory_optional(&object_root, &self.root);
+            return parse_inventory_optional(object_root, &self.root);
         }
 
         None
@@ -774,11 +760,11 @@ fn resolve_inventory_path<P: AsRef<Path>>(object_root: P) -> (PathBuf, bool) {
         );
         return (mutable_head_inv, true);
     }
-    (object_root.as_ref().join(INVENTORY_FILE), false)
+    (paths::inventory_path(object_root), false)
 }
 
 fn check_extensions(storage_root: impl AsRef<Path>) {
-    let extensions_dir = storage_root.as_ref().join(EXTENSIONS_DIR);
+    let extensions_dir = paths::extensions_path(storage_root);
 
     if !extensions_dir.exists() {
         return;
@@ -837,7 +823,7 @@ fn load_storage_layout<P: AsRef<Path>>(storage_root: P) -> Option<StorageLayout>
 
 /// Parses the `ocfl_layout.json` file if it exists
 fn parse_layout<P: AsRef<Path>>(storage_root: P) -> Option<OcflLayout> {
-    let layout_file = storage_root.as_ref().join(OCFL_LAYOUT_FILE);
+    let layout_file = paths::ocfl_layout_path(&storage_root);
     if layout_file.exists() {
         match parse_layout_file(&layout_file) {
             Ok(layout) => Some(layout),
@@ -865,7 +851,7 @@ fn parse_layout_file<P: AsRef<Path>>(layout_file: P) -> Result<OcflLayout> {
 }
 
 fn read_layout_config<P: AsRef<Path>>(storage_root: P, layout: &OcflLayout) -> Option<Vec<u8>> {
-    let mut config_file = storage_root.as_ref().join(EXTENSIONS_DIR);
+    let mut config_file = paths::extensions_path(storage_root);
     config_file.push(layout.extension.to_string());
     config_file.push(EXTENSIONS_CONFIG_FILE);
 
@@ -914,13 +900,13 @@ fn init_new_repo<P: AsRef<Path>>(root: P, layout: &StorageLayout) -> Result<()> 
     fs::create_dir_all(&root)?;
 
     writeln!(
-        File::create(root.join(REPO_NAMASTE_FILE))?,
+        File::create(paths::root_namaste_path(&root))?,
         "{}",
         OCFL_VERSION
     )?;
 
     write!(
-        File::create(root.join(OCFL_SPEC_FILE))?,
+        File::create(paths::ocfl_spec_path(&root))?,
         "{}",
         specs::OCFL_1_0_SPEC
     )?;
@@ -932,9 +918,9 @@ fn init_new_repo<P: AsRef<Path>>(root: P, layout: &StorageLayout) -> Result<()> 
         description: format!("See specification document {}.md", extension_name),
     };
 
-    serde_json::to_writer_pretty(File::create(root.join(OCFL_LAYOUT_FILE))?, &ocfl_layout)?;
+    serde_json::to_writer_pretty(File::create(paths::ocfl_layout_path(&root))?, &ocfl_layout)?;
 
-    let mut layout_ext_dir = root.join(EXTENSIONS_DIR);
+    let mut layout_ext_dir = paths::extensions_path(&root);
     layout_ext_dir.push(&extension_name);
     fs::create_dir_all(&layout_ext_dir)?;
 
