@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::ocfl::consts::{
     EXTENSIONS_DIR, INVENTORY_FILE, OBJECT_NAMASTE_FILE, OCFL_LAYOUT_FILE, OCFL_SPEC_FILE,
-    REPO_NAMASTE_FILE,
+    REPO_NAMASTE_FILE, ROCFL_STAGING_EXTENSION,
 };
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::{DigestAlgorithm, VersionNum};
@@ -66,26 +66,36 @@ where
     dir.as_ref().join(EXTENSIONS_DIR)
 }
 
-/// Returns the path to the `ocfl_layout.json`
-pub fn ocfl_layout_path<P>(dir: P) -> PathBuf
+/// Returns the path to the root of the staging extension
+pub fn staging_extension_path<P>(storage_root: P) -> PathBuf
 where
     P: AsRef<Path>,
 {
-    dir.as_ref().join(OCFL_LAYOUT_FILE)
+    let mut extensions = extensions_path(storage_root);
+    extensions.push(ROCFL_STAGING_EXTENSION);
+    extensions
+}
+
+/// Returns the path to the `ocfl_layout.json`
+pub fn ocfl_layout_path<P>(storage_root: P) -> PathBuf
+where
+    P: AsRef<Path>,
+{
+    storage_root.as_ref().join(OCFL_LAYOUT_FILE)
 }
 
 /// Returns the path to the OCFL root namaste file
-pub fn root_namaste_path<P>(dir: P) -> PathBuf
+pub fn root_namaste_path<P>(storage_root: P) -> PathBuf
 where
     P: AsRef<Path>,
 {
-    dir.as_ref().join(REPO_NAMASTE_FILE)
+    storage_root.as_ref().join(REPO_NAMASTE_FILE)
 }
 
 /// Returns the path to the OCFL spec file
-pub fn ocfl_spec_path<P>(dir: P) -> PathBuf
+pub fn ocfl_spec_path<P>(storage_root: P) -> PathBuf
 where
     P: AsRef<Path>,
 {
-    dir.as_ref().join(OCFL_SPEC_FILE)
+    storage_root.as_ref().join(OCFL_SPEC_FILE)
 }
