@@ -2346,6 +2346,51 @@ fn move_should_partially_succeed_when_multiple_src_and_some_fail() {
 }
 
 #[test]
+fn fail_copy_when_conflicting_src() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let object_id = "conflicting source";
+
+    let repo = default_repo(root.path());
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+        .unwrap();
+
+    create_file(&temp, "a/test", "1");
+    create_file(&temp, "b/test/testing.txt", "2");
+
+    match repo.copy_files_external(
+        object_id,
+        &vec![
+            resolve_child(&temp, "a/test").path(),
+            resolve_child(&temp, "b/test").path(),
+        ],
+        "/",
+        true,
+    ) {
+        Err(e) => {
+            assert!(e.to_string().ends_with(
+                "Illegal state: Conflicting logical path \
+            test/testing.txt: The path part test is an existing logical file"
+            ));
+        }
+        Ok(_) => panic!("Should have failed"),
+    }
+
+    let object = repo.get_staged_object(object_id).unwrap();
+
+    assert_eq!(1, object.state.len());
+
+    assert_file_details(
+        object.state.get(&path("test")).unwrap(),
+        &object.object_root,
+        "v1/content/test",
+        "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    );
+}
+
+#[test]
 fn internal_move_single_existing_file() -> Result<()> {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
@@ -3776,7 +3821,7 @@ fn internal_copy_of_new_file_should_copy_file_on_disk() {
 }
 
 #[test]
-fn internal_move_of_new_file_should_copy_file_on_disk() {
+fn internal_move_of_new_file_should_move_file_on_disk() {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
 
@@ -3811,6 +3856,50 @@ fn internal_move_of_new_file_should_copy_file_on_disk() {
         staged.state.get(&path("a-file.txt")).unwrap(),
         &staged_root,
         "v1/content/a-file.txt",
+        "3b6bb43dcbbaa5b3db412a2fd63b1a4c0db38d0a03a65694af8a3e3cc2d78347",
+    );
+    assert_file_details(
+        staged.state.get(&path("b-file.txt")).unwrap(),
+        &staged_root,
+        "v1/content/b-file.txt",
+        "d1b2a59fbea7e20077af9f91b27e95e865061b270be03ff539ab3b73587882e8",
+    );
+}
+
+#[test]
+fn internal_move_of_new_file_should_move_file_on_disk_and_not_leave_empty_dirs() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = default_repo(root.path());
+
+    let object_id = "move overwrite";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+        .unwrap();
+
+    create_file(&temp, "dir/a-file.txt", "contents").path();
+
+    repo.move_files_external(object_id, &vec![resolve_child(&temp, "dir").path()], "/")
+        .unwrap();
+    repo.move_files_internal(object_id, &vec!["dir/a-file.txt"], "b-file.txt")
+        .unwrap();
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "dir", "different!").path()],
+        "/",
+    )
+    .unwrap();
+
+    let staged = repo.get_staged_object(object_id).unwrap();
+    let staged_root = PathBuf::from(&staged.object_root);
+
+    assert_eq!(2, staged.state.len());
+
+    assert_file_details(
+        staged.state.get(&path("dir")).unwrap(),
+        &staged_root,
+        "v1/content/dir",
         "3b6bb43dcbbaa5b3db412a2fd63b1a4c0db38d0a03a65694af8a3e3cc2d78347",
     );
     assert_file_details(
