@@ -41,7 +41,6 @@ pub struct Inventory {
     #[serde(skip)]
     /// Path to the object's root relative the storage root
     pub object_root: String,
-    // TODO see if this is useful anywhere else
     #[serde(skip)]
     /// Physical path to the object's root
     pub storage_path: String,

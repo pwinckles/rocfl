@@ -157,14 +157,15 @@ impl FsOcflStore {
     ) -> Result<()> {
         let from_path = from.as_ref();
         let to_path = to.as_ref();
-        let sidecar_name = format!(
-            "{}.{}",
-            INVENTORY_FILE,
-            inventory.digest_algorithm.to_string()
-        );
 
-        fs::copy(from_path.join(INVENTORY_FILE), to_path.join(INVENTORY_FILE))?;
-        fs::copy(from_path.join(&sidecar_name), to_path.join(sidecar_name))?;
+        fs::copy(
+            paths::inventory_path(from_path),
+            paths::inventory_path(to_path),
+        )?;
+        fs::copy(
+            paths::sidecar_path(from_path, inventory.digest_algorithm),
+            paths::sidecar_path(to_path, inventory.digest_algorithm),
+        )?;
 
         Ok(())
     }
