@@ -441,7 +441,12 @@ impl OcflRepo {
 
                 // Copies of files new in the staged version must be copied on disk as well
                 if let Some((digest, content_path)) = digest_and_path {
+                    // Validate before copy to decrease the chance of failure after copying on disk
+                    inventory
+                        .head_version()
+                        .validate_non_conflicting(&dst_path)?;
                     staging.copy_staged_file(&inventory, &content_path, &dst_path)?;
+                    // Should be impossible to fail
                     inventory.add_file_to_head(digest, dst_path)
                 } else {
                     inventory.copy_file_to_head(src_version_num, &src_path, dst_path)
@@ -517,7 +522,12 @@ impl OcflRepo {
 
                 // Moves of files new in the staged version must be moved on disk as well
                 if let Some((digest, content_path)) = digest_and_path {
+                    // Validate before move to decrease the chance of failure after moving on disk
+                    inventory
+                        .head_version()
+                        .validate_non_conflicting(&dst_path)?;
                     staging.move_staged_file(&inventory, &content_path, &dst_path)?;
+                    // Should be impossible to fail
                     inventory.move_new_in_head_file(digest, &src_path, dst_path)
                 } else {
                     inventory.move_file_in_head(&src_path, dst_path)
@@ -886,6 +896,9 @@ impl OcflRepo {
             logical_path
         );
 
+        // It should be impossible for the inventory update to fail because the destination
+        // paths were already validated for conflicts. It is possible the file move could fail
+        // if the source files conflict, but this will not corrupt anything.
         self.get_staging()?
             .stage_file_copy(&inventory, &mut reader, &logical_path)?;
         let digest = reader.finalize_hex();
@@ -908,6 +921,9 @@ impl OcflRepo {
             .digest_algorithm
             .hash_hex(&mut File::open(file.as_ref())?)?;
 
+        // It should be impossible for the inventory update to fail because the destination
+        // paths were already validated for conflicts. It is possible the file move could fail
+        // if the source files conflict, but this will not corrupt anything.
         self.get_staging()?
             .stage_file_move(&inventory, &file, &logical_path)?;
         inventory.add_file_to_head(digest, logical_path)

@@ -474,6 +474,7 @@ impl StagingStore for FsOcflStore {
 
         fs::create_dir_all(dst_storage.parent().unwrap())?;
         fs::rename(&src_storage, &dst_storage)?;
+        util::clean_dirs_up(src_storage.parent().unwrap())?;
 
         Ok(())
     }
