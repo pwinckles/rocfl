@@ -236,6 +236,7 @@ impl OcflStore for FsOcflStore {
         let storage_path =
             match self.get_object_root_path(&inventory.id) {
                 Some(object_root) => self.storage_root.join(object_root),
+                // TODO add support for specifying location
                 None => return Err(RocflError::IllegalState(
                     "Objects cannot be created in repositories lacking a defined storage layout."
                         .to_string(),

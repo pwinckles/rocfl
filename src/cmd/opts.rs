@@ -373,6 +373,8 @@ pub struct CommitCmd {
     /// The ID of the object to commit changes for
     #[structopt(name = "OBJ_ID")]
     pub object_id: String,
+
+    // TODO add option for specifying location when storage layout not defined
 }
 
 /// Resets changes staged to an object. Additions are removed, deletions are restored, and

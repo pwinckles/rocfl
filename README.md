@@ -11,7 +11,7 @@ You can either download a pre-built binary from the [releases
 page](https://github.com/pwinckles/rocfl/releases), or build your own
 copy locally.
 
-### Local Build
+## Local Build
 
 1. Install [Rust](https://www.rust-lang.org/tools/install), and make
    sure `cargo` is on your `PATH`
@@ -246,3 +246,14 @@ rooted in within the bucket like this:
 ```console
 rocfl -R us-east-2 -b example-ocfl-repo -r ocfl-root ls
 ```
+
+## Roadmap
+
+The following features are planned:
+
+1. Export objects to a location outside the repository
+2. Index objects when the storage layout is unknown
+3. Validate objects
+4. Validate repositories
+5. Unsafe mutating operations such as `squash`, `revert`, and
+   `rewrite` that can be used to change an object's history
