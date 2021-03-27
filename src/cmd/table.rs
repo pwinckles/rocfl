@@ -34,8 +34,8 @@ pub enum Alignment {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Separator {
-    TAB,
-    SPACE,
+    Tab,
+    Space,
 }
 
 pub struct Column {
@@ -255,8 +255,8 @@ impl<'a> TextCell<'a> {
 impl Display for Separator {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Separator::TAB => write!(f, "\t"),
-            Separator::SPACE => write!(f, " "),
+            Separator::Tab => write!(f, "\t"),
+            Separator::Space => write!(f, " "),
         }
     }
 }

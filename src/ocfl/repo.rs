@@ -139,13 +139,13 @@ impl OcflRepo {
         let inventory = self.store.get_inventory(object_id)?;
         let object_root = inventory.storage_path.clone();
 
-        Ok(ObjectVersion::from_inventory(
+        ObjectVersion::from_inventory(
             inventory,
             version_num,
             &object_root,
             None,
             self.use_backslashes,
-        )?)
+        )
     }
 
     /// Same as `get_object()` except that it returns the staged version of an object.
@@ -169,13 +169,13 @@ impl OcflRepo {
             (object_staging_root, None)
         };
 
-        Ok(ObjectVersion::from_inventory(
+        ObjectVersion::from_inventory(
             staging_inventory,
             Some(version),
             &root,
             staging.as_ref(),
             util::BACKSLASH_SEPARATOR,
-        )?)
+        )
     }
 
     /// Returns high-level details about an object version. This method is similar to
@@ -190,10 +190,7 @@ impl OcflRepo {
         version_num: Option<VersionNum>,
     ) -> Result<ObjectVersionDetails> {
         let inventory = self.store.get_inventory(object_id)?;
-        Ok(ObjectVersionDetails::from_inventory(
-            inventory,
-            version_num,
-        )?)
+        ObjectVersionDetails::from_inventory(inventory, version_num)
     }
 
     /// Same as `get_object_details()`, but for the staged version of an object.
@@ -203,10 +200,7 @@ impl OcflRepo {
     pub fn get_staged_object_details(&self, object_id: &str) -> Result<ObjectVersionDetails> {
         let inventory = self.get_staged_inventory(object_id)?;
         let version = inventory.head;
-        Ok(ObjectVersionDetails::from_inventory(
-            inventory,
-            Some(version),
-        )?)
+        ObjectVersionDetails::from_inventory(inventory, Some(version))
     }
 
     /// Returns a vector containing the version metadata for ever version of an object. The vector
@@ -431,8 +425,6 @@ impl OcflRepo {
             return Ok(());
         }
 
-        // TODO abstract the before and after?
-
         let _lock = self.get_lock_manager()?.acquire(object_id)?;
 
         let mut inventory = self.get_or_created_staged_inventory(object_id)?;
@@ -517,8 +509,6 @@ impl OcflRepo {
         if src.is_empty() {
             return Ok(());
         }
-
-        // TODO abstract the before and after?
 
         let _lock = self.get_lock_manager()?.acquire(object_id)?;
 
@@ -713,7 +703,6 @@ impl OcflRepo {
         let mut inventory = match staging.get_inventory(&object_id) {
             Ok(inventory) => inventory,
             Err(RocflError::NotFound(_)) => {
-                // TODO should this be an error?
                 return Err(RocflError::General(format!(
                     "No staged changes found for object {}",
                     object_id
@@ -1069,25 +1058,24 @@ impl OcflRepo {
 
     fn get_staging(&self) -> Result<&FsOcflStore> {
         // This is deferred so that the extension directories are only created if needed
-        Ok(self.staging.get_or_try_init(|| {
+        self.staging.get_or_try_init(|| {
             FsOcflStore::init_if_needed(
                 &self.staging_root,
                 StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None)?,
             )
-        })?)
+        })
     }
 
     fn get_lock_manager(&self) -> Result<&LockManager> {
         // Staging must exist first
         self.get_staging()?;
         // This is deferred so that the extension directories are only created if needed
-        Ok(self
-            .staging_lock_manager
+        self.staging_lock_manager
             .get_or_try_init(|| -> Result<LockManager> {
                 let dir = paths::locks_extension_path(&self.staging_root);
                 fs::create_dir_all(&dir)?;
                 Ok(LockManager::new(dir))
-            })?)
+            })
     }
 }
 

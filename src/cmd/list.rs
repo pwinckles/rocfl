@@ -219,9 +219,9 @@ impl ListCmd {
 
     fn separator(&self) -> Separator {
         if self.tsv {
-            Separator::TAB
+            Separator::Tab
         } else {
-            Separator::SPACE
+            Separator::Space
         }
     }
 }
