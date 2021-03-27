@@ -20,6 +20,7 @@ mod consts;
 mod digest;
 mod error;
 mod inventory;
+mod lock;
 mod paths;
 mod repo;
 mod specs;

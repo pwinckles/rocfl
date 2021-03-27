@@ -1,6 +1,7 @@
 use std::borrow::Cow;
+use std::io::ErrorKind;
 use std::path::Path;
-use std::{fs, path};
+use std::{fs, io, path};
 
 use walkdir::WalkDir;
 
@@ -31,6 +32,16 @@ pub fn clean_dirs_down(start_dir: impl AsRef<Path>) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// Identical to `fs::remove_file()` except `NotFound` errors are ignored
+pub fn remove_file_ignore_not_found(path: impl AsRef<Path>) -> io::Result<()> {
+    if let Err(e) = fs::remove_file(path) {
+        if e.kind() != ErrorKind::NotFound {
+            return Err(e);
+        }
+    }
     Ok(())
 }
 

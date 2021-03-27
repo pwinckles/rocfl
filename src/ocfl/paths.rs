@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::ocfl::consts::{
     EXTENSIONS_DIR, INVENTORY_FILE, OBJECT_NAMASTE_FILE, OCFL_LAYOUT_FILE, OCFL_SPEC_FILE,
-    REPO_NAMASTE_FILE, ROCFL_STAGING_EXTENSION,
+    REPO_NAMASTE_FILE, ROCFL_LOCKS_EXTENSION, ROCFL_STAGING_EXTENSION,
 };
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::{DigestAlgorithm, VersionNum};
@@ -73,6 +73,16 @@ where
 {
     let mut extensions = extensions_path(storage_root);
     extensions.push(ROCFL_STAGING_EXTENSION);
+    extensions
+}
+
+/// Returns the path to the root of the staging extension
+pub fn locks_extension_path<P>(storage_root: P) -> PathBuf
+where
+    P: AsRef<Path>,
+{
+    let mut extensions = extensions_path(storage_root);
+    extensions.push(ROCFL_LOCKS_EXTENSION);
     extensions
 }
 

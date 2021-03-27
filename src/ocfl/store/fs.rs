@@ -487,7 +487,7 @@ impl StagingStore for FsOcflStore {
         for path in paths.iter() {
             let full_path = object_root.join(path.as_ref());
             info!("Deleting staged file: {}", full_path.to_string_lossy());
-            fs::remove_file(&full_path)?;
+            util::remove_file_ignore_not_found(&full_path)?;
             util::clean_dirs_up(full_path.parent().unwrap())?;
         }
 
@@ -509,7 +509,7 @@ impl StagingStore for FsOcflStore {
                         content_path.to_string_lossy(),
                     )?) {
                         info!("Deleting orphaned file: {}", file.path().to_string_lossy());
-                        fs::remove_file(file.path())?;
+                        util::remove_file_ignore_not_found(file.path())?;
                         util::clean_dirs_up(file.path().parent().unwrap())?;
                     }
                 }

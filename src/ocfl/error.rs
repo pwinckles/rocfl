@@ -30,6 +30,9 @@ pub enum RocflError {
     #[error("Illegal state: {0}")]
     IllegalState(String),
 
+    #[error("Failed to acquire a lock for object {0}. If you think the lock is held in error, manually delete {1}")]
+    LockAcquire(String, String),
+
     #[error("{0}")]
     General(String),
 
