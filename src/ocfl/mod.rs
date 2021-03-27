@@ -1,5 +1,4 @@
 //! This library is a storage agnostic abstraction over [OCFL repositories](https://ocfl.io/).
-//! It is **not** thread-safe.
 //!
 //! Create a new `OcflRepo` as follows:
 //!
