@@ -48,22 +48,22 @@ impl LogCmd {
     }
 
     fn version_table(&self, args: GlobalArgs) -> TableView {
-        let mut columns = Vec::new();
-
-        columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
-        columns.push(Column::new(ColumnId::Author, "Author", Alignment::Left));
-        columns.push(Column::new(ColumnId::Address, "Address", Alignment::Left));
-        columns.push(Column::new(ColumnId::Created, "Created", Alignment::Left));
-        columns.push(Column::new(ColumnId::Message, "Message", Alignment::Left));
+        let columns = vec![
+            Column::new(ColumnId::Version, "Version", Alignment::Right),
+            Column::new(ColumnId::Author, "Author", Alignment::Left),
+            Column::new(ColumnId::Address, "Address", Alignment::Left),
+            Column::new(ColumnId::Created, "Created", Alignment::Left),
+            Column::new(ColumnId::Message, "Message", Alignment::Left),
+        ];
 
         TableView::new(columns, self.separator(), self.header, !args.no_styles)
     }
 
     fn separator(&self) -> Separator {
         if self.tsv {
-            Separator::TAB
+            Separator::Tab
         } else {
-            Separator::SPACE
+            Separator::Space
         }
     }
 }
@@ -116,18 +116,12 @@ fn display_diffs(diffs: Vec<Diff>, args: &GlobalArgs) -> Result<()> {
 
     diffs.sort_unstable();
 
-    let mut columns = Vec::new();
-    columns.push(Column::new(
-        ColumnId::Operation,
-        "Operation",
-        Alignment::Left,
-    ));
-    columns.push(Column::new(
-        ColumnId::LogicalPath,
-        "Logical Path",
-        Alignment::Left,
-    ));
-    let mut table = TableView::new(columns, Separator::SPACE, true, !args.no_styles);
+    let columns = vec![
+        Column::new(ColumnId::Operation, "Operation", Alignment::Left),
+        Column::new(ColumnId::LogicalPath, "Logical Path", Alignment::Left),
+    ];
+
+    let mut table = TableView::new(columns, Separator::Space, true, !args.no_styles);
 
     diffs.iter().for_each(|diff| table.add_row(diff));
     table.write_stdio()?;
