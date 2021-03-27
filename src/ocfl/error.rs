@@ -39,6 +39,9 @@ pub enum RocflError {
     #[error("{0}")]
     CopyMoveError(MultiError),
 
+    #[error("The OCFL repository is closed")]
+    Closed,
+
     #[error("{0}")]
     Io(io::Error),
 
@@ -110,6 +113,12 @@ impl From<serde_json::Error> for RocflError {
 
 impl From<walkdir::Error> for RocflError {
     fn from(e: walkdir::Error) -> Self {
+        RocflError::Wrapped(Box::new(e))
+    }
+}
+
+impl From<ctrlc::Error> for RocflError {
+    fn from(e: ctrlc::Error) -> Self {
         RocflError::Wrapped(Box::new(e))
     }
 }

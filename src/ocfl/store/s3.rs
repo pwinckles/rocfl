@@ -5,6 +5,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
+use std::sync::RwLock;
 use std::vec::IntoIter;
 
 use globset::GlobBuilder;
@@ -31,8 +32,9 @@ pub struct S3OcflStore {
     s3_client: S3Client,
     /// Maps object IDs to paths within the storage root
     storage_layout: Option<StorageLayout>,
+    // TODO this never expires entries and is only intended to be useful within the scope of the cli
     /// Caches object ID to path mappings
-    id_path_cache: RefCell<HashMap<String, String>>,
+    id_path_cache: RwLock<HashMap<String, String>>,
     prefix: Option<String>,
 }
 
@@ -47,7 +49,7 @@ impl S3OcflStore {
         Ok(Self {
             s3_client,
             storage_layout,
-            id_path_cache: RefCell::new(HashMap::new()),
+            id_path_cache: RwLock::new(HashMap::new()),
             prefix: prefix.map(|p| p.to_string()),
         })
     }
@@ -155,18 +157,23 @@ impl OcflStore for S3OcflStore {
     /// Returns the most recent inventory version for the specified object, or an a
     /// `RocflError::NotFound` if it does not exist.
     fn get_inventory(&self, object_id: &str) -> Result<Inventory> {
-        let object_root = match self.id_path_cache.borrow().get(object_id) {
-            Some(object_root) => Some(object_root.clone()),
-            None => None,
+        let object_root = match self.id_path_cache.read() {
+            Ok(cache) => match cache.get(object_id) {
+                Some(object_root) => Some(object_root.clone()),
+                None => None,
+            },
+            Err(_) => None,
         };
 
         match object_root {
             Some(object_root) => self.parse_inventory_required(object_id, &object_root),
             None => {
                 let inventory = self.get_inventory_inner(&object_id)?;
-                self.id_path_cache
-                    .borrow_mut()
-                    .insert(object_id.to_string(), inventory.object_root.clone());
+
+                if let Ok(mut cache) = self.id_path_cache.write() {
+                    cache.insert(object_id.to_string(), inventory.object_root.clone());
+                }
+
                 Ok(inventory)
             }
         }
@@ -229,7 +236,7 @@ struct S3Client {
     s3_client: RusotoS3Client,
     bucket: String,
     prefix: String,
-    runtime: RefCell<Runtime>,
+    runtime: Runtime,
 }
 
 struct ListResult {
@@ -250,7 +257,7 @@ impl S3Client {
             s3_client: RusotoS3Client::new(region),
             bucket: bucket.to_owned(),
             prefix: prefix.unwrap_or_default().to_owned(),
-            runtime: RefCell::new(Runtime::new()?),
+            runtime: Runtime::new()?,
         })
     }
 
@@ -264,7 +271,6 @@ impl S3Client {
         loop {
             let result: ListObjectsV2Output =
                 self.runtime
-                    .borrow_mut()
                     .block_on(self.s3_client.list_objects_v2(ListObjectsV2Request {
                         bucket: self.bucket.clone(),
                         prefix: Some(prefix.clone()),
@@ -306,7 +312,6 @@ impl S3Client {
 
         let result = self
             .runtime
-            .borrow_mut()
             .block_on(self.s3_client.get_object(GetObjectRequest {
                 bucket: self.bucket.clone(),
                 key,
@@ -314,7 +319,7 @@ impl S3Client {
             }));
 
         match result {
-            Ok(result) => self.runtime.borrow_mut().block_on(async move {
+            Ok(result) => self.runtime.block_on(async move {
                 let mut buffer = Vec::new();
                 result
                     .body
@@ -336,7 +341,6 @@ impl S3Client {
 
         let result = self
             .runtime
-            .borrow_mut()
             .block_on(self.s3_client.get_object(GetObjectRequest {
                 bucket: self.bucket.clone(),
                 key,
@@ -344,7 +348,7 @@ impl S3Client {
             }));
 
         match result {
-            Ok(result) => self.runtime.borrow_mut().block_on(async move {
+            Ok(result) => self.runtime.block_on(async move {
                 let mut reader = result.body.unwrap().into_async_read();
                 let mut buf = [0; 8192];
                 loop {

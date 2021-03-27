@@ -6,10 +6,11 @@ use std::io::Write;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{DateTime, Local};
 use log::{error, info, warn};
-use once_cell::unsync::OnceCell;
+use once_cell::sync::OnceCell;
 #[cfg(feature = "s3")]
 use rusoto_core::Region;
 use walkdir::WalkDir;
@@ -33,7 +34,7 @@ use crate::ocfl::{
 pub struct OcflRepo {
     /// For local filesystem repos, this is the storage root. TBD for S3.
     // TODO experiment changing this to a generic
-    store: Box<dyn OcflStore>,
+    store: Box<dyn OcflStore + Sync + Send>,
     /// The OCFL repo that stores staged objects
     staging: OnceCell<FsOcflStore>,
     /// Locks staged objects so they cannot be concurrently modified
@@ -43,6 +44,7 @@ pub struct OcflRepo {
     /// Indicates if the repository should convert separators to backslashes when rendering
     /// physical paths.
     use_backslashes: bool,
+    closed: AtomicBool,
 }
 
 impl OcflRepo {
@@ -57,6 +59,7 @@ impl OcflRepo {
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
             use_backslashes: util::BACKSLASH_SEPARATOR,
+            closed: AtomicBool::new(false),
         })
     }
 
@@ -71,6 +74,7 @@ impl OcflRepo {
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
             use_backslashes: util::BACKSLASH_SEPARATOR,
+            closed: AtomicBool::new(false),
         })
     }
 
@@ -85,7 +89,16 @@ impl OcflRepo {
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
             use_backslashes: false,
+            closed: AtomicBool::new(false),
         })
+    }
+
+    /// Instructs the repo to gracefully stop any in-flight work and not accept any additional
+    /// requests.
+    pub fn close(&self) {
+        info!("Closing OCFL repository");
+        self.closed.store(true, Ordering::Release);
+        // TODO need to close store as well to allow a scan to short circuit gracefully
     }
 
     /// Returns an iterator that iterate through all of the objects in an OCFL repository.
@@ -98,6 +111,8 @@ impl OcflRepo {
         &'a self,
         filter_glob: Option<&str>,
     ) -> Result<Box<dyn Iterator<Item = ObjectVersionDetails> + 'a>> {
+        self.ensure_open()?;
+
         let inv_iter = self.store.iter_inventories(filter_glob)?;
 
         Ok(Box::new(InventoryAdapterIter::new(inv_iter, |inventory| {
@@ -115,6 +130,8 @@ impl OcflRepo {
         &'a self,
         filter_glob: Option<&str>,
     ) -> Result<Box<dyn Iterator<Item = ObjectVersionDetails> + 'a>> {
+        self.ensure_open()?;
+
         if !self.staging_root.exists() {
             return Ok(Box::new(Vec::new().into_iter()));
         }
@@ -136,6 +153,8 @@ impl OcflRepo {
         object_id: &str,
         version_num: Option<VersionNum>,
     ) -> Result<ObjectVersion> {
+        self.ensure_open()?;
+
         let inventory = self.store.get_inventory(object_id)?;
         let object_root = inventory.storage_path.clone();
 
@@ -153,6 +172,8 @@ impl OcflRepo {
     /// If the object does not have a staged version, then a `RocflError::NotFound`
     /// error is returned.
     pub fn get_staged_object(&self, object_id: &str) -> Result<ObjectVersion> {
+        self.ensure_open()?;
+
         let staging_inventory = self.get_staged_inventory(object_id)?;
         let version = staging_inventory.head;
         let object_staging_root = staging_inventory.storage_path.clone();
@@ -189,6 +210,8 @@ impl OcflRepo {
         object_id: &str,
         version_num: Option<VersionNum>,
     ) -> Result<ObjectVersionDetails> {
+        self.ensure_open()?;
+
         let inventory = self.store.get_inventory(object_id)?;
         ObjectVersionDetails::from_inventory(inventory, version_num)
     }
@@ -198,6 +221,8 @@ impl OcflRepo {
     /// If the object does not have a staged version, then a `RocflError::NotFound`
     /// error is returned.
     pub fn get_staged_object_details(&self, object_id: &str) -> Result<ObjectVersionDetails> {
+        self.ensure_open()?;
+
         let inventory = self.get_staged_inventory(object_id)?;
         let version = inventory.head;
         ObjectVersionDetails::from_inventory(inventory, Some(version))
@@ -208,6 +233,8 @@ impl OcflRepo {
     ///
     /// If the object cannot be found, then a `RocflError::NotFound` error is returned.
     pub fn list_object_versions(&self, object_id: &str) -> Result<Vec<VersionDetails>> {
+        self.ensure_open()?;
+
         let inventory = self.store.get_inventory(object_id)?;
         let mut versions = Vec::with_capacity(inventory.versions.len());
 
@@ -228,6 +255,8 @@ impl OcflRepo {
         version_num: Option<VersionNum>,
         sink: &mut dyn Write,
     ) -> Result<()> {
+        self.ensure_open()?;
+
         self.store
             .get_object_file(object_id, path, version_num, sink)
     }
@@ -241,6 +270,8 @@ impl OcflRepo {
         path: &InventoryPath,
         sink: &mut dyn Write,
     ) -> Result<()> {
+        self.ensure_open()?;
+
         let inventory = self.get_staged_inventory(object_id)?;
         let content_path = inventory.content_path_for_logical_path(path, None)?;
 
@@ -266,6 +297,8 @@ impl OcflRepo {
         object_id: &str,
         path: &InventoryPath,
     ) -> Result<Vec<VersionDetails>> {
+        self.ensure_open()?;
+
         let inventory = self.store.get_inventory(object_id)?;
 
         let mut versions = Vec::new();
@@ -311,6 +344,8 @@ impl OcflRepo {
         left_version: Option<VersionNum>,
         right_version: VersionNum,
     ) -> Result<Vec<Diff>> {
+        self.ensure_open()?;
+
         self.store
             .get_inventory(object_id)?
             .diff_versions(left_version, right_version)
@@ -318,6 +353,8 @@ impl OcflRepo {
 
     /// Returns all of the staged changes to the specified object, if there are any.
     pub fn diff_staged(&self, object_id: &str) -> Result<Vec<Diff>> {
+        self.ensure_open()?;
+
         if !self.staging_root.exists() {
             return Ok(Vec::new());
         }
@@ -332,10 +369,18 @@ impl OcflRepo {
     /// Completely removes the specified object from the repository. If the object doest not exist,
     /// nothing happens.
     pub fn purge_object(&self, object_id: &str) -> Result<()> {
+        self.ensure_open()?;
+
         if self.staging_root.exists() {
             self.get_staging()?.purge_object(object_id)?;
         }
-        self.store.purge_object(object_id)
+
+        // Last chance for the user to have ctrl-c'd the operation
+        if self.is_open() {
+            self.store.purge_object(object_id)
+        } else {
+            Ok(())
+        }
     }
 
     /// Stages a new OCFL object if there is not an existing object with the same ID. The object
@@ -347,6 +392,8 @@ impl OcflRepo {
         content_dir: &str,
         padding_width: u32,
     ) -> Result<()> {
+        self.ensure_open()?;
+
         let object_id = object_id.trim();
 
         if object_id.is_empty() {
@@ -403,6 +450,8 @@ impl OcflRepo {
         dst: &str,
         recursive: bool,
     ) -> Result<()> {
+        self.ensure_open()?;
+
         self.operate_on_external_source(
             object_id,
             src,
@@ -421,6 +470,8 @@ impl OcflRepo {
         dst: &str,
         recursive: bool,
     ) -> Result<()> {
+        self.ensure_open()?;
+
         if src.is_empty() {
             return Ok(());
         }
@@ -435,6 +486,10 @@ impl OcflRepo {
             self.resolve_internal_moves(&inventory, src_version_num, src, dst, recursive)?;
 
         for (src_path, dst_path) in to_copy {
+            if self.is_closed() {
+                break;
+            }
+
             let attempt = || -> Result<()> {
                 info!(
                     "Copying file {} from {} to {}",
@@ -481,6 +536,8 @@ impl OcflRepo {
         src: &[impl AsRef<Path>],
         dst: &str,
     ) -> Result<()> {
+        self.ensure_open()?;
+
         self.operate_on_external_source(
             object_id,
             src,
@@ -489,10 +546,12 @@ impl OcflRepo {
             |file, logical_path, inventory| self.move_file(file, logical_path, inventory),
         )?;
 
-        for path in src {
-            let path = path.as_ref();
-            if path.exists() && path.is_dir() {
-                util::clean_dirs_down(path)?;
+        if self.is_open() {
+            for path in src {
+                let path = path.as_ref();
+                if path.exists() && path.is_dir() {
+                    util::clean_dirs_down(path)?;
+                }
             }
         }
 
@@ -506,6 +565,8 @@ impl OcflRepo {
         src: &[impl AsRef<str>],
         dst: &str,
     ) -> Result<()> {
+        self.ensure_open()?;
+
         if src.is_empty() {
             return Ok(());
         }
@@ -519,6 +580,10 @@ impl OcflRepo {
             self.resolve_internal_moves(&inventory, inventory.head, src, dst, true)?;
 
         for (src_path, dst_path) in to_move {
+            if self.is_closed() {
+                break;
+            }
+
             info!("Moving {} to {}", src_path, dst_path);
 
             let attempt = || -> Result<()> {
@@ -562,6 +627,8 @@ impl OcflRepo {
         paths: &[P],
         recursive: bool,
     ) -> Result<()> {
+        self.ensure_open()?;
+
         if paths.is_empty() {
             return Ok(());
         }
@@ -580,6 +647,10 @@ impl OcflRepo {
         let staging = self.get_staging()?;
 
         for path in paths_to_remove {
+            if self.is_closed() {
+                break;
+            }
+
             info!("Removing path from staged version: {}", path);
             if let Some(content_path) = inventory.remove_logical_path_from_head(&path) {
                 staging.rm_staged_files(&inventory, &[&content_path])?;
@@ -593,6 +664,8 @@ impl OcflRepo {
 
     /// Reset all staged changes for an object by dropping the object's staged version completely.
     pub fn reset_all(&self, object_id: &str) -> Result<()> {
+        self.ensure_open()?;
+
         if self.staging_root.exists() {
             self.get_staging()?.purge_object(object_id)
         } else {
@@ -610,6 +683,8 @@ impl OcflRepo {
         paths: &[P],
         recursive: bool,
     ) -> Result<()> {
+        self.ensure_open()?;
+
         if paths.is_empty() {
             return Ok(());
         }
@@ -645,32 +720,28 @@ impl OcflRepo {
             }
         }
 
-        let mut reset_updates = HashSet::new();
-        let mut reset_adds = HashSet::new();
-
-        for head_path in head_paths {
-            if previous_paths.remove(&head_path) {
-                reset_updates.insert(head_path);
-            } else {
-                reset_adds.insert(head_path);
-            }
-        }
+        let reset_adds = head_paths
+            .into_iter()
+            .filter(|path| !previous_paths.contains(path))
+            .collect::<HashSet<Rc<InventoryPath>>>();
 
         // Need to apply add resets first to attempt to avoid path conflicts
         for path in reset_adds {
+            if self.is_closed() {
+                break;
+            }
+
             if let Some(content_path) = inventory.remove_logical_path_from_head(&path) {
                 staging.rm_staged_files(&inventory, &[&content_path])?;
             }
         }
 
-        for path in reset_updates {
-            if let Some(previous_num) = previous_num {
-                inventory.copy_file_to_head(previous_num, &path, path.as_ref().clone())?;
-            }
-        }
-
-        // The remaining paths are deletes to reset
+        // Resetting deleted or modified files is the same
         for path in previous_paths {
+            if self.is_closed() {
+                break;
+            }
+
             if let Some(previous_num) = previous_num {
                 inventory.copy_file_to_head(previous_num, &path, path.as_ref().clone())?;
             }
@@ -690,6 +761,8 @@ impl OcflRepo {
         message: Option<&str>,
         created: Option<DateTime<Local>>,
     ) -> Result<()> {
+        self.ensure_open()?;
+
         if user_address.is_some() && user_name.is_none() {
             return Err(RocflError::IllegalArgument(
                 "User name must be set when user address is set.".to_string(),
@@ -727,16 +800,19 @@ impl OcflRepo {
         )?;
         staging.rm_orphaned_files(&inventory)?;
 
-        if inventory.is_new() {
-            let object_root = PathBuf::from(&inventory.storage_path);
-            self.store.write_new_object(&mut inventory, &object_root)?;
-        } else {
-            let version_root = paths::version_path(&inventory.storage_path, inventory.head);
-            self.store
-                .write_new_version(&mut inventory, &version_root)?;
-        }
+        // Last chance to ctrl-c before committing
+        if self.is_open() {
+            if inventory.is_new() {
+                let object_root = PathBuf::from(&inventory.storage_path);
+                self.store.write_new_object(&mut inventory, &object_root)?;
+            } else {
+                let version_root = paths::version_path(&inventory.storage_path, inventory.head);
+                self.store
+                    .write_new_version(&mut inventory, &version_root)?;
+            }
 
-        staging.purge_object(object_id)?;
+            staging.purge_object(object_id)?;
+        }
 
         Ok(())
     }
@@ -821,6 +897,10 @@ impl OcflRepo {
         let mut errors = Vec::new();
 
         for path in src.iter() {
+            if self.is_closed() {
+                break;
+            }
+
             let path = path.as_ref();
 
             if !path.exists() {
@@ -847,6 +927,10 @@ impl OcflRepo {
                     operator(path, logical_path, &mut inventory)?;
                 } else if recursive {
                     for file in WalkDir::new(path) {
+                        if self.is_closed() {
+                            break;
+                        }
+
                         let file = file?;
                         if file.file_type().is_file() {
                             let mut attempt = || -> Result<()> {
@@ -1076,6 +1160,22 @@ impl OcflRepo {
                 fs::create_dir_all(&dir)?;
                 Ok(LockManager::new(dir))
             })
+    }
+
+    fn ensure_open(&self) -> Result<()> {
+        if self.is_closed() {
+            Err(RocflError::Closed)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
+    }
+
+    fn is_open(&self) -> bool {
+        !self.is_closed()
     }
 }
 
