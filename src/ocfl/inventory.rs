@@ -728,8 +728,7 @@ impl Version {
                 }
 
                 if let Some(original) = deletes.remove(digest) {
-                    let mut renamed = Vec::new();
-                    renamed.push(path.clone());
+                    let renamed = vec![path.clone()];
                     renames.insert(digest.clone(), Diff::Renamed { original, renamed });
                 } else if let Some(Diff::Renamed {
                     original: _,
