@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
+use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::ops::Deref;
@@ -17,6 +18,7 @@ use crate::ocfl::consts::*;
 use crate::ocfl::digest::HexDigest;
 use crate::ocfl::error::{MultiError, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
+use crate::ocfl::lock::LockManager;
 use crate::ocfl::store::fs::FsOcflStore;
 use crate::ocfl::store::layout::{LayoutExtensionName, StorageLayout};
 #[cfg(feature = "s3")]
@@ -34,6 +36,8 @@ pub struct OcflRepo {
     store: Box<dyn OcflStore>,
     /// The OCFL repo that stores staged objects
     staging: OnceCell<FsOcflStore>,
+    /// Locks staged objects so they cannot be concurrently modified
+    staging_lock_manager: OnceCell<LockManager>,
     /// The path to the root of the staging repo
     staging_root: PathBuf,
     /// Indicates if the repository should convert separators to backslashes when rendering
@@ -51,6 +55,7 @@ impl OcflRepo {
             staging_root,
             store: Box::new(FsOcflStore::new(storage_root)?),
             staging: OnceCell::default(),
+            staging_lock_manager: OnceCell::default(),
             use_backslashes: util::BACKSLASH_SEPARATOR,
         })
     }
@@ -64,6 +69,7 @@ impl OcflRepo {
             staging_root,
             store: Box::new(FsOcflStore::init(storage_root, layout)?),
             staging: OnceCell::default(),
+            staging_lock_manager: OnceCell::default(),
             use_backslashes: util::BACKSLASH_SEPARATOR,
         })
     }
@@ -77,6 +83,7 @@ impl OcflRepo {
             staging_root: PathBuf::from("."),
             store: Box::new(S3OcflStore::new(region, bucket, prefix)?),
             staging: OnceCell::default(),
+            staging_lock_manager: OnceCell::default(),
             use_backslashes: false,
         })
     }
@@ -108,7 +115,10 @@ impl OcflRepo {
         &'a self,
         filter_glob: Option<&str>,
     ) -> Result<Box<dyn Iterator<Item = ObjectVersionDetails> + 'a>> {
-        // TODO this should NOT create staging if it does not exist
+        if !self.staging_root.exists() {
+            return Ok(Box::new(Vec::new().into_iter()));
+        }
+
         let inv_iter = self.get_staging()?.iter_inventories(filter_glob)?;
 
         Ok(Box::new(InventoryAdapterIter::new(inv_iter, |inventory| {
@@ -237,9 +247,7 @@ impl OcflRepo {
         path: &InventoryPath,
         sink: &mut dyn Write,
     ) -> Result<()> {
-        let staging = self.get_staging()?;
-
-        let inventory = staging.get_inventory(object_id)?;
+        let inventory = self.get_staged_inventory(object_id)?;
         let content_path = inventory.content_path_for_logical_path(path, None)?;
 
         let version_prefix = format!("{}/", inventory.head);
@@ -316,10 +324,11 @@ impl OcflRepo {
 
     /// Returns all of the staged changes to the specified object, if there are any.
     pub fn diff_staged(&self, object_id: &str) -> Result<Vec<Diff>> {
-        // TODO this should NOT create staging if it does not exist
-        let staging = self.get_staging()?;
+        if !self.staging_root.exists() {
+            return Ok(Vec::new());
+        }
 
-        match staging.get_inventory(&object_id) {
+        match self.get_staging()?.get_inventory(&object_id) {
             Err(RocflError::NotFound(_)) => Ok(Vec::new()),
             Err(e) => Err(e),
             Ok(inventory) => inventory.diff_versions(None, inventory.head),
@@ -329,7 +338,9 @@ impl OcflRepo {
     /// Completely removes the specified object from the repository. If the object doest not exist,
     /// nothing happens.
     pub fn purge_object(&self, object_id: &str) -> Result<()> {
-        self.get_staging()?.purge_object(object_id)?;
+        if self.staging_root.exists() {
+            self.get_staging()?.purge_object(object_id)?;
+        }
         self.store.purge_object(object_id)
     }
 
@@ -364,6 +375,8 @@ impl OcflRepo {
                 format!("The content directory cannot equal '.' or '..' and cannot contain a '/'. Found: {}",
                         content_dir)));
         }
+
+        let _lock = self.get_lock_manager()?.acquire(object_id)?;
 
         match self.store.get_inventory(&object_id) {
             Err(RocflError::NotFound(_)) => (),
@@ -419,6 +432,8 @@ impl OcflRepo {
         }
 
         // TODO abstract the before and after?
+
+        let _lock = self.get_lock_manager()?.acquire(object_id)?;
 
         let mut inventory = self.get_or_created_staged_inventory(object_id)?;
         let src_version_num = version_num.unwrap_or(inventory.head);
@@ -505,6 +520,8 @@ impl OcflRepo {
 
         // TODO abstract the before and after?
 
+        let _lock = self.get_lock_manager()?.acquire(object_id)?;
+
         let mut inventory = self.get_or_created_staged_inventory(object_id)?;
         let staging = self.get_staging()?;
 
@@ -559,6 +576,8 @@ impl OcflRepo {
             return Ok(());
         }
 
+        let _lock = self.get_lock_manager()?.acquire(object_id)?;
+
         let mut inventory = self.get_or_created_staged_inventory(object_id)?;
         let version = inventory.head_version();
 
@@ -584,7 +603,11 @@ impl OcflRepo {
 
     /// Reset all staged changes for an object by dropping the object's staged version completely.
     pub fn reset_all(&self, object_id: &str) -> Result<()> {
-        self.get_staging()?.purge_object(object_id)
+        if self.staging_root.exists() {
+            self.get_staging()?.purge_object(object_id)
+        } else {
+            Ok(())
+        }
     }
 
     /// Resets to specified staged changes to an object. Paths may be a glob and is resolved
@@ -597,72 +620,74 @@ impl OcflRepo {
         paths: &[P],
         recursive: bool,
     ) -> Result<()> {
-        if !paths.is_empty() {
-            let staging = self.get_staging()?;
-
-            let mut inventory = match staging.get_inventory(&object_id) {
-                Ok(inventory) => inventory,
-                Err(RocflError::NotFound(_)) => return Ok(()),
-                Err(e) => return Err(e),
-            };
-
-            let head = inventory.head_version();
-            let (previous, previous_num) = if inventory.is_new() {
-                (None, None)
-            } else {
-                let previous_num = inventory.head.previous()?;
-                (
-                    Some(inventory.get_version(previous_num)?),
-                    Some(previous_num),
-                )
-            };
-
-            let mut head_paths = HashSet::new();
-            let mut previous_paths = HashSet::new();
-
-            for path in paths {
-                head_paths.extend(head.resolve_glob(path.as_ref(), recursive)?);
-                if let Some(previous) = previous {
-                    previous_paths.extend(previous.resolve_glob(path.as_ref(), recursive)?);
-                }
-            }
-
-            let mut reset_updates = HashSet::new();
-            let mut reset_adds = HashSet::new();
-
-            for head_path in head_paths {
-                if previous_paths.remove(&head_path) {
-                    reset_updates.insert(head_path);
-                } else {
-                    reset_adds.insert(head_path);
-                }
-            }
-
-            // Need to apply add resets first to attempt to avoid path conflicts
-            for path in reset_adds {
-                if let Some(content_path) = inventory.remove_logical_path_from_head(&path) {
-                    staging.rm_staged_files(&inventory, &[&content_path])?;
-                }
-            }
-
-            for path in reset_updates {
-                if let Some(previous_num) = previous_num {
-                    inventory.copy_file_to_head(previous_num, &path, path.as_ref().clone())?;
-                }
-            }
-
-            // The remaining paths are deletes to reset
-            for path in previous_paths {
-                if let Some(previous_num) = previous_num {
-                    inventory.copy_file_to_head(previous_num, &path, path.as_ref().clone())?;
-                }
-            }
-
-            inventory.head_version_mut().created = Local::now();
-            staging.stage_inventory(&inventory, false)?;
+        if paths.is_empty() {
+            return Ok(());
         }
 
-        Ok(())
+        let staging = self.get_staging()?;
+
+        let _lock = self.get_lock_manager()?.acquire(object_id)?;
+
+        let mut inventory = match staging.get_inventory(&object_id) {
+            Ok(inventory) => inventory,
+            Err(RocflError::NotFound(_)) => return Ok(()),
+            Err(e) => return Err(e),
+        };
+
+        let head = inventory.head_version();
+        let (previous, previous_num) = if inventory.is_new() {
+            (None, None)
+        } else {
+            let previous_num = inventory.head.previous()?;
+            (
+                Some(inventory.get_version(previous_num)?),
+                Some(previous_num),
+            )
+        };
+
+        let mut head_paths = HashSet::new();
+        let mut previous_paths = HashSet::new();
+
+        for path in paths {
+            head_paths.extend(head.resolve_glob(path.as_ref(), recursive)?);
+            if let Some(previous) = previous {
+                previous_paths.extend(previous.resolve_glob(path.as_ref(), recursive)?);
+            }
+        }
+
+        let mut reset_updates = HashSet::new();
+        let mut reset_adds = HashSet::new();
+
+        for head_path in head_paths {
+            if previous_paths.remove(&head_path) {
+                reset_updates.insert(head_path);
+            } else {
+                reset_adds.insert(head_path);
+            }
+        }
+
+        // Need to apply add resets first to attempt to avoid path conflicts
+        for path in reset_adds {
+            if let Some(content_path) = inventory.remove_logical_path_from_head(&path) {
+                staging.rm_staged_files(&inventory, &[&content_path])?;
+            }
+        }
+
+        for path in reset_updates {
+            if let Some(previous_num) = previous_num {
+                inventory.copy_file_to_head(previous_num, &path, path.as_ref().clone())?;
+            }
+        }
+
+        // The remaining paths are deletes to reset
+        for path in previous_paths {
+            if let Some(previous_num) = previous_num {
+                inventory.copy_file_to_head(previous_num, &path, path.as_ref().clone())?;
+            }
+        }
+
+        inventory.head_version_mut().created = Local::now();
+        staging.stage_inventory(&inventory, false)
     }
 
     /// Commits all of an object's staged changes. If `user_address` is provided, then `user_name`
@@ -682,6 +707,8 @@ impl OcflRepo {
         }
 
         let staging = self.get_staging()?;
+
+        let _lock = self.get_lock_manager()?.acquire(object_id)?;
 
         let mut inventory = match staging.get_inventory(&object_id) {
             Ok(inventory) => inventory,
@@ -761,6 +788,13 @@ impl OcflRepo {
     /// Attempts to load the object's inventory from staging. If it does not exist,
     /// then `RocflError::NotFound` is returned.
     fn get_staged_inventory(&self, object_id: &str) -> Result<Inventory> {
+        if !self.staging_root.exists() {
+            return Err(RocflError::NotFound(format!(
+                "{} does not have a staged version.",
+                object_id
+            )));
+        }
+
         match self.get_staging()?.get_inventory(object_id) {
             Ok(inventory) => Ok(inventory),
             Err(RocflError::NotFound(_)) => Err(RocflError::NotFound(format!(
@@ -785,9 +819,7 @@ impl OcflRepo {
             return Ok(());
         }
 
-        // TODO even though this is not supposed to be used concurrently, it's not a bad idea
-        //      to get some sort of file lock here so that an object cannot be updated concurrently
-        // TODO will also need to handle ctrlc https://github.com/Detegr/rust-ctrlc
+        let _lock = self.get_lock_manager()?.acquire(object_id)?;
 
         let mut inventory = self.get_or_created_staged_inventory(object_id)?;
 
@@ -1036,12 +1068,26 @@ impl OcflRepo {
     }
 
     fn get_staging(&self) -> Result<&FsOcflStore> {
+        // This is deferred so that the extension directories are only created if needed
         Ok(self.staging.get_or_try_init(|| {
             FsOcflStore::init_if_needed(
                 &self.staging_root,
                 StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None)?,
             )
         })?)
+    }
+
+    fn get_lock_manager(&self) -> Result<&LockManager> {
+        // Staging must exist first
+        self.get_staging()?;
+        // This is deferred so that the extension directories are only created if needed
+        Ok(self
+            .staging_lock_manager
+            .get_or_try_init(|| -> Result<LockManager> {
+                let dir = paths::locks_extension_path(&self.staging_root);
+                fs::create_dir_all(&dir)?;
+                Ok(LockManager::new(dir))
+            })?)
     }
 }
 
