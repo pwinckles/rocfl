@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
+use std::sync::atomic::{AtomicBool, Ordering as AOrdering};
 
 use globset::GlobBuilder;
 
@@ -12,24 +13,36 @@ use crate::ocfl::{
 };
 
 impl Cmd for ListCmd {
-    fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
+    fn exec(&self, repo: &OcflRepo, args: GlobalArgs, terminate: &AtomicBool) -> Result<()> {
         if self.objects || self.object_id.is_none() {
-            self.list_objects(repo, args)
+            self.list_objects(repo, args, terminate)
         } else {
-            self.list_object_contents(repo, args)
+            self.list_object_contents(repo, args, terminate)
         }
     }
 }
 
 impl ListCmd {
-    fn list_objects(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
+    fn list_objects(
+        &self,
+        repo: &OcflRepo,
+        args: GlobalArgs,
+        terminate: &AtomicBool,
+    ) -> Result<()> {
         let iter = if self.staged {
             repo.list_staged_objects(self.object_id.as_deref())?
         } else {
             repo.list_objects(self.object_id.as_deref())?
         };
 
-        let mut objects: Vec<ObjectVersionDetails> = iter.collect();
+        let mut objects = Vec::new();
+
+        for object in iter {
+            if terminate.load(AOrdering::Acquire) {
+                return Ok(());
+            }
+            objects.push(object);
+        }
 
         objects.sort_unstable_by(|a, b| {
             if self.reverse {
@@ -39,12 +52,29 @@ impl ListCmd {
             }
         });
 
+        if terminate.load(AOrdering::Acquire) {
+            return Ok(());
+        }
+
         let mut table = self.object_table(args);
-        objects.iter().for_each(|object| table.add_row(object));
+
+        for object in objects.iter() {
+            if terminate.load(AOrdering::Acquire) {
+                return Ok(());
+            }
+
+            table.add_row(object);
+        }
+
         Ok(table.write_stdio()?)
     }
 
-    fn list_object_contents(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()> {
+    fn list_object_contents(
+        &self,
+        repo: &OcflRepo,
+        args: GlobalArgs,
+        _terminate: &AtomicBool,
+    ) -> Result<()> {
         let object_id = self.object_id.as_ref().unwrap();
         let object = if self.staged {
             repo.get_staged_object(object_id)?

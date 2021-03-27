@@ -1,7 +1,11 @@
 use std::fmt::Display;
 use std::io::{self, ErrorKind, Write};
+use std::process;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use enum_dispatch::enum_dispatch;
+use log::error;
 #[cfg(feature = "s3")]
 use rusoto_core::Region;
 
@@ -28,10 +32,26 @@ pub fn exec_command(args: &RocflArgs) -> Result<()> {
             init_repo(command, args)
         }
         _ => {
-            let repo = create_repo(&args)?;
+            let repo = Arc::new(create_repo(&args)?);
+            let terminate = Arc::new(AtomicBool::new(false));
+
+            let repo_ref = repo.clone();
+            let terminate_ref = terminate.clone();
+
+            ctrlc::set_handler(move || {
+                if terminate_ref.load(Ordering::Acquire) {
+                    error!("Force quitting. If a write operation was in progress, it is possible the resource was left in an inconsistent state.");
+                    process::exit(1);
+                } else {
+                    terminate_ref.store(true, Ordering::Release);
+                    repo_ref.close();
+                }
+            })?;
+
             args.command.exec(
                 &repo,
                 GlobalArgs::new(args.quiet, args.verbose, args.no_styles),
+                &terminate,
             )
         }
     }
@@ -40,7 +60,8 @@ pub fn exec_command(args: &RocflArgs) -> Result<()> {
 /// Trait executing a CLI command
 #[enum_dispatch]
 trait Cmd {
-    fn exec(&self, repo: &OcflRepo, args: GlobalArgs) -> Result<()>;
+    /// Execute the command
+    fn exec(&self, repo: &OcflRepo, args: GlobalArgs, terminate: &AtomicBool) -> Result<()>;
 }
 
 struct GlobalArgs {

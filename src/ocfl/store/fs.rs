@@ -7,6 +7,7 @@ use std::fs::{self, File, OpenOptions, ReadDir};
 use std::io::{self, Read, Write};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::RwLock;
 
 use globset::GlobBuilder;
 use grep_matcher::{Captures, Matcher};
@@ -33,8 +34,9 @@ pub struct FsOcflStore {
     storage_root: PathBuf,
     /// Maps object IDs to paths within the storage root
     storage_layout: Option<StorageLayout>,
+    // TODO this never expires entries and is only intended to be useful within the scope of the cli
     /// Caches object ID to path mappings
-    id_path_cache: RefCell<HashMap<String, String>>,
+    id_path_cache: RwLock<HashMap<String, String>>,
 }
 
 impl FsOcflStore {
@@ -61,7 +63,7 @@ impl FsOcflStore {
         Ok(Self {
             storage_root,
             storage_layout,
-            id_path_cache: RefCell::new(HashMap::new()),
+            id_path_cache: RwLock::new(HashMap::new()),
         })
     }
 
@@ -74,7 +76,7 @@ impl FsOcflStore {
         Ok(Self {
             storage_root: root,
             storage_layout: Some(layout),
-            id_path_cache: RefCell::new(HashMap::new()),
+            id_path_cache: RwLock::new(HashMap::new()),
         })
     }
 
@@ -106,18 +108,22 @@ impl FsOcflStore {
     /// the mapping was not found in the cache, then it is computed using the configured
     /// storage layout. If there is no storage layout, then `None` is returned.
     fn get_object_root_path(&self, object_id: &str) -> Option<String> {
-        let mut cache = self.id_path_cache.borrow_mut();
-        match cache.get(object_id) {
-            Some(object_root) => Some(object_root.clone()),
-            None => match &self.storage_layout {
-                Some(storage_layout) => {
-                    let object_root = storage_layout.map_object_id(object_id);
-                    cache.insert(object_id.to_string(), object_root.clone());
-                    Some(object_root)
-                }
-                None => None,
-            },
+        if let Ok(cache) = self.id_path_cache.read() {
+            if let Some(object_root) = cache.get(object_id) {
+                return Some(object_root.clone());
+            }
         }
+
+        if let Some(storage_layout) = &self.storage_layout {
+            let object_root = storage_layout.map_object_id(object_id);
+
+            if let Ok(mut cache) = self.id_path_cache.write() {
+                cache.insert(object_id.to_string(), object_root.clone());
+                return Some(object_root);
+            }
+        }
+
+        None
     }
 
     fn scan_for_inventory(&self, object_id: &str) -> Result<Inventory> {
@@ -130,9 +136,9 @@ impl FsOcflStore {
 
         match iter.next() {
             Some(inventory) => {
-                self.id_path_cache
-                    .borrow_mut()
-                    .insert(object_id.to_string(), inventory.object_root.clone());
+                if let Ok(mut cache) = self.id_path_cache.write() {
+                    cache.insert(object_id.to_string(), inventory.object_root.clone());
+                }
                 Ok(inventory)
             }
             None => Err(not_found(&object_id, None)),
