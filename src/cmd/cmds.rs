@@ -173,7 +173,10 @@ impl Cmd for StatusCmd {
 impl Cmd for PurgeCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs) -> Result<()> {
         if !self.force {
-            print(format!("Permanently delete '{}'? [y/N]: ", self.object_id))?;
+            print(format!(
+                "Permanently delete '{}'? This cannot be undone. [y/N]: ",
+                self.object_id
+            ))?;
             let mut response = String::new();
             io::stdin().read_line(&mut response)?;
             if !response.trim().eq_ignore_ascii_case("y") {

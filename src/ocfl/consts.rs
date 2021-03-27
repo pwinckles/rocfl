@@ -1,3 +1,7 @@
+use std::collections::HashSet;
+
+use once_cell::sync::Lazy;
+
 pub const REPO_NAMASTE_FILE: &str = "0=ocfl_1.0";
 pub const OBJECT_NAMASTE_FILE: &str = "0=ocfl_object_1.0";
 pub const INVENTORY_FILE: &str = "inventory.json";
@@ -20,11 +24,15 @@ pub const HASHED_NTUPLE_OBJECT_ID_LAYOUT_EXTENSION: &str =
 pub const HASHED_NTUPLE_LAYOUT_EXTENSION: &str = "0004-hashed-n-tuple-storage-layout";
 pub const MUTABLE_HEAD_EXTENSION: &str = "0005-mutable-head";
 pub const ROCFL_STAGING_EXTENSION: &str = "rocfl-staging";
+pub const ROCFL_LOCKS_EXTENSION: &str = "rocfl-locks";
 
-pub const SUPPORTED_EXTENSIONS: &[&str] = &[
-    FLAT_DIRECT_LAYOUT_EXTENSION,
-    HASHED_NTUPLE_OBJECT_ID_LAYOUT_EXTENSION,
-    HASHED_NTUPLE_LAYOUT_EXTENSION,
-    MUTABLE_HEAD_EXTENSION,
-    ROCFL_STAGING_EXTENSION,
-];
+pub static SUPPORTED_EXTENSIONS: Lazy<HashSet<&str>> = Lazy::new(|| {
+    let mut set = HashSet::with_capacity(6);
+    set.insert(FLAT_DIRECT_LAYOUT_EXTENSION);
+    set.insert(HASHED_NTUPLE_OBJECT_ID_LAYOUT_EXTENSION);
+    set.insert(HASHED_NTUPLE_LAYOUT_EXTENSION);
+    set.insert(MUTABLE_HEAD_EXTENSION);
+    set.insert(ROCFL_STAGING_EXTENSION);
+    set.insert(ROCFL_LOCKS_EXTENSION);
+    set
+});
