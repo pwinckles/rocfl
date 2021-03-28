@@ -50,7 +50,7 @@ pub struct OcflRepo {
 impl OcflRepo {
     /// Creates a new `OcflRepo` instance backed by the local filesystem. `storage_root` is the
     /// location of the OCFL repository to open. The OCFL repository must already exist.
-    pub fn fs_repo<P: AsRef<Path>>(storage_root: P) -> Result<Self> {
+    pub fn fs_repo(storage_root: impl AsRef<Path>) -> Result<Self> {
         let staging_root = paths::staging_extension_path(storage_root.as_ref());
 
         Ok(Self {
@@ -65,7 +65,7 @@ impl OcflRepo {
 
     /// Initializes a new `OcflRepo` instance backed by the local filesystem. The OCFL repository
     /// most not already exist.
-    pub fn init_fs_repo<P: AsRef<Path>>(storage_root: P, layout: StorageLayout) -> Result<Self> {
+    pub fn init_fs_repo(storage_root: impl AsRef<Path>, layout: StorageLayout) -> Result<Self> {
         let staging_root = paths::staging_extension_path(storage_root.as_ref());
 
         Ok(Self {
@@ -78,13 +78,41 @@ impl OcflRepo {
         })
     }
 
+    /// Initializes a new `OcflRepo` instance backed by S3. The OCFL repository
+    /// most not already exist.
+    #[cfg(feature = "s3")]
+    pub fn init_s3_repo(
+        region: Region,
+        bucket: &str,
+        prefix: Option<&str>,
+        local_storage: impl AsRef<Path>,
+        layout: StorageLayout,
+    ) -> Result<Self> {
+        let staging_root = paths::staging_extension_path(local_storage.as_ref());
+
+        Ok(Self {
+            staging_root,
+            store: Box::new(S3OcflStore::init(region, bucket, prefix, layout)?),
+            staging: OnceCell::default(),
+            staging_lock_manager: OnceCell::default(),
+            use_backslashes: false,
+            closed: AtomicBool::new(false),
+        })
+    }
+
     /// Creates a new `OcflRepo` instance backed by S3. `prefix` used to specify a
     /// sub directory within a bucket that the OCFL repository is rooted in.
     #[cfg(feature = "s3")]
-    pub fn s3_repo(region: Region, bucket: &str, prefix: Option<&str>) -> Result<Self> {
+    pub fn s3_repo(
+        region: Region,
+        bucket: &str,
+        prefix: Option<&str>,
+        local_storage: impl AsRef<Path>,
+    ) -> Result<Self> {
+        let staging_root = paths::staging_extension_path(local_storage.as_ref());
+
         Ok(Self {
-            // TODO this is not correct -- use xdg
-            staging_root: PathBuf::from("."),
+            staging_root,
             store: Box::new(S3OcflStore::new(region, bucket, prefix)?),
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
@@ -98,6 +126,7 @@ impl OcflRepo {
     pub fn close(&self) {
         info!("Closing OCFL repository");
         self.closed.store(true, Ordering::Release);
+        // TODO this should close the store too
     }
 
     /// Returns an iterator that iterate through all of the objects in an OCFL repository.

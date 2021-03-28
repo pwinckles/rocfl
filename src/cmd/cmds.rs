@@ -5,11 +5,11 @@ use std::sync::atomic::AtomicBool;
 use log::info;
 
 use crate::cmd::opts::{
-    CatCmd, CommitCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, Field, InitCmd, Layout, ListCmd,
-    MoveCmd, NewCmd, PurgeCmd, RemoveCmd, ResetCmd, RocflArgs, ShowCmd, StatusCmd, Storage,
+    CatCmd, CommitCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, Field, InitCmd, ListCmd, MoveCmd,
+    NewCmd, PurgeCmd, RemoveCmd, ResetCmd, ShowCmd, StatusCmd,
 };
 use crate::cmd::{print, println, Cmd, GlobalArgs};
-use crate::ocfl::{DigestAlgorithm, LayoutExtensionName, OcflRepo, Result, StorageLayout};
+use crate::ocfl::{DigestAlgorithm, OcflRepo, Result};
 
 impl Cmd for CatCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs, _terminate: &AtomicBool) -> Result<()> {
@@ -26,32 +26,6 @@ impl Cmd for CatCmd {
                 self.version,
                 &mut io::stdout(),
             )
-        }
-    }
-}
-
-pub fn init_repo(cmd: &InitCmd, args: &RocflArgs) -> Result<()> {
-    match args.target_storage() {
-        Storage::FileSystem => {
-            let _ = OcflRepo::init_fs_repo(&args.root, create_layout(cmd.layout)?)?;
-        }
-        // TODO S3
-        Storage::S3 => unimplemented!(),
-    }
-
-    if !args.quiet {
-        println("Initialized OCFL repository")?;
-    }
-
-    Ok(())
-}
-
-fn create_layout(layout: Layout) -> Result<StorageLayout> {
-    match layout {
-        Layout::FlatDirect => StorageLayout::new(LayoutExtensionName::FlatDirectLayout, None),
-        Layout::HashedNTuple => StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None),
-        Layout::HashedNTupleObjectId => {
-            StorageLayout::new(LayoutExtensionName::HashedNTupleObjectIdLayout, None)
         }
     }
 }
