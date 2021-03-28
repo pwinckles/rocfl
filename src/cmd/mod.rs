@@ -9,11 +9,10 @@ use log::error;
 #[cfg(feature = "s3")]
 use rusoto_core::Region;
 
-use crate::cmd::cmds::init_repo;
 use crate::cmd::opts::*;
 #[cfg(not(feature = "s3"))]
 use crate::ocfl::RocflError;
-use crate::ocfl::{OcflRepo, Result};
+use crate::ocfl::{LayoutExtensionName, OcflRepo, Result, StorageLayout};
 
 mod cmds;
 mod diff;
@@ -26,6 +25,8 @@ const DATE_FORMAT: &str = "%Y-%m-%d %H:%M";
 
 /// Executes a `rocfl` command
 pub fn exec_command(args: &RocflArgs) -> Result<()> {
+    // TODO add the ability to load config from XDG. Global defaults and named repo overrides
+
     match &args.command {
         Command::Init(command) => {
             // init cmd needs to be handled differently because the repo does not exist yet
@@ -43,6 +44,7 @@ pub fn exec_command(args: &RocflArgs) -> Result<()> {
                     error!("Force quitting. If a write operation was in progress, it is possible the resource was left in an inconsistent state.");
                     process::exit(1);
                 } else {
+                    println!("Stopping rocfl. If in the middle of a write operation, please wait for it to gracefully complete.");
                     terminate_ref.store(true, Ordering::Release);
                     repo_ref.close();
                 }
@@ -105,6 +107,29 @@ fn print(value: impl Display) -> Result<()> {
     }
 }
 
+pub fn init_repo(cmd: &InitCmd, args: &RocflArgs) -> Result<()> {
+    match args.target_storage() {
+        Storage::FileSystem => {
+            let _ = OcflRepo::init_fs_repo(&args.root, create_layout(cmd.layout)?)?;
+        }
+        Storage::S3 => {
+            #[cfg(not(feature = "s3"))]
+            return Err(RocflError::General(
+                "This binary was not compiled with S3 support.",
+            ));
+
+            #[cfg(feature = "s3")]
+            let _ = init_s3_repo(args, create_layout(cmd.layout)?)?;
+        }
+    }
+
+    if !args.quiet {
+        println("Initialized OCFL repository")?;
+    }
+
+    Ok(())
+}
+
 fn create_repo(args: &RocflArgs) -> Result<OcflRepo> {
     match args.target_storage() {
         Storage::FileSystem => OcflRepo::fs_repo(args.root.clone()),
@@ -120,6 +145,16 @@ fn create_repo(args: &RocflArgs) -> Result<OcflRepo> {
     }
 }
 
+fn create_layout(layout: Layout) -> Result<StorageLayout> {
+    match layout {
+        Layout::FlatDirect => StorageLayout::new(LayoutExtensionName::FlatDirectLayout, None),
+        Layout::HashedNTuple => StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None),
+        Layout::HashedNTupleObjectId => {
+            StorageLayout::new(LayoutExtensionName::HashedNTupleObjectIdLayout, None)
+        }
+    }
+}
+
 #[cfg(feature = "s3")]
 fn create_s3_repo(args: &RocflArgs) -> Result<OcflRepo> {
     let prefix = match args.root.as_str() {
@@ -127,13 +162,38 @@ fn create_s3_repo(args: &RocflArgs) -> Result<OcflRepo> {
         prefix => Some(prefix),
     };
 
-    let region = match args.endpoint.is_some() {
+    let region = resolve_region(args)?;
+
+    // TODO XDG
+    OcflRepo::s3_repo(region, args.bucket.as_ref().unwrap(), prefix, "/var/tmp")
+}
+
+#[cfg(feature = "s3")]
+fn init_s3_repo(args: &RocflArgs, layout: StorageLayout) -> Result<OcflRepo> {
+    let prefix = match args.root.as_str() {
+        "." => None,
+        prefix => Some(prefix),
+    };
+
+    let region = resolve_region(args)?;
+
+    OcflRepo::init_s3_repo(
+        region,
+        args.bucket.as_ref().unwrap(),
+        prefix,
+        // TODO XDG
+        "/var/tmp",
+        layout,
+    )
+}
+
+#[cfg(feature = "s3")]
+fn resolve_region(args: &RocflArgs) -> Result<Region> {
+    Ok(match args.endpoint.is_some() {
         true => Region::Custom {
             name: args.region.as_ref().unwrap().to_owned(),
             endpoint: args.endpoint.as_ref().unwrap().to_owned(),
         },
         false => args.region.as_ref().unwrap().parse()?,
-    };
-
-    OcflRepo::s3_repo(region, args.bucket.as_ref().unwrap(), prefix)
+    })
 }

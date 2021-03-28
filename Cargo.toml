@@ -12,7 +12,7 @@ documentation = "https://docs.rs/rocfl/"
 
 [features]
 default = ["s3"]
-s3 = ["rusoto_core", "rusoto_credential", "rusoto_s3", "tokio"]
+s3 = ["bytes", "futures", "rusoto_core", "rusoto_credential", "rusoto_s3", "tokio"]
 
 [[bin]]
 name = "rocfl"
@@ -68,11 +68,16 @@ grep-matcher = "0.1"
 grep-searcher = "0.1"
 grep-regex = "0.1"
 
+# XDG
+directories = "3"
+
 # Serialization
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 
 # AWS S3
+bytes = { version = "1", optional = true }
+futures = { version = "0.3", optional = true }
 rusoto_core = { version = "0.46", default_features = false, features =["rustls"], optional = true }
 rusoto_credential = { version = "0.46", optional = true }
 rusoto_s3 = { version = "0.46", default_features = false, features = ["rustls"], optional = true }
