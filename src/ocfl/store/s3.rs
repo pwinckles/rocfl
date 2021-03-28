@@ -8,12 +8,13 @@ use std::path::Path;
 use std::sync::RwLock;
 use std::vec::IntoIter;
 
+use bytes::Bytes;
 use globset::GlobBuilder;
 use log::{error, info, warn};
 use once_cell::sync::Lazy;
-use rusoto_core::{Region, RusotoError};
+use rusoto_core::{ByteStream, Region, RusotoError};
 use rusoto_s3::{
-    GetObjectError, GetObjectRequest, ListObjectsV2Output, ListObjectsV2Request,
+    GetObjectError, GetObjectRequest, ListObjectsV2Output, ListObjectsV2Request, PutObjectRequest,
     S3Client as RusotoS3Client, S3,
 };
 use tokio::io::AsyncReadExt;
@@ -24,7 +25,11 @@ use super::{OcflLayout, OcflStore};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
-use crate::ocfl::{InventoryPath, VersionNum};
+use crate::ocfl::{specs, InventoryPath, LayoutExtensionName, VersionNum};
+
+const TYPE_PLAIN: &str = "text/plain; charset=UTF-8";
+const TYPE_MARKDOWN: &str = "text/markdown; charset=UTF-8";
+const TYPE_JSON: &str = "application/json; charset=UTF-8";
 
 static EXTENSIONS_DIR_SUFFIX: Lazy<String> = Lazy::new(|| format!("/{}", EXTENSIONS_DIR));
 
@@ -49,6 +54,25 @@ impl S3OcflStore {
         Ok(Self {
             s3_client,
             storage_layout,
+            id_path_cache: RwLock::new(HashMap::new()),
+            prefix: prefix.map(|p| p.to_string()),
+        })
+    }
+
+    /// Initializes a new OCFL repository at the specified location
+    pub fn init(
+        region: Region,
+        bucket: &str,
+        prefix: Option<&str>,
+        layout: StorageLayout,
+    ) -> Result<Self> {
+        let s3_client = S3Client::new(region, bucket, prefix)?;
+
+        init_new_repo(&s3_client, &layout)?;
+
+        Ok(Self {
+            s3_client,
+            storage_layout: Some(layout),
             id_path_cache: RwLock::new(HashMap::new()),
             prefix: prefix.map(|p| p.to_string()),
         })
@@ -264,6 +288,8 @@ impl S3Client {
     fn list_dir(&self, path: &str) -> Result<ListResult> {
         let prefix = join_with_trailing_slash(&self.prefix, &path);
 
+        info!("Listing S3 prefix: {}", prefix);
+
         let mut objects = Vec::new();
         let mut directories = Vec::new();
         let mut continuation = None;
@@ -308,7 +334,7 @@ impl S3Client {
     fn get_object(&self, path: &str) -> Result<Option<Vec<u8>>> {
         let key = join(&self.prefix, &path);
 
-        info!("Getting object from S3: {}", &key);
+        info!("Getting object from S3: {}", key);
 
         let result = self
             .runtime
@@ -337,7 +363,7 @@ impl S3Client {
     fn stream_object(&self, path: &str, sink: &mut dyn Write) -> Result<()> {
         let key = join(&self.prefix, &path);
 
-        info!("Streaming object from S3: {}", &key);
+        info!("Streaming object from S3: {}", key);
 
         let result = self
             .runtime
@@ -362,6 +388,37 @@ impl S3Client {
             }),
             Err(e) => Err(e.into()),
         }
+    }
+
+    fn put_object_bytes(
+        &self,
+        path: &str,
+        content: Bytes,
+        content_type: Option<&str>,
+    ) -> Result<()> {
+        let key = join(&self.prefix, &path);
+
+        info!("Putting object in S3: {}", key);
+
+        self.runtime
+            .block_on(self.s3_client.put_object(PutObjectRequest {
+                key,
+                bucket: self.bucket.clone(),
+                content_length: Some(content.len() as i64),
+                body: Some(ByteStream::new(futures::stream::once(async move {
+                    Ok(content)
+                }))),
+                content_type: content_type.map(|s| s.to_string()),
+                ..Default::default()
+            }))?;
+
+        Ok(())
+    }
+}
+
+impl ListResult {
+    fn is_empty(&self) -> bool {
+        self.objects.is_empty() && self.directories.is_empty()
     }
 }
 
@@ -475,6 +532,71 @@ fn check_extensions(s3_client: &S3Client) {
         }
         Err(e) => error!("Failed to list storage root extensions: {}", e),
     }
+}
+
+fn init_new_repo(s3_client: &S3Client, layout: &StorageLayout) -> Result<()> {
+    if !s3_client.list_dir("")?.is_empty() {
+        return Err(RocflError::IllegalState(
+            "Cannot create new repository. Storage root must be empty".to_string(),
+        ));
+    }
+
+    info!(
+        "Initializing OCFL storage root in bucket {} under prefix {}",
+        s3_client.bucket, s3_client.prefix
+    );
+
+    s3_client.put_object_bytes(
+        REPO_NAMASTE_FILE,
+        Bytes::from(OCFL_VERSION.as_bytes()),
+        Some(TYPE_PLAIN),
+    )?;
+
+    s3_client.put_object_bytes(
+        OCFL_SPEC_FILE,
+        Bytes::from(specs::OCFL_1_0_SPEC.as_bytes()),
+        Some(TYPE_PLAIN),
+    )?;
+
+    let extension_name = layout.extension_name().to_string();
+
+    let ocfl_layout = OcflLayout {
+        extension: layout.extension_name(),
+        description: format!("See specification document {}.md", extension_name),
+    };
+
+    let mut ocfl_layout_bytes = Vec::new();
+
+    serde_json::to_writer_pretty(&mut ocfl_layout_bytes, &ocfl_layout)?;
+
+    s3_client.put_object_bytes(
+        OCFL_LAYOUT_FILE,
+        Bytes::from(ocfl_layout_bytes),
+        Some(TYPE_JSON),
+    )?;
+
+    s3_client.put_object_bytes(
+        &format!(
+            "{}/{}/{}",
+            EXTENSIONS_DIR, extension_name, EXTENSIONS_CONFIG_FILE
+        ),
+        Bytes::from(layout.serialize()?),
+        Some(TYPE_JSON),
+    )?;
+
+    let extension_spec = match layout.extension_name() {
+        LayoutExtensionName::FlatDirectLayout => specs::EXT_0002_SPEC,
+        LayoutExtensionName::HashedNTupleObjectIdLayout => specs::EXT_0003_SPEC,
+        LayoutExtensionName::HashedNTupleLayout => specs::EXT_0004_SPEC,
+    };
+
+    s3_client.put_object_bytes(
+        &format!("{}.md", extension_name),
+        Bytes::from(extension_spec),
+        Some(TYPE_MARKDOWN),
+    )?;
+
+    Ok(())
 }
 
 /// Reads `ocfl_layout.json` and attempts to load the specified storage layout extension

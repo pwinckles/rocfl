@@ -41,7 +41,7 @@ pub struct FsOcflStore {
 
 impl FsOcflStore {
     /// Creates a new FsOcflStore
-    pub fn new<P: AsRef<Path>>(storage_root: P) -> Result<Self> {
+    pub fn new(storage_root: impl AsRef<Path>) -> Result<Self> {
         let storage_root = storage_root.as_ref().to_path_buf();
 
         if !storage_root.exists() {
@@ -68,7 +68,7 @@ impl FsOcflStore {
     }
 
     /// Initializes a new OCFL repository at the specified location
-    pub fn init<P: AsRef<Path>>(root: P, layout: StorageLayout) -> Result<Self> {
+    pub fn init(root: impl AsRef<Path>, layout: StorageLayout) -> Result<Self> {
         let root = root.as_ref().to_path_buf();
 
         init_new_repo(&root, &layout)?;
@@ -885,20 +885,20 @@ fn read_layout_config<P: AsRef<Path>>(storage_root: P, layout: &OcflLayout) -> O
     None
 }
 
-fn init_new_repo<P: AsRef<Path>>(root: P, layout: &StorageLayout) -> Result<()> {
+fn init_new_repo(root: impl AsRef<Path>, layout: &StorageLayout) -> Result<()> {
     let root = root.as_ref().to_path_buf();
 
     if root.exists() {
         if !root.is_dir() {
             return Err(RocflError::IllegalState(format!(
-                "Storage root {} is not a directory",
+                "Cannot create new repository. Storage root {} is not a directory",
                 canonical_str(root)
             )));
         }
 
         if fs::read_dir(&root)?.next().is_some() {
             return Err(RocflError::IllegalState(format!(
-                "Storage root {} must be empty",
+                "Cannot create new repository. Storage root {} must be empty",
                 canonical_str(root)
             )));
         }
@@ -950,7 +950,7 @@ fn init_new_repo<P: AsRef<Path>>(root: P, layout: &StorageLayout) -> Result<()> 
     Ok(())
 }
 
-fn file_to_bytes<P: AsRef<Path>>(file: P) -> Result<Vec<u8>> {
+fn file_to_bytes(file: impl AsRef<Path>) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     File::open(&file)?.read_to_end(&mut bytes)?;
     Ok(bytes)
