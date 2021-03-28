@@ -3,19 +3,23 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::io::Write;
+use std::fs::File;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::RwLock;
 use std::vec::IntoIter;
 
 use bytes::Bytes;
+use futures::{FutureExt, TryStreamExt};
 use globset::GlobBuilder;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use rusoto_core::{ByteStream, Region, RusotoError};
 use rusoto_s3::{
-    GetObjectError, GetObjectRequest, ListObjectsV2Output, ListObjectsV2Request, PutObjectRequest,
-    S3Client as RusotoS3Client, S3,
+    AbortMultipartUploadRequest, CompleteMultipartUploadRequest, CompletedMultipartUpload,
+    CompletedPart, CreateMultipartUploadRequest, GetObjectError, GetObjectRequest,
+    ListObjectsV2Output, ListObjectsV2Request, PutObjectRequest, S3Client as RusotoS3Client,
+    StreamingBody, UploadPartRequest, S3,
 };
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
@@ -30,6 +34,8 @@ use crate::ocfl::{specs, InventoryPath, LayoutExtensionName, VersionNum};
 const TYPE_PLAIN: &str = "text/plain; charset=UTF-8";
 const TYPE_MARKDOWN: &str = "text/markdown; charset=UTF-8";
 const TYPE_JSON: &str = "application/json; charset=UTF-8";
+
+const PART_SIZE: u64 = 1024 * 1024 * 5;
 
 static EXTENSIONS_DIR_SUFFIX: Lazy<String> = Lazy::new(|| format!("/{}", EXTENSIONS_DIR));
 
@@ -395,14 +401,14 @@ impl S3Client {
         path: &str,
         content: Bytes,
         content_type: Option<&str>,
-    ) -> Result<()> {
+    ) -> Result<String> {
         let key = join(&self.prefix, &path);
 
         info!("Putting object in S3: {}", key);
 
         self.runtime
             .block_on(self.s3_client.put_object(PutObjectRequest {
-                key,
+                key: key.clone(),
                 bucket: self.bucket.clone(),
                 content_length: Some(content.len() as i64),
                 body: Some(ByteStream::new(futures::stream::once(async move {
@@ -412,7 +418,153 @@ impl S3Client {
                 ..Default::default()
             }))?;
 
-        Ok(())
+        Ok(key)
+    }
+
+    fn put_object_file(
+        &self,
+        path: &str,
+        file_path: impl AsRef<Path>,
+        content_type: Option<&str>,
+    ) -> Result<String> {
+        let content_length = std::fs::metadata(path)?.len();
+
+        if content_length > PART_SIZE {
+            self.multipart_put_file(path, file_path, content_length, content_type)
+        } else {
+            let key = join(&self.prefix, &path);
+            info!(
+                "Putting {} in S3 at {}",
+                file_path.as_ref().to_string_lossy(),
+                key
+            );
+
+            let stream = tokio::fs::read(file_path.as_ref().to_path_buf())
+                .into_stream()
+                .map_ok(Bytes::from);
+
+            self.runtime
+                .block_on(self.s3_client.put_object(PutObjectRequest {
+                    key: key.clone(),
+                    bucket: self.bucket.clone(),
+                    content_length: Some(content_length as i64),
+                    body: Some(StreamingBody::new(stream)),
+                    content_type: content_type.map(|s| s.to_string()),
+                    ..Default::default()
+                }))?;
+
+            Ok(key)
+        }
+    }
+
+    fn multipart_put_file(
+        &self,
+        path: &str,
+        file_path: impl AsRef<Path>,
+        content_length: u64,
+        content_type: Option<&str>,
+    ) -> Result<String> {
+        let key = join(&self.prefix, &path);
+
+        info!(
+            "Initiating S3 multipart upload of {} to {}",
+            file_path.as_ref().to_string_lossy(),
+            key
+        );
+
+        let mut i = 1;
+        let mut reader = File::open(file_path)?;
+        let mut buffer = [b'a'; PART_SIZE as usize];
+        let mut parts = Vec::with_capacity(((content_length / PART_SIZE) + 1) as usize);
+
+        let upload_id = self
+            .runtime
+            .block_on(
+                self.s3_client
+                    .create_multipart_upload(CreateMultipartUploadRequest {
+                        bucket: self.bucket.clone(),
+                        content_type: content_type.map(|s| s.to_string()),
+                        key: key.clone(),
+                        ..Default::default()
+                    }),
+            )?
+            .upload_id
+            .unwrap();
+
+        let create_upload_part = |content: Vec<u8>, part_number: i64| -> UploadPartRequest {
+            UploadPartRequest {
+                upload_id: upload_id.clone(),
+                part_number,
+                bucket: self.bucket.clone(),
+                key: key.clone(),
+                body: Some(content.into()),
+                ..Default::default()
+            }
+        };
+
+        loop {
+            let read = match reader.read(&mut buffer) {
+                Ok(read) => read,
+                Err(e) => {
+                    self.abort_multipart(&key, &upload_id);
+                    return Err(e.into());
+                }
+            };
+
+            if read == 0 {
+                break;
+            }
+
+            debug!("Upload part {} for {}", i, read);
+
+            let e_tag = match self.runtime.block_on(
+                self.s3_client
+                    .upload_part(create_upload_part(buffer[..read].to_vec(), i)),
+            ) {
+                Ok(result) => result.e_tag,
+                Err(e) => {
+                    self.abort_multipart(&key, &upload_id);
+                    return Err(e.into());
+                }
+            };
+
+            parts.push(CompletedPart {
+                e_tag,
+                part_number: Some(i),
+            });
+
+            i += 1;
+        }
+
+        debug!("Finish multipart upload for {}", key);
+
+        self.runtime
+            .block_on(
+                self.s3_client
+                    .complete_multipart_upload(CompleteMultipartUploadRequest {
+                        bucket: self.bucket.clone(),
+                        key: key.clone(),
+                        multipart_upload: Some(CompletedMultipartUpload { parts: Some(parts) }),
+                        upload_id: upload_id.clone(),
+                        ..Default::default()
+                    }),
+            )?;
+
+        Ok(key)
+    }
+
+    fn abort_multipart(&self, key: &str, upload_id: &str) {
+        info!("Aborting multipart upload to {}", key);
+        if let Err(e) = self.runtime.block_on(self.s3_client.abort_multipart_upload(
+            AbortMultipartUploadRequest {
+                bucket: self.bucket.clone(),
+                key: key.to_string(),
+                upload_id: upload_id.to_string(),
+                ..Default::default()
+            },
+        )) {
+            error!("Failed to abort multipart upload to {}: {}", key, e);
+        };
     }
 }
 
