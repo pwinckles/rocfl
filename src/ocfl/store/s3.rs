@@ -23,13 +23,14 @@ use rusoto_s3::{
 };
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
+use walkdir::WalkDir;
 
 use super::layout::StorageLayout;
 use super::{OcflLayout, OcflStore};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
-use crate::ocfl::{specs, InventoryPath, LayoutExtensionName, VersionNum};
+use crate::ocfl::{specs, util, InventoryPath, LayoutExtensionName, VersionNum};
 
 const TYPE_PLAIN: &str = "text/plain; charset=UTF-8";
 const TYPE_MARKDOWN: &str = "text/markdown; charset=UTF-8";
@@ -61,7 +62,7 @@ impl S3OcflStore {
             s3_client,
             storage_layout,
             id_path_cache: RwLock::new(HashMap::new()),
-            prefix: prefix.map(|p| p.to_string()),
+            prefix: prefix.map(|p| p.to_string().trim_end_matches('/').to_string()),
         })
     }
 
@@ -80,26 +81,55 @@ impl S3OcflStore {
             s3_client,
             storage_layout: Some(layout),
             id_path_cache: RwLock::new(HashMap::new()),
-            prefix: prefix.map(|p| p.to_string()),
+            prefix: prefix.map(|p| p.to_string().trim_end_matches('/').to_string()),
         })
     }
 
-    fn get_inventory_inner(&self, object_id: &str) -> Result<Inventory> {
+    /// This method first attempts to locate the path to the object using the storage layout.
+    /// If it is not able to, then it scans the repository looking for the object.
+    fn lookup_or_find_object_root_path(&self, object_id: &str) -> Result<String> {
+        match self.get_object_root_path(object_id) {
+            Some(path) => Ok(path),
+            None => match self.scan_for_inventory(object_id) {
+                Ok(inventory) => Ok(inventory.object_root),
+                Err(e) => Err(e),
+            },
+        }
+    }
+
+    /// Returns the storage root relative path to the object by doing a cache look up. If
+    /// the mapping was not found in the cache, then it is computed using the configured
+    /// storage layout. If there is no storage layout, then `None` is returned.
+    fn get_object_root_path(&self, object_id: &str) -> Option<String> {
+        if let Ok(cache) = self.id_path_cache.read() {
+            if let Some(object_root) = cache.get(object_id) {
+                return Some(object_root.clone());
+            }
+        }
+
         if let Some(storage_layout) = &self.storage_layout {
             let object_root = storage_layout.map_object_id(object_id);
-            self.parse_inventory_required(object_id, &object_root)
-        } else {
-            info!(
-                "Storage layout not configured, scanning repository to locate object {}",
-                &object_id
-            );
 
-            let mut iter = InventoryIter::new_id_matching(&self, &object_id);
-
-            match iter.next() {
-                Some(inventory) => Ok(inventory),
-                None => Err(not_found(&object_id, None)),
+            if let Ok(mut cache) = self.id_path_cache.write() {
+                cache.insert(object_id.to_string(), object_root.clone());
+                return Some(object_root);
             }
+        }
+
+        None
+    }
+
+    fn scan_for_inventory(&self, object_id: &str) -> Result<Inventory> {
+        info!(
+            "Storage layout not configured, scanning repository to locate object {}",
+            &object_id
+        );
+
+        let mut iter = InventoryIter::new_id_matching(&self, &object_id);
+
+        match iter.next() {
+            Some(inventory) => Ok(inventory),
+            None => Err(not_found(&object_id, None)),
         }
     }
 
@@ -140,10 +170,9 @@ impl S3OcflStore {
             inventory.object_root =
                 strip_leading_slash(strip_trailing_slash(object_root).as_ref()).into();
 
-            inventory.storage_path = if let Some(prefix) = &self.prefix {
-                join(prefix, &inventory.object_root)
-            } else {
-                inventory.object_root.clone()
+            inventory.storage_path = match &self.prefix {
+                Some(prefix) => join(prefix, &inventory.object_root),
+                None => inventory.object_root.clone(),
             };
             inventory.mutable_head = mutable_head;
 
@@ -187,25 +216,9 @@ impl OcflStore for S3OcflStore {
     /// Returns the most recent inventory version for the specified object, or an a
     /// `RocflError::NotFound` if it does not exist.
     fn get_inventory(&self, object_id: &str) -> Result<Inventory> {
-        let object_root = match self.id_path_cache.read() {
-            Ok(cache) => match cache.get(object_id) {
-                Some(object_root) => Some(object_root.clone()),
-                None => None,
-            },
-            Err(_) => None,
-        };
-
-        match object_root {
+        match self.get_object_root_path(object_id) {
             Some(object_root) => self.parse_inventory_required(object_id, &object_root),
-            None => {
-                let inventory = self.get_inventory_inner(&object_id)?;
-
-                if let Ok(mut cache) = self.id_path_cache.write() {
-                    cache.insert(object_id.to_string(), inventory.object_root.clone());
-                }
-
-                Ok(inventory)
-            }
+            None => self.scan_for_inventory(&object_id),
         }
     }
 
@@ -240,16 +253,72 @@ impl OcflStore for S3OcflStore {
         self.s3_client.stream_object(&storage_path, sink)
     }
 
-    fn write_new_object(&self, _inventory: &mut Inventory, _object_path: &Path) -> Result<()> {
-        // TODO s3
-        unimplemented!()
+    /// Writes a new OCFL object. The contents at `object_path` must be a fully formed OCFL
+    /// object that is able to be moved into place with no additional modifications.
+    ///
+    /// The object must not already exist.
+    fn write_new_object(&self, inventory: &mut Inventory, object_path: &Path) -> Result<()> {
+        let object_root =
+            match self.get_object_root_path(&inventory.id) {
+                Some(object_root) => object_root,
+                // TODO add support for specifying location
+                None => return Err(RocflError::IllegalState(
+                    "Objects cannot be created in repositories lacking a defined storage layout."
+                        .to_string(),
+                )),
+            };
+
+        if !self.s3_client.list_dir(&object_root)?.is_empty() {
+            return Err(RocflError::IllegalState(format!(
+                "Cannot create object {} because there are existing files at {}",
+                inventory.id, object_root
+            )));
+        }
+
+        info!("Creating new object {}", inventory.id);
+
+        // TODO rollback on failure
+        let mut keys = Vec::new();
+
+        for file in WalkDir::new(object_path) {
+            let file = file?;
+            if file.file_type().is_dir() {
+                continue;
+            }
+
+            let relative_path = pathdiff::diff_paths(file.path(), object_path)
+                .unwrap()
+                .to_string_lossy()
+                .to_string();
+            let content_path = util::convert_backslash_to_forward(relative_path.as_ref());
+            let storage_path = join(&object_root, content_path.as_ref());
+            keys.push(
+                self.s3_client
+                    .put_object_file(&storage_path, file.path(), None)?,
+            );
+        }
+
+        inventory.storage_path = match &self.prefix {
+            Some(prefix) => join(prefix, &inventory.object_root),
+            None => object_root,
+        };
+
+        Ok(())
     }
 
+    /// Writes a new version to the OCFL object. The contents at `version_path` must be a fully
+    /// formed OCFL version that is able to be moved into place within the object, requiring
+    /// no additional modifications.
+    ///
+    /// The object must already exist, and the new version must not exist.
     fn write_new_version(&self, _inventory: &mut Inventory, _version_path: &Path) -> Result<()> {
         // TODO s3
         unimplemented!()
     }
 
+    /// Purges the specified object from the repository, if it exists. If it does not exist,
+    /// nothing happens. Any dangling directories that were created as a result of purging
+    /// the object are also removed.
     fn purge_object(&self, _object_id: &str) -> Result<()> {
         // TODO s3
         unimplemented!()
@@ -291,6 +360,8 @@ impl S3Client {
         })
     }
 
+    /// Returns all of the object keys or logical directories that are under the specified prefix.
+    /// All returned keys and key parts are relative the repository prefix; not the search prefix.
     fn list_dir(&self, path: &str) -> Result<ListResult> {
         let prefix = join_with_trailing_slash(&self.prefix, &path);
 
@@ -313,14 +384,16 @@ impl S3Client {
 
             if let Some(contents) = &result.contents {
                 for object in contents {
-                    objects.push(object.key.as_ref().unwrap()[self.prefix.len()..].to_owned());
+                    objects.push(object.key.as_ref().unwrap()[self.prefix.len() + 1..].to_owned());
                 }
             }
 
             if let Some(prefixes) = &result.common_prefixes {
                 for prefix in prefixes {
-                    directories
-                        .push(prefix.prefix.as_ref().unwrap()[self.prefix.len()..].to_owned());
+                    let length = prefix.prefix.as_ref().unwrap().len() - 1;
+                    directories.push(
+                        prefix.prefix.as_ref().unwrap()[self.prefix.len() + 1..length].to_owned(),
+                    );
                 }
             }
 
@@ -427,7 +500,7 @@ impl S3Client {
         file_path: impl AsRef<Path>,
         content_type: Option<&str>,
     ) -> Result<String> {
-        let content_length = std::fs::metadata(path)?.len();
+        let content_length = std::fs::metadata(&file_path)?.len();
 
         if content_length > PART_SIZE {
             self.multipart_put_file(path, file_path, content_length, content_type)
@@ -674,10 +747,11 @@ fn check_extensions(s3_client: &S3Client) {
     match s3_client.list_dir(EXTENSIONS_DIR) {
         Ok(result) => {
             for entry in result.directories {
-                if !SUPPORTED_EXTENSIONS.contains(&entry.as_str()) {
+                let ext_name = &entry.as_str()[EXTENSIONS_DIR.len() + 1..];
+                if !SUPPORTED_EXTENSIONS.contains(ext_name) {
                     warn!(
                         "Storage root extension {} is not supported at this time",
-                        entry
+                        ext_name
                     );
                 }
             }
