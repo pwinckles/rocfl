@@ -17,9 +17,9 @@ use once_cell::sync::Lazy;
 use rusoto_core::{ByteStream, Region, RusotoError};
 use rusoto_s3::{
     AbortMultipartUploadRequest, CompleteMultipartUploadRequest, CompletedMultipartUpload,
-    CompletedPart, CreateMultipartUploadRequest, GetObjectError, GetObjectRequest,
-    ListObjectsV2Output, ListObjectsV2Request, PutObjectRequest, S3Client as RusotoS3Client,
-    StreamingBody, UploadPartRequest, S3,
+    CompletedPart, CreateMultipartUploadRequest, DeleteObjectRequest, GetObjectError,
+    GetObjectRequest, ListObjectsV2Output, ListObjectsV2Request, PutObjectRequest,
+    S3Client as RusotoS3Client, StreamingBody, UploadPartRequest, S3,
 };
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
@@ -277,25 +277,40 @@ impl OcflStore for S3OcflStore {
 
         info!("Creating new object {}", inventory.id);
 
-        // TODO rollback on failure
-        let mut keys = Vec::new();
+        let mut done = Vec::new();
 
-        for file in WalkDir::new(object_path) {
-            let file = file?;
-            if file.file_type().is_dir() {
-                continue;
+        let mut attempt = || -> Result<()> {
+            for file in WalkDir::new(object_path) {
+                let file = file?;
+                if file.file_type().is_dir() {
+                    continue;
+                }
+
+                let relative_path = pathdiff::diff_paths(file.path(), object_path)
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string();
+                let content_path = util::convert_backslash_to_forward(relative_path.as_ref());
+                let storage_path = join(&object_root, content_path.as_ref());
+                self.s3_client
+                    .put_object_file(&storage_path, file.path(), None)?;
+                done.push(storage_path);
             }
 
-            let relative_path = pathdiff::diff_paths(file.path(), object_path)
-                .unwrap()
-                .to_string_lossy()
-                .to_string();
-            let content_path = util::convert_backslash_to_forward(relative_path.as_ref());
-            let storage_path = join(&object_root, content_path.as_ref());
-            keys.push(
-                self.s3_client
-                    .put_object_file(&storage_path, file.path(), None)?,
+            Ok(())
+        };
+
+        if let Err(e) = attempt() {
+            error!(
+                "Failed to create new object {}. Rolling changes back.",
+                inventory.id
             );
+            for path in done {
+                if let Err(e2) = self.s3_client.delete_object(&path) {
+                    error!("Failed to rollback file {}: {}", path, e2);
+                }
+            }
+            return Err(e);
         }
 
         inventory.storage_path = match &self.prefix {
@@ -469,19 +484,34 @@ impl S3Client {
         }
     }
 
+    fn delete_object(&self, path: &str) -> Result<()> {
+        let key = join(&self.prefix, &path);
+
+        info!("Deleting object in S3: {}", key);
+
+        self.runtime
+            .block_on(self.s3_client.delete_object(DeleteObjectRequest {
+                bucket: self.bucket.clone(),
+                key,
+                ..Default::default()
+            }))?;
+
+        Ok(())
+    }
+
     fn put_object_bytes(
         &self,
         path: &str,
         content: Bytes,
         content_type: Option<&str>,
-    ) -> Result<String> {
+    ) -> Result<()> {
         let key = join(&self.prefix, &path);
 
         info!("Putting object in S3: {}", key);
 
         self.runtime
             .block_on(self.s3_client.put_object(PutObjectRequest {
-                key: key.clone(),
+                key,
                 bucket: self.bucket.clone(),
                 content_length: Some(content.len() as i64),
                 body: Some(ByteStream::new(futures::stream::once(async move {
@@ -491,7 +521,7 @@ impl S3Client {
                 ..Default::default()
             }))?;
 
-        Ok(key)
+        Ok(())
     }
 
     fn put_object_file(
@@ -499,11 +529,11 @@ impl S3Client {
         path: &str,
         file_path: impl AsRef<Path>,
         content_type: Option<&str>,
-    ) -> Result<String> {
+    ) -> Result<()> {
         let content_length = std::fs::metadata(&file_path)?.len();
 
         if content_length > PART_SIZE {
-            self.multipart_put_file(path, file_path, content_length, content_type)
+            self.multipart_put_file(path, file_path, content_length, content_type)?;
         } else {
             let key = join(&self.prefix, &path);
             info!(
@@ -518,16 +548,16 @@ impl S3Client {
 
             self.runtime
                 .block_on(self.s3_client.put_object(PutObjectRequest {
-                    key: key.clone(),
+                    key,
                     bucket: self.bucket.clone(),
                     content_length: Some(content_length as i64),
                     body: Some(StreamingBody::new(stream)),
                     content_type: content_type.map(|s| s.to_string()),
                     ..Default::default()
                 }))?;
-
-            Ok(key)
         }
+
+        Ok(())
     }
 
     fn multipart_put_file(
@@ -536,7 +566,7 @@ impl S3Client {
         file_path: impl AsRef<Path>,
         content_length: u64,
         content_type: Option<&str>,
-    ) -> Result<String> {
+    ) -> Result<()> {
         let key = join(&self.prefix, &path);
 
         info!(
@@ -623,7 +653,7 @@ impl S3Client {
                     }),
             )?;
 
-        Ok(key)
+        Ok(())
     }
 
     fn abort_multipart(&self, key: &str, upload_id: &str) {

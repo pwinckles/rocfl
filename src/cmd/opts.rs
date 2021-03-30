@@ -365,8 +365,9 @@ pub struct CommitCmd {
     #[structopt(short, long, value_name = "MESSAGE")]
     pub message: Option<String>,
 
+    // TODO I don't think this is validated correctly
     /// The creation timestamp of the version. Timestamps should be formatted in accordance
-    /// to RFC 3339, for example: 2020-12-23T10:11:12-06:00. Default: now
+    /// to RFC 3339, for example: 2020-12-23T10:11:12-06:00:00Z. Default: now
     #[structopt(short, long, value_name = "TIMESTAMP")]
     pub created: Option<DateTime<Local>>,
 
@@ -374,6 +375,7 @@ pub struct CommitCmd {
     #[structopt(name = "OBJ_ID")]
     pub object_id: String,
     // TODO add option for specifying location when storage layout not defined
+    // TODO add option for pretty print json
 }
 
 /// Resets changes staged to an object. Additions are removed, deletions are restored, and

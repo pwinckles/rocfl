@@ -31,7 +31,7 @@ impl LockManager {
     /// `RocflError::LockAcquire` is returned. The lock is _not_ reentrant.
     pub fn acquire(&self, object_id: &str) -> Result<ObjectLock> {
         let hash = self.digest_algorithm.hash_hex(&mut object_id.as_bytes())?;
-        let lock_path = self.locks_dir.join(hash.as_ref());
+        let lock_path = self.locks_dir.join(format!("{}.lock", hash.as_ref()));
 
         match OpenOptions::new()
             .write(true)
