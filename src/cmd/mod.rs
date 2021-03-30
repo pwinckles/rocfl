@@ -115,7 +115,7 @@ pub fn init_repo(cmd: &InitCmd, args: &RocflArgs) -> Result<()> {
         Storage::S3 => {
             #[cfg(not(feature = "s3"))]
             return Err(RocflError::General(
-                "This binary was not compiled with S3 support.",
+                "This binary was not compiled with S3 support.".to_string(),
             ));
 
             #[cfg(feature = "s3")]
@@ -136,7 +136,7 @@ fn create_repo(args: &RocflArgs) -> Result<OcflRepo> {
         Storage::S3 => {
             #[cfg(not(feature = "s3"))]
             return Err(RocflError::General(
-                "This binary was not compiled with S3 support.",
+                "This binary was not compiled with S3 support.".to_string(),
             ));
 
             #[cfg(feature = "s3")]

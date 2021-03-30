@@ -232,6 +232,10 @@ impl OcflStore for FsOcflStore {
         Ok(())
     }
 
+    /// Writes a new OCFL object. The contents at `object_path` must be a fully formed OCFL
+    /// object that is able to be moved into place with no additional modifications.
+    ///
+    /// The object must not already exist.
     fn write_new_object(&self, inventory: &mut Inventory, object_path: &Path) -> Result<()> {
         let storage_path =
             match self.get_object_root_path(&inventory.id) {
@@ -260,6 +264,11 @@ impl OcflStore for FsOcflStore {
         Ok(())
     }
 
+    /// Writes a new version to the OCFL object. The contents at `version_path` must be a fully
+    /// formed OCFL version that is able to be moved into place within the object, requiring
+    /// no additional modifications.
+    ///
+    /// The object must already exist, and the new version must not exist.
     fn write_new_version(&self, inventory: &mut Inventory, version_path: &Path) -> Result<()> {
         if inventory.is_new() {
             return Err(RocflError::IllegalState(format!(
@@ -307,6 +316,9 @@ impl OcflStore for FsOcflStore {
         Ok(())
     }
 
+    /// Purges the specified object from the repository, if it exists. If it does not exist,
+    /// nothing happens. Any dangling directories that were created as a result of purging
+    /// the object are also removed.
     fn purge_object(&self, object_id: &str) -> Result<()> {
         let object_root = match self.lookup_or_find_object_root_path(object_id) {
             Err(RocflError::NotFound(_)) => None,
