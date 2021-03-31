@@ -443,7 +443,7 @@ impl OcflStore for S3OcflStore {
 
         let mut extensions = Vec::new();
 
-        let list_result = self.list_dir(&extensions_dir)?;
+        let list_result = self.s3_client.list_dir(&extensions_dir)?;
 
         for path in list_result.directories {
             extensions.push(path[extensions_dir.len() + 1..].to_string());
@@ -485,6 +485,18 @@ impl S3Client {
     /// Returns all of the object keys or logical directories that are under the specified prefix.
     /// All returned keys and key parts are relative the repository prefix; not the search prefix.
     fn list_dir(&self, path: &str) -> Result<ListResult> {
+        self.list_prefix(path, Some("/".to_string()))
+    }
+
+    /// Returns all of the object keys under the specified prefix. All returned keys and key parts
+    /// are relative the repository prefix; not the search prefix.
+    fn list_objects(&self, path: &str) -> Result<Vec<String>> {
+        Ok(self.list_prefix(path, None)?.objects)
+    }
+
+    /// Returns all of the object keys or logical directories that are under the specified prefix.
+    /// All returned keys and key parts are relative the repository prefix; not the search prefix.
+    fn list_prefix(&self, path: &str, delimiter: Option<String>) -> Result<ListResult> {
         let prefix = join_with_trailing_slash(&self.prefix, &path);
 
         info!("Listing S3 prefix: {}", prefix);
@@ -499,7 +511,7 @@ impl S3Client {
                     .block_on(self.s3_client.list_objects_v2(ListObjectsV2Request {
                         bucket: self.bucket.clone(),
                         prefix: Some(prefix.clone()),
-                        delimiter: Some("/".to_owned()),
+                        delimiter: delimiter.clone(),
                         continuation_token: continuation.clone(),
                         ..Default::default()
                     }))?;
@@ -530,42 +542,6 @@ impl S3Client {
             objects,
             directories,
         })
-    }
-
-    /// Returns all of the object keys under the specified prefix. All returned keys and key parts
-    /// are relative the repository prefix; not the search prefix.
-    fn list_objects(&self, path: &str) -> Result<Vec<String>> {
-        let prefix = join_with_trailing_slash(&self.prefix, &path);
-
-        info!("Listing S3 prefix: {}", prefix);
-
-        let mut objects = Vec::new();
-        let mut continuation = None;
-
-        loop {
-            let result: ListObjectsV2Output =
-                self.runtime
-                    .block_on(self.s3_client.list_objects_v2(ListObjectsV2Request {
-                        bucket: self.bucket.clone(),
-                        prefix: Some(prefix.clone()),
-                        continuation_token: continuation.clone(),
-                        ..Default::default()
-                    }))?;
-
-            if let Some(contents) = &result.contents {
-                for object in contents {
-                    objects.push(object.key.as_ref().unwrap()[self.prefix.len() + 1..].to_owned());
-                }
-            }
-
-            if result.is_truncated.unwrap() {
-                continuation = result.next_continuation_token.clone();
-            } else {
-                break;
-            }
-        }
-
-        Ok(objects)
     }
 
     fn get_object(&self, path: &str) -> Result<Option<Vec<u8>>> {
