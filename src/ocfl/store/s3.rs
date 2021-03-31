@@ -405,9 +405,35 @@ impl OcflStore for S3OcflStore {
     /// Purges the specified object from the repository, if it exists. If it does not exist,
     /// nothing happens. Any dangling directories that were created as a result of purging
     /// the object are also removed.
-    fn purge_object(&self, _object_id: &str) -> Result<()> {
-        // TODO s3
-        unimplemented!()
+    fn purge_object(&self, object_id: &str) -> Result<()> {
+        let object_root = match self.lookup_or_find_object_root_path(object_id) {
+            Err(RocflError::NotFound(_)) => return Ok(()),
+            Err(e) => return Err(e),
+            Ok(object_root) => object_root,
+        };
+
+        info!("Purging object {} at {}", object_id, object_root);
+
+        let mut failed = false;
+
+        for file in self.s3_client.list_objects(&object_root)? {
+            if let Err(e) = self.s3_client.delete_object(&file) {
+                error!("Failed to delete file {}: {}", file, e);
+                failed = true;
+            }
+        }
+
+        if failed {
+            return Err(RocflError::CorruptObject {
+                object_id: object_id.to_string(),
+                message: format!(
+                    "Failed to purge object at {}. This object may need to be removed manually.",
+                    object_root
+                ),
+            });
+        }
+
+        Ok(())
     }
 
     /// Returns a list of all of the extension names that are associated with the object
@@ -504,6 +530,42 @@ impl S3Client {
             objects,
             directories,
         })
+    }
+
+    /// Returns all of the object keys under the specified prefix. All returned keys and key parts
+    /// are relative the repository prefix; not the search prefix.
+    fn list_objects(&self, path: &str) -> Result<Vec<String>> {
+        let prefix = join_with_trailing_slash(&self.prefix, &path);
+
+        info!("Listing S3 prefix: {}", prefix);
+
+        let mut objects = Vec::new();
+        let mut continuation = None;
+
+        loop {
+            let result: ListObjectsV2Output =
+                self.runtime
+                    .block_on(self.s3_client.list_objects_v2(ListObjectsV2Request {
+                        bucket: self.bucket.clone(),
+                        prefix: Some(prefix.clone()),
+                        continuation_token: continuation.clone(),
+                        ..Default::default()
+                    }))?;
+
+            if let Some(contents) = &result.contents {
+                for object in contents {
+                    objects.push(object.key.as_ref().unwrap()[self.prefix.len() + 1..].to_owned());
+                }
+            }
+
+            if result.is_truncated.unwrap() {
+                continuation = result.next_continuation_token.clone();
+            } else {
+                break;
+            }
+        }
+
+        Ok(objects)
     }
 
     fn get_object(&self, path: &str) -> Result<Option<Vec<u8>>> {

@@ -327,45 +327,37 @@ impl OcflStore for FsOcflStore {
     /// the object are also removed.
     fn purge_object(&self, object_id: &str) -> Result<()> {
         let object_root = match self.lookup_or_find_object_root_path(object_id) {
-            Err(RocflError::NotFound(_)) => None,
+            Err(RocflError::NotFound(_)) => return Ok(()),
             Err(e) => return Err(e),
-            Ok(object_root) => Some(object_root),
+            Ok(object_root) => object_root,
         };
 
-        if let Some(object_root) = object_root {
-            let storage_path = self.storage_root.join(&object_root);
-            info!(
-                "Purging object {} at {}",
-                object_id,
-                storage_path.to_string_lossy()
-            );
+        let storage_path = self.storage_root.join(&object_root);
+        info!(
+            "Purging object {} at {}",
+            object_id,
+            storage_path.to_string_lossy()
+        );
 
-            if storage_path.exists() {
-                if let Err(e) = remove_dir_all::remove_dir_all(&storage_path) {
-                    error!(
-                        "Failed to purge object {} at {}: {}",
-                        object_id,
-                        storage_path.to_string_lossy(),
-                        e
-                    );
-                    return Err(RocflError::CorruptObject {
-                        object_id: object_id.to_string(),
-                        message: format!("Failed to purge object at {}. This object may need to be removed manually.",
-                                         storage_path.to_string_lossy())
-                    });
-                }
+        if storage_path.exists() {
+            if let Err(e) = remove_dir_all::remove_dir_all(&storage_path) {
+                return Err(RocflError::CorruptObject {
+                    object_id: object_id.to_string(),
+                    message: format!("Failed to purge object at {}. This object may need to be removed manually. Error: {}",
+                                     storage_path.to_string_lossy(), e)
+                });
             }
+        }
 
-            let parent = storage_path.parent().unwrap();
+        let parent = storage_path.parent().unwrap();
 
-            if parent.exists() {
-                if let Err(e) = util::clean_dirs_up(&parent) {
-                    error!(
-                        "Failed to cleanup dangling directories at {}: {}",
-                        storage_path.to_string_lossy(),
-                        e
-                    );
-                }
+        if parent.exists() {
+            if let Err(e) = util::clean_dirs_up(&parent) {
+                error!(
+                    "Failed to cleanup dangling directories at {}: {}",
+                    storage_path.to_string_lossy(),
+                    e
+                );
             }
         }
 
