@@ -298,16 +298,22 @@ impl OcflStore for FsOcflStore {
                         version_str, inventory.id)));
         }
 
-        info!("Creating {} {}", inventory.id, version_str);
+        info!(
+            "Creating version {} of object {}",
+            version_str, inventory.id
+        );
 
         fs::rename(version_path, &destination)?;
+
         if let Err(e) = self.copy_inventory_files(&inventory, &destination, &object_root) {
-            error!("Error copying inventory to object root: {}", e);
+            if let Err(e) = fs::rename(&destination, version_path) {
+                error!("Failed to rollback version {} of object {} at {}: {}. Manual intervention may be required.",
+                       version_str, inventory.id, version_path.to_string_lossy(), e);
+            }
+
             return Err(RocflError::General(format!(
-                "Failed to copy the {} for object {} into its root directory at {}",
-                version_str,
-                inventory.id,
-                object_root.to_string_lossy()
+                "Failed to create new version {} of object {}: {}",
+                version_str, inventory.id, e
             )));
         }
 

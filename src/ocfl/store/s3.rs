@@ -30,7 +30,7 @@ use super::{OcflLayout, OcflStore};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
-use crate::ocfl::{specs, util, InventoryPath, LayoutExtensionName, VersionNum};
+use crate::ocfl::{paths, specs, util, InventoryPath, LayoutExtensionName, VersionNum};
 
 const TYPE_PLAIN: &str = "text/plain; charset=UTF-8";
 const TYPE_MARKDOWN: &str = "text/markdown; charset=UTF-8";
@@ -206,6 +206,75 @@ impl S3OcflStore {
         }
     }
 
+    fn upload_all_files_with_rollback(
+        &self,
+        dst_path: &str,
+        src_dir: impl AsRef<Path>,
+    ) -> Result<Vec<String>> {
+        self.do_with_rollback(Vec::new(), |done: &mut Vec<String>| -> Result<()> {
+            for file in WalkDir::new(src_dir.as_ref()) {
+                let file = file?;
+                if file.file_type().is_dir() {
+                    continue;
+                }
+
+                let relative_path = pathdiff::diff_paths(file.path(), src_dir.as_ref())
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string();
+                let content_path = util::convert_backslash_to_forward(relative_path.as_ref());
+                let storage_path = join(dst_path, content_path.as_ref());
+                self.s3_client
+                    .put_object_file(&storage_path, file.path(), None)?;
+                done.push(storage_path);
+            }
+            Ok(())
+        })
+    }
+
+    fn install_inventory_in_root_with_rollback(
+        &self,
+        inventory: &Inventory,
+        version_path: impl AsRef<Path>,
+        uploaded: Vec<String>,
+    ) -> Result<()> {
+        let inventory_src = paths::inventory_path(&version_path);
+        let sidecar_src = paths::sidecar_path(&version_path, inventory.digest_algorithm);
+        let inventory_dst = join(&inventory.object_root, INVENTORY_FILE);
+        let sidecar_dst = join(
+            &inventory.object_root,
+            &sidecar_src.file_name().unwrap().to_string_lossy(),
+        );
+
+        self.do_with_rollback(uploaded, |done: &mut Vec<String>| -> Result<()> {
+            self.s3_client
+                .put_object_file(&inventory_dst, &inventory_src, Some(TYPE_JSON))?;
+            done.push(inventory_dst.clone());
+            self.s3_client
+                .put_object_file(&sidecar_dst, &sidecar_src, Some(TYPE_PLAIN))?;
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    fn do_with_rollback(
+        &self,
+        mut done: Vec<String>,
+        mut callable: impl FnMut(&mut Vec<String>) -> Result<()>,
+    ) -> Result<Vec<String>> {
+        if let Err(e) = callable(&mut done) {
+            for path in done.iter() {
+                if let Err(e2) = self.s3_client.delete_object(path) {
+                    error!("Failed to rollback file {}: {}", path, e2);
+                }
+            }
+            return Err(RocflError::General(
+                format!("Failed to upload all files to S3. Successfully uploaded files were rolled back. Error: {}", e)));
+        }
+        Ok(done)
+    }
+
     /// Pass through to S3 to list the contents of a path in S3
     fn list_dir(&self, path: &str) -> Result<ListResult> {
         self.s3_client.list_dir(path)
@@ -277,41 +346,7 @@ impl OcflStore for S3OcflStore {
 
         info!("Creating new object {}", inventory.id);
 
-        let mut done = Vec::new();
-
-        let mut attempt = || -> Result<()> {
-            for file in WalkDir::new(object_path) {
-                let file = file?;
-                if file.file_type().is_dir() {
-                    continue;
-                }
-
-                let relative_path = pathdiff::diff_paths(file.path(), object_path)
-                    .unwrap()
-                    .to_string_lossy()
-                    .to_string();
-                let content_path = util::convert_backslash_to_forward(relative_path.as_ref());
-                let storage_path = join(&object_root, content_path.as_ref());
-                self.s3_client
-                    .put_object_file(&storage_path, file.path(), None)?;
-                done.push(storage_path);
-            }
-
-            Ok(())
-        };
-
-        if let Err(e) = attempt() {
-            error!(
-                "Failed to create new object {}. Rolling changes back.",
-                inventory.id
-            );
-            for path in done {
-                if let Err(e2) = self.s3_client.delete_object(&path) {
-                    error!("Failed to rollback file {}: {}", path, e2);
-                }
-            }
-            return Err(e);
-        }
+        self.upload_all_files_with_rollback(&object_root, object_path)?;
 
         inventory.storage_path = match &self.prefix {
             Some(prefix) => join(prefix, &inventory.object_root),
@@ -326,9 +361,45 @@ impl OcflStore for S3OcflStore {
     /// no additional modifications.
     ///
     /// The object must already exist, and the new version must not exist.
-    fn write_new_version(&self, _inventory: &mut Inventory, _version_path: &Path) -> Result<()> {
-        // TODO s3
-        unimplemented!()
+    fn write_new_version(&self, inventory: &mut Inventory, version_path: &Path) -> Result<()> {
+        if inventory.is_new() {
+            return Err(RocflError::IllegalState(format!(
+                "Object {} must be created before adding new versions to it.",
+                inventory.id
+            )));
+        }
+
+        let existing_inventory = self.get_inventory(&inventory.id)?;
+        let version_str = inventory.head.to_string();
+
+        if existing_inventory.head != inventory.head.previous().unwrap() {
+            return Err(RocflError::IllegalState(format!(
+                "Cannot create version {} in object {} because the HEAD is at {}",
+                version_str,
+                inventory.id,
+                existing_inventory.head.to_string()
+            )));
+        }
+
+        let version_dst_path = join(&existing_inventory.object_root, &version_str);
+
+        if !self.s3_client.list_dir(&version_dst_path)?.is_empty() {
+            return Err(RocflError::IllegalState(
+                format!("Cannot create version {} in object {} because the version directory already exists.",
+                        version_str, inventory.id)));
+        }
+
+        info!(
+            "Creating version {} of object {}",
+            version_str, inventory.id
+        );
+
+        let uploaded = self.upload_all_files_with_rollback(&version_dst_path, version_path)?;
+        self.install_inventory_in_root_with_rollback(inventory, version_path, uploaded)?;
+
+        inventory.storage_path = existing_inventory.storage_path;
+
+        Ok(())
     }
 
     /// Purges the specified object from the repository, if it exists. If it does not exist,
@@ -340,9 +411,19 @@ impl OcflStore for S3OcflStore {
     }
 
     /// Returns a list of all of the extension names that are associated with the object
-    fn list_object_extensions(&self, _object_id: &str) -> Result<Vec<String>> {
-        // TODO s3
-        unimplemented!()
+    fn list_object_extensions(&self, object_id: &str) -> Result<Vec<String>> {
+        let object_root = self.lookup_or_find_object_root_path(object_id)?;
+        let extensions_dir = join(&object_root, EXTENSIONS_DIR);
+
+        let mut extensions = Vec::new();
+
+        let list_result = self.list_dir(&extensions_dir)?;
+
+        for path in list_result.directories {
+            extensions.push(path[extensions_dir.len() + 1..].to_string());
+        }
+
+        Ok(extensions)
     }
 }
 
@@ -777,7 +858,7 @@ fn check_extensions(s3_client: &S3Client) {
     match s3_client.list_dir(EXTENSIONS_DIR) {
         Ok(result) => {
             for entry in result.directories {
-                let ext_name = &entry.as_str()[EXTENSIONS_DIR.len() + 1..];
+                let ext_name = &entry[EXTENSIONS_DIR.len() + 1..];
                 if !SUPPORTED_EXTENSIONS.contains(ext_name) {
                     warn!(
                         "Storage root extension {} is not supported at this time",
