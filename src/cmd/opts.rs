@@ -1,5 +1,6 @@
 use std::fmt::{self, Display, Formatter};
 use std::num::ParseIntError;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use chrono::{DateTime, Local};
@@ -240,15 +241,18 @@ pub struct CatCmd {
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct InitCmd {
-    /// Specifies the OCFL storage layout extension to use
+    /// Path to a custom storage layout extension config JSON file.
+    #[structopt(short, long, value_name = "LAYOUT_CONFIG")]
+    pub config_file: Option<PathBuf>,
+
+    /// Specifies the OCFL storage layout extension to use. The default extension configuration
+    /// is used. Custom configuration may be specified using '--config-file'.
     #[structopt(short, long,
     value_name = "LAYOUT",
     possible_values = &Layout::variants(),
     default_value = "HashedNTuple",
     case_insensitive = true)]
     pub layout: Layout,
-    // TODO add option for passing a layout file
-    // TODO add the option for no layout
 }
 
 /// Stages a new OCFL object. The object does not exist until it is committed.
@@ -447,6 +451,7 @@ arg_enum! {
 arg_enum! {
     #[derive(Debug, Clone, Copy)]
     pub enum Layout {
+        None,
         FlatDirect,
         HashedNTuple,
         HashedNTupleObjectId,
