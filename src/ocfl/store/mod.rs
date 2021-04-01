@@ -44,7 +44,12 @@ pub trait OcflStore {
     /// object that is able to be moved into place with no additional modifications.
     ///
     /// The object must not already exist.
-    fn write_new_object(&self, inventory: &mut Inventory, object_path: &Path) -> Result<()>;
+    fn write_new_object(
+        &self,
+        inventory: &mut Inventory,
+        src_object_path: &Path,
+        object_root: Option<InventoryPath>,
+    ) -> Result<()>;
 
     /// Writes a new version to the OCFL object. The contents at `version_path` must be a fully
     /// formed OCFL version that is able to be moved into place within the object, requiring

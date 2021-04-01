@@ -248,6 +248,7 @@ pub struct InitCmd {
     case_insensitive = true)]
     pub layout: Layout,
     // TODO add option for passing a layout file
+    // TODO add the option for no layout
 }
 
 /// Stages a new OCFL object. The object does not exist until it is committed.
@@ -374,10 +375,14 @@ pub struct CommitCmd {
     #[structopt(short, long, value_name = "TIMESTAMP")]
     pub created: Option<DateTime<Local>>,
 
+    /// The storage root relative path to the object's root. Should only be specified for new
+    /// objects in repositories without defined storage layouts, and is otherwise ignored.
+    #[structopt(short = "r", long, value_name = "OBJ_ROOT")]
+    pub object_root: Option<String>,
+
     /// The ID of the object to commit changes for
     #[structopt(name = "OBJ_ID")]
     pub object_id: String,
-    // TODO add option for specifying location when storage layout not defined
 }
 
 /// Resets changes staged to an object. Additions are removed, deletions are restored, and

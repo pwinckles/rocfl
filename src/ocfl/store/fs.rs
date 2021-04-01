@@ -236,28 +236,40 @@ impl OcflStore for FsOcflStore {
     /// object that is able to be moved into place with no additional modifications.
     ///
     /// The object must not already exist.
-    fn write_new_object(&self, inventory: &mut Inventory, object_path: &Path) -> Result<()> {
-        let storage_path =
-            match self.get_object_root_path(&inventory.id) {
-                Some(object_root) => self.storage_root.join(object_root),
-                // TODO add support for specifying location
-                None => return Err(RocflError::IllegalState(
-                    "Objects cannot be created in repositories lacking a defined storage layout."
-                        .to_string(),
-                )),
-            };
+    fn write_new_object(
+        &self,
+        inventory: &mut Inventory,
+        src_object_path: &Path,
+        object_root: Option<InventoryPath>,
+    ) -> Result<()> {
+        let root_path = match self.get_object_root_path(&inventory.id) {
+            Some(object_root) => object_root,
+            None => {
+                if let Some(root) = object_root {
+                    root.to_string()
+                } else {
+                    return Err(RocflError::IllegalState(
+                            "Cannot create object because the repository does not have a defined storage layout, and an object root path was not specified."
+                                .to_string(),
+                        ));
+                }
+            }
+        };
+
+        let storage_path = self.storage_root.join(root_path);
 
         if storage_path.exists() {
             return Err(RocflError::IllegalState(format!(
-                "Cannot create object {} because it already exists",
-                inventory.id
+                "Cannot create object {} because an object already exists at {}",
+                inventory.id,
+                storage_path.to_string_lossy()
             )));
         }
 
         info!("Creating new object {}", inventory.id);
 
         fs::create_dir_all(storage_path.parent().unwrap())?;
-        fs::rename(object_path, &storage_path)?;
+        fs::rename(src_object_path, &storage_path)?;
 
         inventory.storage_path = storage_path.to_string_lossy().into();
 
