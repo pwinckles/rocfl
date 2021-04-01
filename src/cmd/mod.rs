@@ -1,8 +1,9 @@
 use std::fmt::Display;
-use std::io::{self, ErrorKind, Write};
-use std::process;
+use std::io::{self, ErrorKind, Read, Write};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::{fs, process};
 
 use enum_dispatch::enum_dispatch;
 use log::error;
@@ -12,7 +13,7 @@ use rusoto_core::Region;
 use crate::cmd::opts::*;
 #[cfg(not(feature = "s3"))]
 use crate::ocfl::RocflError;
-use crate::ocfl::{LayoutExtensionName, OcflRepo, Result, StorageLayout};
+use crate::ocfl::{LayoutExtensionName, OcflRepo, Result, RocflError, StorageLayout};
 
 mod cmds;
 mod diff;
@@ -110,7 +111,10 @@ fn print(value: impl Display) -> Result<()> {
 pub fn init_repo(cmd: &InitCmd, args: &RocflArgs) -> Result<()> {
     match args.target_storage() {
         Storage::FileSystem => {
-            let _ = OcflRepo::init_fs_repo(&args.root, create_layout(cmd.layout)?)?;
+            let _ = OcflRepo::init_fs_repo(
+                &args.root,
+                create_layout(cmd.layout, cmd.config_file.as_deref())?,
+            )?;
         }
         Storage::S3 => {
             #[cfg(not(feature = "s3"))]
@@ -119,12 +123,15 @@ pub fn init_repo(cmd: &InitCmd, args: &RocflArgs) -> Result<()> {
             ));
 
             #[cfg(feature = "s3")]
-            let _ = init_s3_repo(args, create_layout(cmd.layout)?)?;
+            let _ = init_s3_repo(args, create_layout(cmd.layout, cmd.config_file.as_deref())?)?;
         }
     }
 
     if !args.quiet {
-        println("Initialized OCFL repository")?;
+        println(format!(
+            "Initialized OCFL repository with layout {}",
+            cmd.layout
+        ))?;
     }
 
     Ok(())
@@ -145,14 +152,45 @@ fn create_repo(args: &RocflArgs) -> Result<OcflRepo> {
     }
 }
 
-fn create_layout(layout: Layout) -> Result<StorageLayout> {
-    match layout {
-        Layout::FlatDirect => StorageLayout::new(LayoutExtensionName::FlatDirectLayout, None),
-        Layout::HashedNTuple => StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None),
-        Layout::HashedNTupleObjectId => {
-            StorageLayout::new(LayoutExtensionName::HashedNTupleObjectIdLayout, None)
+fn create_layout(layout_name: Layout, config_file: Option<&Path>) -> Result<Option<StorageLayout>> {
+    let config_bytes = match read_layout_config(config_file) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            return Err(RocflError::IllegalArgument(format!(
+                "Failed to read layout config file: {}",
+                e
+            )));
         }
+    };
+
+    let layout = match layout_name {
+        Layout::None => None,
+        Layout::FlatDirect => Some(StorageLayout::new(
+            LayoutExtensionName::FlatDirectLayout,
+            config_bytes.as_deref(),
+        )?),
+        Layout::HashedNTuple => Some(StorageLayout::new(
+            LayoutExtensionName::HashedNTupleLayout,
+            config_bytes.as_deref(),
+        )?),
+        Layout::HashedNTupleObjectId => Some(StorageLayout::new(
+            LayoutExtensionName::HashedNTupleObjectIdLayout,
+            config_bytes.as_deref(),
+        )?),
+    };
+
+    Ok(layout)
+}
+
+fn read_layout_config(config_file: Option<&Path>) -> Result<Option<Vec<u8>>> {
+    let mut bytes = Vec::new();
+
+    if let Some(file) = config_file {
+        let _ = fs::File::open(file)?.read_to_end(&mut bytes)?;
+        return Ok(Some(bytes));
     }
+
+    Ok(None)
 }
 
 #[cfg(feature = "s3")]
@@ -169,7 +207,7 @@ fn create_s3_repo(args: &RocflArgs) -> Result<OcflRepo> {
 }
 
 #[cfg(feature = "s3")]
-fn init_s3_repo(args: &RocflArgs, layout: StorageLayout) -> Result<OcflRepo> {
+fn init_s3_repo(args: &RocflArgs, layout: Option<StorageLayout>) -> Result<OcflRepo> {
     let prefix = match args.root.as_str() {
         "." => None,
         prefix => Some(prefix),

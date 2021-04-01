@@ -558,7 +558,10 @@ fn create_new_repo_empty_dir() -> Result<()> {
 
     let repo = OcflRepo::init_fs_repo(
         root.path(),
-        StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None)?,
+        Some(StorageLayout::new(
+            LayoutExtensionName::HashedNTupleLayout,
+            None,
+        )?),
     )?;
 
     assert_storage_root(&root);
@@ -593,7 +596,10 @@ fn create_new_flat_repo_empty_dir() -> Result<()> {
 
     let repo = OcflRepo::init_fs_repo(
         root.path(),
-        StorageLayout::new(LayoutExtensionName::FlatDirectLayout, None)?,
+        Some(StorageLayout::new(
+            LayoutExtensionName::FlatDirectLayout,
+            None,
+        )?),
     )?;
 
     assert_storage_root(&root);
@@ -620,7 +626,10 @@ fn create_new_hash_id_repo_empty_dir() -> Result<()> {
 
     let repo = OcflRepo::init_fs_repo(
         root.path(),
-        StorageLayout::new(LayoutExtensionName::HashedNTupleObjectIdLayout, None)?,
+        Some(StorageLayout::new(
+            LayoutExtensionName::HashedNTupleObjectIdLayout,
+            None,
+        )?),
     )?;
 
     assert_storage_root(&root);
@@ -662,10 +671,10 @@ fn create_new_repo_empty_dir_custom_layout() -> Result<()> {
 
     let repo = OcflRepo::init_fs_repo(
         root.path(),
-        StorageLayout::new(
+        Some(StorageLayout::new(
             LayoutExtensionName::HashedNTupleLayout,
             Some(layout.as_bytes()),
-        )?,
+        )?),
     )?;
 
     assert_storage_root(&root);
@@ -694,7 +703,7 @@ fn fail_new_repo_creation_when_non_empty_root() {
 
     let _repo = OcflRepo::init_fs_repo(
         root.path(),
-        StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None).unwrap(),
+        Some(StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None).unwrap()),
     )
     .unwrap();
 }
@@ -4553,7 +4562,7 @@ fn o2_v3_details() -> VersionDetails {
 fn default_repo(root: impl AsRef<Path>) -> OcflRepo {
     OcflRepo::init_fs_repo(
         root,
-        StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None).unwrap(),
+        Some(StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None).unwrap()),
     )
     .unwrap()
 }

@@ -36,19 +36,27 @@ pub enum LayoutExtensionName {
 
 impl StorageLayout {
     pub fn new(name: LayoutExtensionName, config_bytes: Option<&[u8]>) -> Result<Self> {
-        let extension = match name {
-            LayoutExtensionName::FlatDirectLayout => {
-                FlatDirectLayoutExtension::new(config_bytes)?.into()
-            }
-            LayoutExtensionName::HashedNTupleLayout => {
-                HashedNTupleLayoutExtension::new(config_bytes)?.into()
-            }
-            LayoutExtensionName::HashedNTupleObjectIdLayout => {
-                HashedNTupleObjectIdLayoutExtension::new(config_bytes)?.into()
+        let attempt = || -> Result<LayoutExtension> {
+            match name {
+                LayoutExtensionName::FlatDirectLayout => {
+                    Ok(FlatDirectLayoutExtension::new(config_bytes)?.into())
+                }
+                LayoutExtensionName::HashedNTupleLayout => {
+                    Ok(HashedNTupleLayoutExtension::new(config_bytes)?.into())
+                }
+                LayoutExtensionName::HashedNTupleObjectIdLayout => {
+                    Ok(HashedNTupleObjectIdLayoutExtension::new(config_bytes)?.into())
+                }
             }
         };
 
-        Ok(StorageLayout { extension })
+        match attempt() {
+            Ok(extension) => Ok(StorageLayout { extension }),
+            Err(e) => Err(RocflError::General(format!(
+                "Failed to parse layout config: {}",
+                e
+            ))),
+        }
     }
 
     /// Maps an object ID to an object root directory

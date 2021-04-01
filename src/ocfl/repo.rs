@@ -65,7 +65,10 @@ impl OcflRepo {
 
     /// Initializes a new `OcflRepo` instance backed by the local filesystem. The OCFL repository
     /// most not already exist.
-    pub fn init_fs_repo(storage_root: impl AsRef<Path>, layout: StorageLayout) -> Result<Self> {
+    pub fn init_fs_repo(
+        storage_root: impl AsRef<Path>,
+        layout: Option<StorageLayout>,
+    ) -> Result<Self> {
         let staging_root = paths::staging_extension_path(storage_root.as_ref());
 
         Ok(Self {
@@ -86,7 +89,7 @@ impl OcflRepo {
         bucket: &str,
         prefix: Option<&str>,
         local_storage: impl AsRef<Path>,
-        layout: StorageLayout,
+        layout: Option<StorageLayout>,
     ) -> Result<Self> {
         let staging_root = paths::staging_extension_path(local_storage.as_ref());
 
