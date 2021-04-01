@@ -353,11 +353,15 @@ pub struct RemoveCmd {
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct CommitCmd {
+    /// Indicates that the version's inventory.json file should be pretty printed
+    #[structopt(short, long)]
+    pub pretty_print: bool,
+
     /// The name of the user to attribute the changes to
     #[structopt(short = "n", long, value_name = "NAME")]
     pub user_name: Option<String>,
 
-    /// The address of the user to attribute the changes to
+    /// The URI address of the user to attribute the changes to. For example, mailto:test@example.com
     #[structopt(short = "a", long, value_name = "ADDRESS", requires = "user-name")]
     pub user_address: Option<String>,
 
@@ -365,9 +369,8 @@ pub struct CommitCmd {
     #[structopt(short, long, value_name = "MESSAGE")]
     pub message: Option<String>,
 
-    // TODO I don't think this is validated correctly
-    /// The creation timestamp of the version. Timestamps should be formatted in accordance
-    /// to RFC 3339, for example: 2020-12-23T10:11:12-06:00:00Z. Default: now
+    /// The creation timestamp of the version. Timestamps must be formatted in accordance
+    /// to RFC 3339, for example: 2020-12-23T10:11:12-06:00. Default: now
     #[structopt(short, long, value_name = "TIMESTAMP")]
     pub created: Option<DateTime<Local>>,
 
@@ -375,7 +378,6 @@ pub struct CommitCmd {
     #[structopt(name = "OBJ_ID")]
     pub object_id: String,
     // TODO add option for specifying location when storage layout not defined
-    // TODO add option for pretty print json
 }
 
 /// Resets changes staged to an object. Additions are removed, deletions are restored, and

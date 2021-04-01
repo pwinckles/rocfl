@@ -415,7 +415,7 @@ impl StagingStore for FsOcflStore {
             .open(paths::object_namaste_path(&storage_path))?;
 
         writeln!(file, "{}", OCFL_OBJECT_VERSION)?;
-        self.stage_inventory(&inventory, false)?;
+        self.stage_inventory(&inventory, false, false)?;
 
         Ok(())
     }
@@ -538,7 +538,12 @@ impl StagingStore for FsOcflStore {
 
     /// Serializes the inventory to the object's staging directory. If `finalize` is true,
     /// then the inventory file will additionally be copied into the version directory.
-    fn stage_inventory(&self, inventory: &Inventory, finalize: bool) -> Result<()> {
+    fn stage_inventory(
+        &self,
+        inventory: &Inventory,
+        finalize: bool,
+        pretty_print: bool,
+    ) -> Result<()> {
         let object_root = PathBuf::from(&inventory.storage_path);
         let inventory_path = paths::inventory_path(&object_root);
         let sidecar_path = paths::sidecar_path(&object_root, inventory.digest_algorithm);
@@ -546,7 +551,12 @@ impl StagingStore for FsOcflStore {
         let mut inv_writer = inventory
             .digest_algorithm
             .writer(File::create(&inventory_path)?)?;
-        serde_json::to_writer(&mut inv_writer, &inventory)?;
+
+        if pretty_print {
+            serde_json::to_writer_pretty(&mut inv_writer, &inventory)?;
+        } else {
+            serde_json::to_writer(&mut inv_writer, &inventory)?;
+        }
 
         let digest = inv_writer.finalize_hex();
 

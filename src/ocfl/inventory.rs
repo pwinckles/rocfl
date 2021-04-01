@@ -14,7 +14,7 @@ use crate::ocfl::bimap::{IntoIter, Iter, PathBiMap};
 use crate::ocfl::consts::{DEFAULT_CONTENT_DIR, INVENTORY_TYPE, MUTABLE_HEAD_EXT_DIR};
 use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
 use crate::ocfl::error::{not_found, not_found_path, Result, RocflError};
-use crate::ocfl::{Diff, InventoryPath, VersionNum};
+use crate::ocfl::{CommitMeta, Diff, InventoryPath, VersionNum};
 
 const STAGING_MESSAGE: &str = "Staging new version";
 const ROCFL_USER: &str = "rocfl";
@@ -531,19 +531,13 @@ impl Version {
         }
     }
 
-    pub fn update_meta(
-        &mut self,
-        name: Option<&str>,
-        address: Option<&str>,
-        message: Option<&str>,
-        created: Option<DateTime<Local>>,
-    ) {
-        self.message = message.map(|e| e.to_string());
-        self.user = match name {
-            Some(name) => Some(User::new(name, address)),
+    pub fn update_meta(&mut self, meta: CommitMeta) {
+        self.message = meta.message;
+        self.user = match meta.user_name {
+            Some(name) => Some(User::new(name, meta.user_address)),
             None => None,
         };
-        self.created = created.unwrap_or_else(Local::now);
+        self.created = meta.created.unwrap_or_else(Local::now);
     }
 
     /// Returns a consuming iterator for the version's state
@@ -801,10 +795,10 @@ impl Version {
 }
 
 impl User {
-    pub fn new(name: &str, address: Option<&str>) -> Self {
+    pub fn new(name: String, address: Option<String>) -> Self {
         Self {
-            name: Some(name.to_string()),
-            address: address.map(|e| e.to_string()),
+            name: Some(name),
+            address,
         }
     }
 }
