@@ -326,16 +326,25 @@ impl OcflStore for S3OcflStore {
     /// object that is able to be moved into place with no additional modifications.
     ///
     /// The object must not already exist.
-    fn write_new_object(&self, inventory: &mut Inventory, object_path: &Path) -> Result<()> {
-        let object_root =
-            match self.get_object_root_path(&inventory.id) {
-                Some(object_root) => object_root,
-                // TODO add support for specifying location
-                None => return Err(RocflError::IllegalState(
-                    "Objects cannot be created in repositories lacking a defined storage layout."
-                        .to_string(),
-                )),
-            };
+    fn write_new_object(
+        &self,
+        inventory: &mut Inventory,
+        src_object_path: &Path,
+        object_root: Option<InventoryPath>,
+    ) -> Result<()> {
+        let object_root = match self.get_object_root_path(&inventory.id) {
+            Some(object_root) => object_root,
+            None => {
+                if let Some(root) = object_root {
+                    root.to_string()
+                } else {
+                    return Err(RocflError::IllegalState(
+                            "Cannot create object because the repository does not have a defined storage layout, and an object root path was not specified."
+                                .to_string(),
+                        ));
+                }
+            }
+        };
 
         if !self.s3_client.list_dir(&object_root)?.is_empty() {
             return Err(RocflError::IllegalState(format!(
@@ -346,7 +355,7 @@ impl OcflStore for S3OcflStore {
 
         info!("Creating new object {}", inventory.id);
 
-        self.upload_all_files_with_rollback(&object_root, object_path)?;
+        self.upload_all_files_with_rollback(&object_root, src_object_path)?;
 
         inventory.storage_path = match &self.prefix {
             Some(prefix) => join(prefix, &inventory.object_root),
