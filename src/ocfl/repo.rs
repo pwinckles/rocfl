@@ -781,7 +781,17 @@ impl OcflRepo {
 
     /// Commits all of an object's staged changes. If `user_address` is provided, then `user_name`
     /// must also be. If `created` is not provided, then it defaults to the current time.
-    pub fn commit(&self, object_id: &str, meta: CommitMeta, pretty_print: bool) -> Result<()> {
+    ///
+    /// `object_root` may be specified to define the storage root relative path to the object's
+    /// root. This value is only respected if the object does not already exist, and the
+    /// repo does not have defined storage layout.
+    pub fn commit(
+        &self,
+        object_id: &str,
+        meta: CommitMeta,
+        object_root: Option<InventoryPath>,
+        pretty_print: bool,
+    ) -> Result<()> {
         self.ensure_open()?;
 
         let staging = self.get_staging()?;
@@ -816,8 +826,9 @@ impl OcflRepo {
         // Last chance to ctrl-c before committing
         if self.is_open() {
             if inventory.is_new() {
-                let object_root = PathBuf::from(&inventory.storage_path);
-                self.store.write_new_object(&mut inventory, &object_root)?;
+                let src_object_root = PathBuf::from(&inventory.storage_path);
+                self.store
+                    .write_new_object(&mut inventory, &src_object_root, object_root)?;
             } else {
                 let version_root = paths::version_path(&inventory.storage_path, inventory.head);
                 self.store

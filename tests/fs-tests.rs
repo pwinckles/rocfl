@@ -1453,7 +1453,7 @@ fn reject_object_creation_when_object_already_exists_in_staging() {
 
 #[test]
 #[should_panic(
-    expected = "Objects cannot be created in repositories lacking a defined storage layout."
+    expected = "Cannot create object because the repository does not have a defined storage layout, and an object root path was not specified."
 )]
 fn reject_object_commit_when_no_known_storage_layout() {
     let root = TempDir::new().unwrap();
@@ -1461,6 +1461,98 @@ fn reject_object_commit_when_no_known_storage_layout() {
     repo.create_object("id", DigestAlgorithm::Sha512, "content", 0)
         .unwrap();
     commit("id", &repo);
+}
+
+#[test]
+fn object_commit_when_no_known_storage_layout_and_root_specified() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+    let repo = OcflRepo::fs_repo(root.path()).unwrap();
+
+    let object_id = "custom_layout";
+    let object_root = "random/path/to/object";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+        .unwrap();
+
+    repo.copy_files_external(
+        object_id,
+        &vec![create_file(&temp, "test.txt", "testing").path()],
+        "test.txt",
+        false,
+    )
+    .unwrap();
+
+    repo.commit(object_id, CommitMeta::new(), Some(path(object_root)), false)
+        .unwrap();
+
+    let committed_obj = repo.get_object(object_id, None).unwrap();
+
+    assert_eq!(1, committed_obj.state.len());
+
+    assert_file_details(
+        committed_obj.state.get(&path("test.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/test.txt",
+        "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
+    );
+}
+
+#[test]
+#[should_panic(expected = "Cannot create object object 2 because an object already exists at")]
+fn fail_object_commit_when_no_known_storage_layout_and_root_specified_and_obj_already_there() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+    let repo = OcflRepo::fs_repo(root.path()).unwrap();
+
+    let object_id = "custom_layout";
+    let object_root = "random/path/to/object";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+        .unwrap();
+
+    repo.copy_files_external(
+        object_id,
+        &vec![create_file(&temp, "test.txt", "testing").path()],
+        "test.txt",
+        false,
+    )
+    .unwrap();
+
+    repo.commit(object_id, CommitMeta::new(), Some(path(object_root)), false)
+        .unwrap();
+
+    let committed_obj = repo.get_object(object_id, None).unwrap();
+
+    assert_eq!(1, committed_obj.state.len());
+
+    assert_file_details(
+        committed_obj.state.get(&path("test.txt")).unwrap(),
+        &Path::new(&committed_obj.object_root),
+        "v1/content/test.txt",
+        "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
+    );
+
+    let object_2_id = "object 2";
+
+    repo.create_object(object_2_id, DigestAlgorithm::Sha256, "content", 0)
+        .unwrap();
+
+    repo.copy_files_external(
+        object_2_id,
+        &vec![resolve_child(&temp, "test.txt").path()],
+        "test.txt",
+        false,
+    )
+    .unwrap();
+
+    repo.commit(
+        object_2_id,
+        CommitMeta::new(),
+        Some(path(object_root)),
+        false,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -3359,7 +3451,7 @@ fn commit_should_use_custom_meta_when_provided() -> Result<()> {
         .with_message(Some(message.to_string()))
         .with_created(Some(created));
 
-    repo.commit(object_id, meta, false)?;
+    repo.commit(object_id, meta, None, false)?;
 
     let obj = repo.get_object(object_id, None)?;
 
@@ -3395,7 +3487,7 @@ fn commit_should_use_custom_meta_when_mixture_provided() -> Result<()> {
         .with_message(Some(message.to_string()))
         .with_created(Some(created));
 
-    repo.commit(object_id, meta, false)?;
+    repo.commit(object_id, meta, None, false)?;
 
     let obj = repo.get_object(object_id, None)?;
 
@@ -3428,7 +3520,7 @@ fn commit_should_pretty_print_inventory() {
 
     let meta = CommitMeta::new().with_created(Some(Local.ymd(2020, 3, 19).and_hms(6, 1, 30)));
 
-    repo.commit(object_id, meta, true).unwrap();
+    repo.commit(object_id, meta, None, true).unwrap();
 
     let obj = repo.get_object(object_id, None).unwrap();
 
@@ -3484,7 +3576,7 @@ fn commit_should_fail_when_address_and_no_name() {
         .with_user(None, Some("address".to_string()))
         .unwrap();
 
-    repo.commit(object_id, meta, false).unwrap();
+    repo.commit(object_id, meta, None, false).unwrap();
 }
 
 #[test]
@@ -4088,7 +4180,7 @@ fn fail_commit_when_staged_version_out_of_sync_with_main() {
     )
     .unwrap();
 
-    if let Err(e) = repo.commit(object_id, CommitMeta::new(), false) {
+    if let Err(e) = repo.commit(object_id, CommitMeta::new(), None, false) {
         assert_eq!("Illegal state: Cannot create version v5 in object out-of-sync because the HEAD is at v5",
                    e.to_string());
     } else {
@@ -4409,7 +4501,8 @@ fn create_example_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
 }
 
 fn commit(object_id: &str, repo: &OcflRepo) {
-    repo.commit(object_id, CommitMeta::new(), false).unwrap();
+    repo.commit(object_id, CommitMeta::new(), None, false)
+        .unwrap();
 }
 
 fn read_spec(name: &str) -> String {
