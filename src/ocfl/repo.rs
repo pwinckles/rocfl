@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use chrono::{DateTime, Local};
+use chrono::Local;
 use log::{error, info, warn};
 use once_cell::sync::OnceCell;
 #[cfg(feature = "s3")]
@@ -26,8 +26,8 @@ use crate::ocfl::store::layout::{LayoutExtensionName, StorageLayout};
 use crate::ocfl::store::s3::S3OcflStore;
 use crate::ocfl::store::{OcflStore, StagingStore};
 use crate::ocfl::{
-    paths, util, Diff, DigestAlgorithm, InventoryPath, ObjectVersion, ObjectVersionDetails,
-    VersionDetails, VersionNum,
+    paths, util, CommitMeta, Diff, DigestAlgorithm, InventoryPath, ObjectVersion,
+    ObjectVersionDetails, VersionDetails, VersionNum,
 };
 
 /// Interface for interacting with an OCFL repository
@@ -547,7 +547,7 @@ impl OcflRepo {
         }
 
         inventory.head_version_mut().created = Local::now();
-        staging.stage_inventory(&inventory, false)?;
+        staging.stage_inventory(&inventory, false, false)?;
 
         if !errors.is_empty() {
             return Err(RocflError::CopyMoveError(MultiError(errors)));
@@ -638,7 +638,7 @@ impl OcflRepo {
         }
 
         inventory.head_version_mut().created = Local::now();
-        staging.stage_inventory(&inventory, false)?;
+        staging.stage_inventory(&inventory, false, false)?;
 
         if !errors.is_empty() {
             return Err(RocflError::CopyMoveError(MultiError(errors)));
@@ -685,7 +685,7 @@ impl OcflRepo {
             }
         }
 
-        staging.stage_inventory(&inventory, false)?;
+        staging.stage_inventory(&inventory, false, false)?;
 
         Ok(())
     }
@@ -776,26 +776,13 @@ impl OcflRepo {
         }
 
         inventory.head_version_mut().created = Local::now();
-        staging.stage_inventory(&inventory, false)
+        staging.stage_inventory(&inventory, false, false)
     }
 
     /// Commits all of an object's staged changes. If `user_address` is provided, then `user_name`
     /// must also be. If `created` is not provided, then it defaults to the current time.
-    pub fn commit(
-        &self,
-        object_id: &str,
-        user_name: Option<&str>,
-        user_address: Option<&str>,
-        message: Option<&str>,
-        created: Option<DateTime<Local>>,
-    ) -> Result<()> {
+    pub fn commit(&self, object_id: &str, meta: CommitMeta, pretty_print: bool) -> Result<()> {
         self.ensure_open()?;
-
-        if user_address.is_some() && user_name.is_none() {
-            return Err(RocflError::IllegalArgument(
-                "User name must be set when user address is set.".to_string(),
-            ));
-        }
 
         let staging = self.get_staging()?;
 
@@ -814,11 +801,9 @@ impl OcflRepo {
 
         let duplicates = inventory.dedup_head();
 
-        inventory
-            .head_version_mut()
-            .update_meta(user_name, user_address, message, created);
+        inventory.head_version_mut().update_meta(meta);
 
-        staging.stage_inventory(&inventory, true)?;
+        staging.stage_inventory(&inventory, true, pretty_print)?;
         staging.rm_staged_files(
             &inventory,
             &duplicates
@@ -1004,7 +989,8 @@ impl OcflRepo {
         }
 
         inventory.head_version_mut().created = Local::now();
-        self.get_staging()?.stage_inventory(&inventory, false)?;
+        self.get_staging()?
+            .stage_inventory(&inventory, false, false)?;
 
         if !errors.is_empty() {
             return Err(RocflError::CopyMoveError(MultiError(errors)));

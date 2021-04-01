@@ -94,6 +94,19 @@ pub struct ObjectVersionDetails {
     pub version_details: VersionDetails,
 }
 
+/// Optional meta that may be associated with a commit
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct CommitMeta {
+    /// Name of the user who created the commit
+    pub(super) user_name: Option<String>,
+    // URI address of the user who created the commit
+    pub(super) user_address: Option<String>,
+    /// Message describing the changes
+    pub(super) message: Option<String>,
+    /// When the commit was created
+    pub(super) created: Option<DateTime<Local>>,
+}
+
 /// Represents a change to a file
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Diff {
@@ -603,6 +616,48 @@ impl ObjectVersionDetails {
             digest_algorithm: inventory.digest_algorithm,
             version_details,
         })
+    }
+}
+
+impl Default for CommitMeta {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CommitMeta {
+    /// Creates commit meta with all values empty
+    pub fn new() -> Self {
+        Self {
+            user_name: None,
+            user_address: None,
+            message: None,
+            created: None,
+        }
+    }
+
+    /// Sets the commit user. `name` must be provided if `address` is provided.
+    pub fn with_user(mut self, name: Option<String>, address: Option<String>) -> Result<Self> {
+        if address.is_some() && name.is_none() {
+            return Err(RocflError::IllegalArgument(
+                "User name must be set when user address is set.".to_string(),
+            ));
+        }
+        self.user_name = name;
+        self.user_address = address;
+        Ok(self)
+    }
+
+    /// Sets the commit message
+    pub fn with_message(mut self, message: Option<String>) -> Self {
+        self.message = message;
+        self
+    }
+
+    /// Sets the commit created timestamp
+    pub fn with_created(mut self, created: Option<DateTime<Local>>) -> Self {
+        self.created = created;
+        self
     }
 }
 
