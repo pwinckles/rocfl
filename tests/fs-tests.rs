@@ -4237,6 +4237,71 @@ fn do_not_stage_changes_for_objects_with_mutable_heads() {
     .unwrap();
 }
 
+#[test]
+fn create_and_update_object_in_repo_with_no_layout() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = OcflRepo::init_fs_repo(root.path(), None).unwrap();
+
+    let object_id = "no layout";
+    let object_root = "random/path/to/obj";
+
+    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+        .unwrap();
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "test.txt", "testing").path()],
+        "test.txt",
+    )
+    .unwrap();
+
+    repo.commit(object_id, CommitMeta::new(), Some(path(object_root)), false)
+        .unwrap();
+
+    let obj = repo.get_object(object_id, None).unwrap();
+    let storage_path = PathBuf::from(&obj.object_root);
+
+    assert_eq!(1, obj.state.len());
+
+    assert_file_details(
+        obj.state.get(&path("test.txt")).unwrap(),
+        &storage_path,
+        "v1/content/test.txt",
+        "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
+    );
+
+    assert!(obj.object_root.ends_with(&format!("/{}", object_root)));
+
+    repo.move_files_external(
+        object_id,
+        &vec![create_file(&temp, "test2.txt", "testing2").path()],
+        "test2.txt",
+    )
+    .unwrap();
+
+    repo.commit(object_id, CommitMeta::new(), Some(path(object_root)), false)
+        .unwrap();
+
+    let obj = repo.get_object(object_id, None).unwrap();
+
+    assert_eq!(2, obj.state.len());
+
+    assert_file_details(
+        obj.state.get(&path("test.txt")).unwrap(),
+        &storage_path,
+        "v1/content/test.txt",
+        "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
+    );
+    assert_file_details(
+        obj.state.get(&path("test2.txt")).unwrap(),
+        &storage_path,
+        "v2/content/test2.txt",
+        "431111472993bf4d9b8b347476b79321fea8a337f3c1cb2fedaa185b54185540",
+    );
+}
+
 // TODO commit on tampered staged version
 // TODO object in root has wrong id
 

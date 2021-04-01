@@ -301,7 +301,7 @@ impl OcflStore for FsOcflStore {
             )));
         }
 
-        let object_root = self.storage_root.join(&inventory.object_root);
+        let object_root = self.storage_root.join(&existing_inventory.object_root);
         let destination = object_root.join(&version_str);
 
         if destination.exists() {
@@ -409,11 +409,9 @@ impl StagingStore for FsOcflStore {
 
         info!("Staging OCFL object {} {}", &inventory.id, &inventory.head);
 
-        // If it's a new object, the object root path will not be known
-        if inventory.object_root.is_empty() {
-            let object_root = self.require_layout()?.map_object_id(&inventory.id);
-            inventory.object_root = object_root;
-        }
+        // Staging layout may differ from main repo
+        let object_root = self.require_layout()?.map_object_id(&inventory.id);
+        inventory.object_root = object_root;
 
         let storage_path = self.storage_root.join(&inventory.object_root);
         inventory.storage_path =
