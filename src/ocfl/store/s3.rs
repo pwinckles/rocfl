@@ -71,15 +71,15 @@ impl S3OcflStore {
         region: Region,
         bucket: &str,
         prefix: Option<&str>,
-        layout: StorageLayout,
+        layout: Option<StorageLayout>,
     ) -> Result<Self> {
         let s3_client = S3Client::new(region, bucket, prefix)?;
 
-        init_new_repo(&s3_client, &layout)?;
+        init_new_repo(&s3_client, layout.as_ref())?;
 
         Ok(Self {
             s3_client,
-            storage_layout: Some(layout),
+            storage_layout: layout,
             id_path_cache: RwLock::new(HashMap::new()),
             prefix: prefix.map(|p| p.to_string().trim_end_matches('/').to_string()),
         })
@@ -918,7 +918,7 @@ fn check_extensions(s3_client: &S3Client) {
     }
 }
 
-fn init_new_repo(s3_client: &S3Client, layout: &StorageLayout) -> Result<()> {
+fn init_new_repo(s3_client: &S3Client, layout: Option<&StorageLayout>) -> Result<()> {
     if !s3_client.list_dir("")?.is_empty() {
         return Err(RocflError::IllegalState(
             "Cannot create new repository. Storage root must be empty".to_string(),
@@ -942,6 +942,14 @@ fn init_new_repo(s3_client: &S3Client, layout: &StorageLayout) -> Result<()> {
         Some(TYPE_PLAIN),
     )?;
 
+    if let Some(layout) = layout {
+        write_layout_config(s3_client, layout)?;
+    }
+
+    Ok(())
+}
+
+fn write_layout_config(s3_client: &S3Client, layout: &StorageLayout) -> Result<()> {
     let extension_name = layout.extension_name().to_string();
 
     let ocfl_layout = OcflLayout {

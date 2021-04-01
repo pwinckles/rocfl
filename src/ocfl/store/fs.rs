@@ -68,14 +68,14 @@ impl FsOcflStore {
     }
 
     /// Initializes a new OCFL repository at the specified location
-    pub fn init(root: impl AsRef<Path>, layout: StorageLayout) -> Result<Self> {
+    pub fn init(root: impl AsRef<Path>, layout: Option<StorageLayout>) -> Result<Self> {
         let root = root.as_ref().to_path_buf();
 
-        init_new_repo(&root, &layout)?;
+        init_new_repo(&root, layout.as_ref())?;
 
         Ok(Self {
             storage_root: root,
-            storage_layout: Some(layout),
+            storage_layout: layout,
             id_path_cache: RwLock::new(HashMap::new()),
         })
     }
@@ -88,7 +88,7 @@ impl FsOcflStore {
         if root.exists() && root.is_dir() && !util::dir_is_empty(&root)? {
             Self::new(root)
         } else {
-            Self::init(root, layout)
+            Self::init(root, Some(layout))
         }
     }
 
@@ -917,7 +917,7 @@ fn read_layout_config<P: AsRef<Path>>(storage_root: P, layout: &OcflLayout) -> O
     None
 }
 
-fn init_new_repo(root: impl AsRef<Path>, layout: &StorageLayout) -> Result<()> {
+fn init_new_repo(root: impl AsRef<Path>, layout: Option<&StorageLayout>) -> Result<()> {
     let root = root.as_ref().to_path_buf();
 
     if root.exists() {
@@ -952,6 +952,14 @@ fn init_new_repo(root: impl AsRef<Path>, layout: &StorageLayout) -> Result<()> {
         specs::OCFL_1_0_SPEC
     )?;
 
+    if let Some(layout) = layout {
+        write_layout_config(&root, layout)?;
+    }
+
+    Ok(())
+}
+
+fn write_layout_config(root: impl AsRef<Path>, layout: &StorageLayout) -> Result<()> {
     let extension_name = layout.extension_name().to_string();
 
     let ocfl_layout = OcflLayout {
@@ -959,9 +967,12 @@ fn init_new_repo(root: impl AsRef<Path>, layout: &StorageLayout) -> Result<()> {
         description: format!("See specification document {}.md", extension_name),
     };
 
-    serde_json::to_writer_pretty(File::create(paths::ocfl_layout_path(&root))?, &ocfl_layout)?;
+    serde_json::to_writer_pretty(
+        File::create(paths::ocfl_layout_path(root.as_ref()))?,
+        &ocfl_layout,
+    )?;
 
-    let mut layout_ext_dir = paths::extensions_path(&root);
+    let mut layout_ext_dir = paths::extensions_path(root.as_ref());
     layout_ext_dir.push(&extension_name);
     fs::create_dir_all(&layout_ext_dir)?;
 
@@ -974,7 +985,7 @@ fn init_new_repo(root: impl AsRef<Path>, layout: &StorageLayout) -> Result<()> {
     };
 
     write!(
-        File::create(root.join(format!("{}.md", extension_name)))?,
+        File::create(root.as_ref().join(format!("{}.md", extension_name)))?,
         "{}",
         extension_spec
     )?;
