@@ -9,7 +9,7 @@ use crate::cmd::opts::{
     NewCmd, PurgeCmd, RemoveCmd, ResetCmd, ShowCmd, StatusCmd,
 };
 use crate::cmd::{print, println, Cmd, GlobalArgs};
-use crate::ocfl::{DigestAlgorithm, OcflRepo, Result};
+use crate::ocfl::{CommitMeta, DigestAlgorithm, OcflRepo, Result};
 
 impl Cmd for CatCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs, _terminate: &AtomicBool) -> Result<()> {
@@ -101,13 +101,11 @@ impl Cmd for ResetCmd {
 
 impl Cmd for CommitCmd {
     fn exec(&self, repo: &OcflRepo, _args: GlobalArgs, _terminate: &AtomicBool) -> Result<()> {
-        repo.commit(
-            &self.object_id,
-            self.user_name.as_deref(),
-            self.user_address.as_deref(),
-            self.message.as_deref(),
-            self.created,
-        )?;
+        let meta = CommitMeta::new()
+            .with_user(self.user_name.clone(), self.user_address.clone())?
+            .with_message(self.message.clone())
+            .with_created(self.created);
+        repo.commit(&self.object_id, meta, self.pretty_print)?;
 
         Ok(())
     }

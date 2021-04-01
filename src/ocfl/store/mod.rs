@@ -107,7 +107,12 @@ pub trait StagingStore: OcflStore {
 
     /// Serializes the inventory to the object's staging directory. If `finalize` is true,
     /// then the inventory file will additionally be copied into the version directory.
-    fn stage_inventory(&self, inventory: &Inventory, finalize: bool) -> Result<()>;
+    fn stage_inventory(
+        &self,
+        inventory: &Inventory,
+        finalize: bool,
+        pretty_print: bool,
+    ) -> Result<()>;
 }
 
 /// ocfl_layout.json serialization object
