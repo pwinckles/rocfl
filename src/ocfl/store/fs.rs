@@ -7,7 +7,8 @@ use std::fs::{self, File, OpenOptions, ReadDir};
 use std::io::{self, Read, Write};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, RwLock};
 
 use globset::GlobBuilder;
 use grep_matcher::{Captures, Matcher};
@@ -37,6 +38,7 @@ pub struct FsOcflStore {
     // TODO this never expires entries and is only intended to be useful within the scope of the cli
     /// Caches object ID to path mappings
     id_path_cache: RwLock<HashMap<String, String>>,
+    closed: Arc<AtomicBool>,
 }
 
 impl FsOcflStore {
@@ -64,6 +66,7 @@ impl FsOcflStore {
             storage_root,
             storage_layout,
             id_path_cache: RwLock::new(HashMap::new()),
+            closed: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -77,6 +80,7 @@ impl FsOcflStore {
             storage_root: root,
             storage_layout: layout,
             id_path_cache: RwLock::new(HashMap::new()),
+            closed: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -132,7 +136,8 @@ impl FsOcflStore {
             &object_id
         );
 
-        let mut iter = InventoryIter::new_id_matching(&self.storage_root, &object_id)?;
+        let mut iter =
+            InventoryIter::new_id_matching(&self.storage_root, &object_id, self.closed.clone())?;
 
         match iter.next() {
             Some(inventory) => {
@@ -185,12 +190,27 @@ impl FsOcflStore {
             )),
         }
     }
+
+    /// Returns an error if the store is closed
+    fn ensure_open(&self) -> Result<()> {
+        if self.is_closed() {
+            Err(RocflError::Closed)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
+    }
 }
 
 impl OcflStore for FsOcflStore {
     /// Returns the most recent inventory version for the specified object, or an a
     /// `RocflError::NotFound` if it does not exist.
     fn get_inventory(&self, object_id: &str) -> Result<Inventory> {
+        self.ensure_open()?;
+
         match self.get_object_root_path(object_id) {
             Some(object_root) => self.get_inventory_by_path(object_id, &object_root),
             None => self.scan_for_inventory(&object_id),
@@ -204,9 +224,13 @@ impl OcflStore for FsOcflStore {
         &'a self,
         filter_glob: Option<&str>,
     ) -> Result<Box<dyn Iterator<Item = Inventory> + 'a>> {
+        self.ensure_open()?;
+
         Ok(Box::new(match filter_glob {
-            Some(glob) => InventoryIter::new_glob_matching(&self.storage_root, glob)?,
-            None => InventoryIter::new(&self.storage_root, None)?,
+            Some(glob) => {
+                InventoryIter::new_glob_matching(&self.storage_root, glob, self.closed.clone())?
+            }
+            None => InventoryIter::new(&self.storage_root, None, self.closed.clone())?,
         }))
     }
 
@@ -220,6 +244,8 @@ impl OcflStore for FsOcflStore {
         version_num: Option<VersionNum>,
         sink: &mut dyn Write,
     ) -> Result<()> {
+        self.ensure_open()?;
+
         let inventory = self.get_inventory(object_id)?;
 
         let content_path = inventory.content_path_for_logical_path(path, version_num)?;
@@ -242,6 +268,8 @@ impl OcflStore for FsOcflStore {
         src_object_path: &Path,
         object_root: Option<InventoryPath>,
     ) -> Result<()> {
+        self.ensure_open()?;
+
         let root_path = match self.get_object_root_path(&inventory.id) {
             Some(object_root) => object_root,
             None => {
@@ -282,6 +310,8 @@ impl OcflStore for FsOcflStore {
     ///
     /// The object must already exist, and the new version must not exist.
     fn write_new_version(&self, inventory: &mut Inventory, version_path: &Path) -> Result<()> {
+        self.ensure_open()?;
+
         if inventory.is_new() {
             return Err(RocflError::IllegalState(format!(
                 "Object {} must be created before adding new versions to it.",
@@ -338,6 +368,8 @@ impl OcflStore for FsOcflStore {
     /// nothing happens. Any dangling directories that were created as a result of purging
     /// the object are also removed.
     fn purge_object(&self, object_id: &str) -> Result<()> {
+        self.ensure_open()?;
+
         let object_root = match self.lookup_or_find_object_root_path(object_id) {
             Err(RocflError::NotFound(_)) => return Ok(()),
             Err(e) => return Err(e),
@@ -378,6 +410,8 @@ impl OcflStore for FsOcflStore {
 
     /// Returns a list of all of the extension names that are associated with the object
     fn list_object_extensions(&self, object_id: &str) -> Result<Vec<String>> {
+        self.ensure_open()?;
+
         let object_root = self.lookup_or_find_object_root_path(object_id)?;
         let extensions_dir = paths::extensions_path(&object_root);
 
@@ -390,6 +424,12 @@ impl OcflStore for FsOcflStore {
         }
 
         Ok(extensions)
+    }
+
+    /// Instructs the store to gracefully stop any in-flight work and not accept any additional
+    /// requests.
+    fn close(&self) {
+        self.closed.store(true, Ordering::Release);
     }
 }
 
@@ -589,33 +629,47 @@ struct InventoryIter {
     dir_iters: Vec<ReadDir>,
     current: RefCell<Option<ReadDir>>,
     id_matcher: Option<Box<dyn Fn(&str) -> bool>>,
+    closed: Arc<AtomicBool>,
 }
 
 impl InventoryIter {
     /// Creates a new iterator that only returns objects that match the given object ID.
-    fn new_id_matching<P: AsRef<Path>>(root: P, object_id: &str) -> Result<Self> {
+    fn new_id_matching<P: AsRef<Path>>(
+        root: P,
+        object_id: &str,
+        closed: Arc<AtomicBool>,
+    ) -> Result<Self> {
         let o = object_id.to_string();
-        InventoryIter::new(root, Some(Box::new(move |id| id == o)))
+        InventoryIter::new(root, Some(Box::new(move |id| id == o)), closed)
     }
 
     /// Creates a new iterator that only returns objects with IDs that match the specified glob
     /// pattern.
-    fn new_glob_matching<P: AsRef<Path>>(root: P, glob: &str) -> Result<Self> {
+    fn new_glob_matching<P: AsRef<Path>>(
+        root: P,
+        glob: &str,
+        closed: Arc<AtomicBool>,
+    ) -> Result<Self> {
         let matcher = GlobBuilder::new(glob)
             .backslash_escape(true)
             .build()?
             .compile_matcher();
-        InventoryIter::new(root, Some(Box::new(move |id| matcher.is_match(id))))
+        InventoryIter::new(root, Some(Box::new(move |id| matcher.is_match(id))), closed)
     }
 
     /// Creates a new iterator that returns all objects if no `id_matcher` is provided, or only
     /// the objects the `id_matcher` returns `true` for if one is provided.
-    fn new<P: AsRef<Path>>(root: P, id_matcher: Option<Box<dyn Fn(&str) -> bool>>) -> Result<Self> {
+    fn new<P: AsRef<Path>>(
+        root: P,
+        id_matcher: Option<Box<dyn Fn(&str) -> bool>>,
+        closed: Arc<AtomicBool>,
+    ) -> Result<Self> {
         Ok(InventoryIter {
             dir_iters: vec![fs::read_dir(&root)?],
             root: root.as_ref().to_path_buf(),
             current: RefCell::new(None),
             id_matcher,
+            closed,
         })
     }
 
@@ -676,6 +730,11 @@ impl Iterator for InventoryIter {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
+            if self.closed.load(Ordering::Acquire) {
+                info!("Terminating object search");
+                return None;
+            }
+
             if self.current.borrow().is_none() && self.dir_iters.is_empty() {
                 return None;
             } else if self.current.borrow().is_none() {

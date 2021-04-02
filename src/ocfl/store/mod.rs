@@ -65,6 +65,10 @@ pub trait OcflStore {
 
     /// Returns a list of all of the extension names that are associated with the object
     fn list_object_extensions(&self, object_id: &str) -> Result<Vec<String>>;
+
+    /// Instructs the store to gracefully stop any in-flight work and not accept any additional
+    /// requests.
+    fn close(&self);
 }
 
 /// Operations related to staging versions of objects
