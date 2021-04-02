@@ -129,7 +129,7 @@ impl OcflRepo {
     pub fn close(&self) {
         info!("Closing OCFL repository");
         self.closed.store(true, Ordering::Release);
-        // TODO this should close the store too
+        self.store.close();
     }
 
     /// Returns an iterator that iterate through all of the objects in an OCFL repository.

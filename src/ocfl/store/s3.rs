@@ -6,7 +6,8 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
-use std::sync::RwLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, RwLock};
 use std::vec::IntoIter;
 
 use bytes::Bytes;
@@ -48,6 +49,7 @@ pub struct S3OcflStore {
     /// Caches object ID to path mappings
     id_path_cache: RwLock<HashMap<String, String>>,
     prefix: Option<String>,
+    closed: Arc<AtomicBool>,
 }
 
 impl S3OcflStore {
@@ -63,6 +65,7 @@ impl S3OcflStore {
             storage_layout,
             id_path_cache: RwLock::new(HashMap::new()),
             prefix: prefix.map(|p| p.to_string().trim_end_matches('/').to_string()),
+            closed: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -82,6 +85,7 @@ impl S3OcflStore {
             storage_layout: layout,
             id_path_cache: RwLock::new(HashMap::new()),
             prefix: prefix.map(|p| p.to_string().trim_end_matches('/').to_string()),
+            closed: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -125,7 +129,7 @@ impl S3OcflStore {
             &object_id
         );
 
-        let mut iter = InventoryIter::new_id_matching(&self, &object_id);
+        let mut iter = InventoryIter::new_id_matching(&self, &object_id, self.closed.clone());
 
         match iter.next() {
             Some(inventory) => Ok(inventory),
@@ -213,6 +217,9 @@ impl S3OcflStore {
     ) -> Result<Vec<String>> {
         self.do_with_rollback(Vec::new(), |done: &mut Vec<String>| -> Result<()> {
             for file in WalkDir::new(src_dir.as_ref()) {
+                // Want an error returned here so that we rollback
+                self.ensure_open()?;
+
                 let file = file?;
                 if file.file_type().is_dir() {
                     continue;
@@ -279,12 +286,27 @@ impl S3OcflStore {
     fn list_dir(&self, path: &str) -> Result<ListResult> {
         self.s3_client.list_dir(path)
     }
+
+    /// Returns an error if the store is closed
+    fn ensure_open(&self) -> Result<()> {
+        if self.is_closed() {
+            Err(RocflError::Closed)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
+    }
 }
 
 impl OcflStore for S3OcflStore {
     /// Returns the most recent inventory version for the specified object, or an a
     /// `RocflError::NotFound` if it does not exist.
     fn get_inventory(&self, object_id: &str) -> Result<Inventory> {
+        self.ensure_open()?;
+
         match self.get_object_root_path(object_id) {
             Some(object_root) => self.parse_inventory_required(object_id, &object_root),
             None => self.scan_for_inventory(&object_id),
@@ -298,9 +320,11 @@ impl OcflStore for S3OcflStore {
         &'a self,
         filter_glob: Option<&str>,
     ) -> Result<Box<dyn Iterator<Item = Inventory> + 'a>> {
+        self.ensure_open()?;
+
         Ok(Box::new(match filter_glob {
-            Some(glob) => InventoryIter::new_glob_matching(&self, glob)?,
-            None => InventoryIter::new(&self, None),
+            Some(glob) => InventoryIter::new_glob_matching(&self, glob, self.closed.clone())?,
+            None => InventoryIter::new(&self, None, self.closed.clone()),
         }))
     }
 
@@ -314,6 +338,8 @@ impl OcflStore for S3OcflStore {
         version_num: Option<VersionNum>,
         sink: &mut dyn Write,
     ) -> Result<()> {
+        self.ensure_open()?;
+
         let inventory = self.get_inventory(object_id)?;
 
         let content_path = inventory.content_path_for_logical_path(path, version_num)?;
@@ -332,6 +358,8 @@ impl OcflStore for S3OcflStore {
         src_object_path: &Path,
         object_root: Option<InventoryPath>,
     ) -> Result<()> {
+        self.ensure_open()?;
+
         let object_root = match self.get_object_root_path(&inventory.id) {
             Some(object_root) => object_root,
             None => {
@@ -371,6 +399,8 @@ impl OcflStore for S3OcflStore {
     ///
     /// The object must already exist, and the new version must not exist.
     fn write_new_version(&self, inventory: &mut Inventory, version_path: &Path) -> Result<()> {
+        self.ensure_open()?;
+
         if inventory.is_new() {
             return Err(RocflError::IllegalState(format!(
                 "Object {} must be created before adding new versions to it.",
@@ -415,6 +445,8 @@ impl OcflStore for S3OcflStore {
     /// nothing happens. Any dangling directories that were created as a result of purging
     /// the object are also removed.
     fn purge_object(&self, object_id: &str) -> Result<()> {
+        self.ensure_open()?;
+
         let object_root = match self.lookup_or_find_object_root_path(object_id) {
             Err(RocflError::NotFound(_)) => return Ok(()),
             Err(e) => return Err(e),
@@ -426,6 +458,12 @@ impl OcflStore for S3OcflStore {
         let mut failed = false;
 
         for file in self.s3_client.list_objects(&object_root)? {
+            if self.is_closed() {
+                error!("Terminating purge of object {} at {}. This object will need to be cleaned up manually.",
+                       object_id, object_root);
+                failed = true;
+                break;
+            }
             if let Err(e) = self.s3_client.delete_object(&file) {
                 error!("Failed to delete file {}: {}", file, e);
                 failed = true;
@@ -447,6 +485,8 @@ impl OcflStore for S3OcflStore {
 
     /// Returns a list of all of the extension names that are associated with the object
     fn list_object_extensions(&self, object_id: &str) -> Result<Vec<String>> {
+        self.ensure_open()?;
+
         let object_root = self.lookup_or_find_object_root_path(object_id)?;
         let extensions_dir = join(&object_root, EXTENSIONS_DIR);
 
@@ -459,6 +499,12 @@ impl OcflStore for S3OcflStore {
         }
 
         Ok(extensions)
+    }
+
+    /// Instructs the store to gracefully stop any in-flight work and not accept any additional
+    /// requests.
+    fn close(&self) {
+        self.closed.store(true, Ordering::Release);
     }
 }
 
@@ -479,6 +525,7 @@ struct InventoryIter<'a> {
     dir_iters: Vec<IntoIter<String>>,
     current: RefCell<Option<IntoIter<String>>>,
     id_matcher: Option<Box<dyn Fn(&str) -> bool>>,
+    closed: Arc<AtomicBool>,
 }
 
 impl S3Client {
@@ -807,14 +854,18 @@ impl ListResult {
 
 impl<'a> InventoryIter<'a> {
     /// Creates a new iterator that only returns objects that match the given object ID.
-    fn new_id_matching(store: &'a S3OcflStore, object_id: &str) -> Self {
+    fn new_id_matching(store: &'a S3OcflStore, object_id: &str, closed: Arc<AtomicBool>) -> Self {
         let o = object_id.to_string();
-        InventoryIter::new(store, Some(Box::new(move |id| id == o)))
+        InventoryIter::new(store, Some(Box::new(move |id| id == o)), closed)
     }
 
     /// Creates a new iterator that only returns objects with IDs that match the specified glob
     /// pattern.
-    fn new_glob_matching(store: &'a S3OcflStore, glob: &str) -> Result<Self> {
+    fn new_glob_matching(
+        store: &'a S3OcflStore,
+        glob: &str,
+        closed: Arc<AtomicBool>,
+    ) -> Result<Self> {
         let matcher = GlobBuilder::new(glob)
             .backslash_escape(true)
             .build()?
@@ -822,17 +873,23 @@ impl<'a> InventoryIter<'a> {
         Ok(InventoryIter::new(
             store,
             Some(Box::new(move |id| matcher.is_match(id))),
+            closed,
         ))
     }
 
     /// Creates a new iterator that returns all objects if no `id_matcher` is provided, or only
     /// the objects the `id_matcher` returns `true` for if one is provided.
-    fn new(store: &'a S3OcflStore, id_matcher: Option<Box<dyn Fn(&str) -> bool>>) -> Self {
+    fn new(
+        store: &'a S3OcflStore,
+        id_matcher: Option<Box<dyn Fn(&str) -> bool>>,
+        closed: Arc<AtomicBool>,
+    ) -> Self {
         Self {
             store,
             dir_iters: Vec::new(),
             current: RefCell::new(Some(vec!["".to_string()].into_iter())),
             id_matcher,
+            closed,
         }
     }
 
@@ -865,6 +922,11 @@ impl<'a> Iterator for InventoryIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
+            if self.closed.load(Ordering::Acquire) {
+                info!("Terminating object search");
+                return None;
+            }
+
             if self.current.borrow().is_none() && self.dir_iters.is_empty() {
                 return None;
             } else if self.current.borrow().is_none() {
