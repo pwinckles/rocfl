@@ -5,8 +5,8 @@ use std::sync::atomic::AtomicBool;
 use log::info;
 
 use crate::cmd::opts::{
-    CatCmd, CommitCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, Field, InitCmd, ListCmd, MoveCmd,
-    NewCmd, PurgeCmd, RemoveCmd, ResetCmd, ShowCmd, StatusCmd,
+    CatCmd, CommitCmd, ConfigCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, Field, InitCmd,
+    ListCmd, MoveCmd, NewCmd, PurgeCmd, RemoveCmd, ResetCmd, ShowCmd, StatusCmd,
 };
 use crate::cmd::{print, println, Cmd, GlobalArgs};
 use crate::config::Config;
@@ -39,6 +39,19 @@ impl Cmd for CatCmd {
 
 /// This is needed to keep enum_dispatch happy
 impl Cmd for InitCmd {
+    fn exec(
+        &self,
+        _repo: &OcflRepo,
+        _args: GlobalArgs,
+        _config: &Config,
+        _terminate: &AtomicBool,
+    ) -> Result<()> {
+        unimplemented!()
+    }
+}
+
+/// This is needed to keep enum_dispatch happy
+impl Cmd for ConfigCmd {
     fn exec(
         &self,
         _repo: &OcflRepo,

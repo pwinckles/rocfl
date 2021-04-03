@@ -69,6 +69,8 @@ pub struct RocflArgs {
 #[enum_dispatch(Cmd)]
 #[derive(Debug, StructOpt)]
 pub enum Command {
+    #[structopt(name = "config")]
+    Config(ConfigCmd),
     #[structopt(name = "ls")]
     List(ListCmd),
     #[structopt(name = "log")]
@@ -98,6 +100,11 @@ pub enum Command {
     #[structopt(name = "purge")]
     Purge(PurgeCmd),
 }
+
+/// Edit your rocfl configuration
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+pub struct ConfigCmd {}
 
 /// Lists objects or files within objects.
 #[derive(Debug, StructOpt)]
