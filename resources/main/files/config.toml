@@ -1,0 +1,18 @@
+# The following are example rocfl configurations
+#
+# The global section applies to all repositories and may be overriden at the repository level.
+# [global]
+# name = "My Name"
+# address = "mailto:me@example.com"
+#
+# This is repository specific configuration for a local repository.
+# You can acitivate this config invoking rocfl with '-n my-fs-repo'
+# [my-fs-repo]
+# root = "/path/to/storage/root"
+#
+# This is repository specific configuratio for a remote S3 repository.
+# You can acitivate this config invoking rocfl with '-n my-s3-repo'
+# [my-s3-repo]
+# region = "us-east-2"
+# bucket = "my-example-ocfl-bucket"
+# root = "my-s3-repo"

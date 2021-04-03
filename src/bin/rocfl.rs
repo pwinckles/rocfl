@@ -28,7 +28,7 @@ fn main() {
         Err(e) => {
             let path = config::config_path()
                 .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| "Unkown".to_string());
+                .unwrap_or_else(|| "Unknown".to_string());
             error!("Failed to load rocfl config at {}: {}", path, e);
             process::exit(1);
         }
