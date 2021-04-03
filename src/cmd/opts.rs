@@ -17,20 +17,35 @@ use crate::ocfl::VersionNum;
 #[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
 #[structopt(setting(ColorAuto), setting(ColoredHelp))]
 pub struct RocflArgs {
-    /// Specifies the path to the OCFL storage root.
-    #[structopt(short, long, value_name = "PATH", default_value = ".")]
-    pub root: String,
+    /// Name of the repository to access. Repository names are used to load repository
+    /// specific configuration in the rocfl config file. For example, a repository's root
+    /// could be defined in the config and referenced here by name so that the root does not
+    /// need to be specified with every command.
+    #[structopt(short, long, value_name = "NAME")]
+    pub name: Option<String>,
+
+    /// Path to the repositories storage root. By default, this is the current directory.
+    #[structopt(short, long, value_name = "ROOT_PATH")]
+    pub root: Option<String>,
+
+    /// Path to the directory where new OCFL versions should be staged before they are
+    /// moved into the main repository. By default, versions are staged in an extensions directory
+    /// in the main repository. This is the recommended configuration. If the repository is in S3,
+    /// then versions are staged in an OS specific user home directory. Staging directories
+    /// should NOT be shared by multiple different repositories.
+    #[structopt(short, long, value_name = "STAGING_PATH")]
+    pub staging_root: Option<String>,
 
     /// Specifies the AWS region.
-    #[structopt(short = "R", long, value_name = "region", requires = "bucket")]
+    #[structopt(short = "R", long, value_name = "REGION", requires = "bucket")]
     pub region: Option<String>,
 
     /// Specifies the S3 bucket to use.
     #[structopt(short, long, value_name = "BUCKET", requires = "region")]
     pub bucket: Option<String>,
 
-    /// Specifies a custom S3 endpoint to use.
-    #[structopt(short, long, value_name = "ENDPOINT")]
+    /// Custom S3 endpoint to use. This should only be specified if you are using a custom region.
+    #[structopt(short, long, value_name = "ENDPOINT", requires = "region")]
     pub endpoint: Option<String>,
 
     /// Suppresses error messages
@@ -463,22 +478,6 @@ arg_enum! {
     pub enum DigestAlgorithm {
         Sha256,
         Sha512,
-    }
-}
-
-/// The target storage location
-pub enum Storage {
-    FileSystem,
-    S3,
-}
-
-impl RocflArgs {
-    /// Returns the target storage location of the command
-    pub fn target_storage(&self) -> Storage {
-        match self.bucket {
-            Some(_) => Storage::S3,
-            _ => Storage::FileSystem,
-        }
     }
 }
 

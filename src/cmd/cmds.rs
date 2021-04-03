@@ -9,10 +9,17 @@ use crate::cmd::opts::{
     NewCmd, PurgeCmd, RemoveCmd, ResetCmd, ShowCmd, StatusCmd,
 };
 use crate::cmd::{print, println, Cmd, GlobalArgs};
+use crate::config::Config;
 use crate::ocfl::{CommitMeta, DigestAlgorithm, InventoryPath, OcflRepo, Result};
 
 impl Cmd for CatCmd {
-    fn exec(&self, repo: &OcflRepo, _args: GlobalArgs, _terminate: &AtomicBool) -> Result<()> {
+    fn exec(
+        &self,
+        repo: &OcflRepo,
+        _args: GlobalArgs,
+        _config: &Config,
+        _terminate: &AtomicBool,
+    ) -> Result<()> {
         if self.staged {
             repo.get_staged_object_file(
                 &self.object_id,
@@ -32,13 +39,25 @@ impl Cmd for CatCmd {
 
 /// This is needed to keep enum_dispatch happy
 impl Cmd for InitCmd {
-    fn exec(&self, _repo: &OcflRepo, _args: GlobalArgs, _terminate: &AtomicBool) -> Result<()> {
+    fn exec(
+        &self,
+        _repo: &OcflRepo,
+        _args: GlobalArgs,
+        _config: &Config,
+        _terminate: &AtomicBool,
+    ) -> Result<()> {
         unimplemented!()
     }
 }
 
 impl Cmd for NewCmd {
-    fn exec(&self, repo: &OcflRepo, _args: GlobalArgs, _terminate: &AtomicBool) -> Result<()> {
+    fn exec(
+        &self,
+        repo: &OcflRepo,
+        _args: GlobalArgs,
+        _config: &Config,
+        _terminate: &AtomicBool,
+    ) -> Result<()> {
         repo.create_object(
             &self.object_id,
             algorithm(self.digest_algorithm),
@@ -53,7 +72,13 @@ impl Cmd for NewCmd {
 }
 
 impl Cmd for CopyCmd {
-    fn exec(&self, repo: &OcflRepo, _args: GlobalArgs, _terminate: &AtomicBool) -> Result<()> {
+    fn exec(
+        &self,
+        repo: &OcflRepo,
+        _args: GlobalArgs,
+        _config: &Config,
+        _terminate: &AtomicBool,
+    ) -> Result<()> {
         if self.internal {
             repo.copy_files_internal(
                 &self.object_id,
@@ -74,7 +99,13 @@ impl Cmd for CopyCmd {
 }
 
 impl Cmd for MoveCmd {
-    fn exec(&self, repo: &OcflRepo, _args: GlobalArgs, _terminate: &AtomicBool) -> Result<()> {
+    fn exec(
+        &self,
+        repo: &OcflRepo,
+        _args: GlobalArgs,
+        _config: &Config,
+        _terminate: &AtomicBool,
+    ) -> Result<()> {
         if self.internal {
             repo.move_files_internal(&self.object_id, &self.source, &self.destination)
         } else {
@@ -84,13 +115,25 @@ impl Cmd for MoveCmd {
 }
 
 impl Cmd for RemoveCmd {
-    fn exec(&self, repo: &OcflRepo, _args: GlobalArgs, _terminate: &AtomicBool) -> Result<()> {
+    fn exec(
+        &self,
+        repo: &OcflRepo,
+        _args: GlobalArgs,
+        _config: &Config,
+        _terminate: &AtomicBool,
+    ) -> Result<()> {
         repo.remove_files(&self.object_id, &self.paths, self.recursive)
     }
 }
 
 impl Cmd for ResetCmd {
-    fn exec(&self, repo: &OcflRepo, _args: GlobalArgs, _terminate: &AtomicBool) -> Result<()> {
+    fn exec(
+        &self,
+        repo: &OcflRepo,
+        _args: GlobalArgs,
+        _config: &Config,
+        _terminate: &AtomicBool,
+    ) -> Result<()> {
         if self.paths.is_empty() {
             repo.reset(&self.object_id, &self.paths, self.recursive)
         } else {
@@ -100,9 +143,15 @@ impl Cmd for ResetCmd {
 }
 
 impl Cmd for CommitCmd {
-    fn exec(&self, repo: &OcflRepo, _args: GlobalArgs, _terminate: &AtomicBool) -> Result<()> {
+    fn exec(
+        &self,
+        repo: &OcflRepo,
+        _args: GlobalArgs,
+        config: &Config,
+        _terminate: &AtomicBool,
+    ) -> Result<()> {
         let meta = CommitMeta::new()
-            .with_user(self.user_name.clone(), self.user_address.clone())?
+            .with_user(config.name.clone(), config.address.clone())?
             .with_message(self.message.clone())
             .with_created(self.created);
         let object_root: Option<InventoryPath> = match &self.object_root {
@@ -116,7 +165,13 @@ impl Cmd for CommitCmd {
 }
 
 impl Cmd for StatusCmd {
-    fn exec(&self, repo: &OcflRepo, args: GlobalArgs, terminate: &AtomicBool) -> Result<()> {
+    fn exec(
+        &self,
+        repo: &OcflRepo,
+        args: GlobalArgs,
+        config: &Config,
+        terminate: &AtomicBool,
+    ) -> Result<()> {
         if let Some(object_id) = self.object_id.as_ref() {
             let cmd = ShowCmd {
                 object_id: object_id.to_string(),
@@ -124,7 +179,7 @@ impl Cmd for StatusCmd {
                 staged: true,
                 minimal: false,
             };
-            cmd.exec(repo, args, terminate)
+            cmd.exec(repo, args, config, terminate)
         } else {
             let cmd = ListCmd {
                 object_id: None,
@@ -142,13 +197,19 @@ impl Cmd for StatusCmd {
                 sort: Field::Name,
             };
 
-            cmd.exec(repo, args, terminate)
+            cmd.exec(repo, args, config, terminate)
         }
     }
 }
 
 impl Cmd for PurgeCmd {
-    fn exec(&self, repo: &OcflRepo, _args: GlobalArgs, _terminate: &AtomicBool) -> Result<()> {
+    fn exec(
+        &self,
+        repo: &OcflRepo,
+        _args: GlobalArgs,
+        _config: &Config,
+        _terminate: &AtomicBool,
+    ) -> Result<()> {
         if !self.force {
             print(format!(
                 "Permanently delete '{}'? This cannot be undone. [y/N]: ",

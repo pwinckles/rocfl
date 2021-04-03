@@ -6,11 +6,12 @@ use std::sync::Arc;
 use std::{fs, process};
 
 use enum_dispatch::enum_dispatch;
-use log::error;
+use log::{error, info};
 #[cfg(feature = "s3")]
 use rusoto_core::Region;
 
 use crate::cmd::opts::*;
+use crate::config::{self, Config};
 #[cfg(not(feature = "s3"))]
 use crate::ocfl::RocflError;
 use crate::ocfl::{LayoutExtensionName, OcflRepo, Result, RocflError, StorageLayout};
@@ -25,16 +26,19 @@ mod table;
 const DATE_FORMAT: &str = "%Y-%m-%d %H:%M";
 
 /// Executes a `rocfl` command
-pub fn exec_command(args: &RocflArgs) -> Result<()> {
-    // TODO add the ability to load config from XDG. Global defaults and named repo overrides
+pub fn exec_command(args: &RocflArgs, config: Config) -> Result<()> {
+    let config = resolve_config(args, config);
+    let config = default_values(config)?;
+
+    info!("Resolved configuration: {:?}", config);
 
     match &args.command {
         Command::Init(command) => {
             // init cmd needs to be handled differently because the repo does not exist yet
-            init_repo(command, args)
+            init_repo(command, args, &config)
         }
         _ => {
-            let repo = Arc::new(create_repo(&args)?);
+            let repo = Arc::new(create_repo(&config)?);
             let terminate = Arc::new(AtomicBool::new(false));
 
             let repo_ref = repo.clone();
@@ -54,6 +58,7 @@ pub fn exec_command(args: &RocflArgs) -> Result<()> {
             args.command.exec(
                 &repo,
                 GlobalArgs::new(args.quiet, args.verbose, args.no_styles),
+                &config,
                 &terminate,
             )
         }
@@ -64,7 +69,13 @@ pub fn exec_command(args: &RocflArgs) -> Result<()> {
 #[enum_dispatch]
 trait Cmd {
     /// Execute the command
-    fn exec(&self, repo: &OcflRepo, args: GlobalArgs, terminate: &AtomicBool) -> Result<()>;
+    fn exec(
+        &self,
+        repo: &OcflRepo,
+        args: GlobalArgs,
+        config: &Config,
+        terminate: &AtomicBool,
+    ) -> Result<()>;
 }
 
 struct GlobalArgs {
@@ -108,23 +119,24 @@ fn print(value: impl Display) -> Result<()> {
     }
 }
 
-pub fn init_repo(cmd: &InitCmd, args: &RocflArgs) -> Result<()> {
-    match args.target_storage() {
-        Storage::FileSystem => {
-            let _ = OcflRepo::init_fs_repo(
-                &args.root,
-                create_layout(cmd.layout, cmd.config_file.as_deref())?,
-            )?;
-        }
-        Storage::S3 => {
-            #[cfg(not(feature = "s3"))]
-            return Err(RocflError::General(
-                "This binary was not compiled with S3 support.".to_string(),
-            ));
+pub fn init_repo(cmd: &InitCmd, args: &RocflArgs, config: &Config) -> Result<()> {
+    if is_s3(config) {
+        #[cfg(not(feature = "s3"))]
+        return Err(RocflError::General(
+            "This binary was not compiled with S3 support.".to_string(),
+        ));
 
-            #[cfg(feature = "s3")]
-            let _ = init_s3_repo(args, create_layout(cmd.layout, cmd.config_file.as_deref())?)?;
-        }
+        #[cfg(feature = "s3")]
+        let _ = init_s3_repo(
+            config,
+            create_layout(cmd.layout, cmd.config_file.as_deref())?,
+        )?;
+    } else {
+        let _ = OcflRepo::init_fs_repo(
+            config.root.as_ref().unwrap(),
+            config.staging_root.as_ref().map(|r| Path::new(r)),
+            create_layout(cmd.layout, cmd.config_file.as_deref())?,
+        )?;
     }
 
     if !args.quiet {
@@ -137,18 +149,20 @@ pub fn init_repo(cmd: &InitCmd, args: &RocflArgs) -> Result<()> {
     Ok(())
 }
 
-fn create_repo(args: &RocflArgs) -> Result<OcflRepo> {
-    match args.target_storage() {
-        Storage::FileSystem => OcflRepo::fs_repo(args.root.clone()),
-        Storage::S3 => {
-            #[cfg(not(feature = "s3"))]
-            return Err(RocflError::General(
-                "This binary was not compiled with S3 support.".to_string(),
-            ));
+fn create_repo(config: &Config) -> Result<OcflRepo> {
+    if is_s3(config) {
+        #[cfg(not(feature = "s3"))]
+        return Err(RocflError::General(
+            "This binary was not compiled with S3 support.".to_string(),
+        ));
 
-            #[cfg(feature = "s3")]
-            create_s3_repo(args)
-        }
+        #[cfg(feature = "s3")]
+        create_s3_repo(config)
+    } else {
+        OcflRepo::fs_repo(
+            config.root.as_ref().unwrap(),
+            config.staging_root.as_ref().map(|r| Path::new(r)),
+        )
     }
 }
 
@@ -194,44 +208,82 @@ fn read_layout_config(config_file: Option<&Path>) -> Result<Option<Vec<u8>>> {
 }
 
 #[cfg(feature = "s3")]
-fn create_s3_repo(args: &RocflArgs) -> Result<OcflRepo> {
-    let prefix = match args.root.as_str() {
-        "." => None,
-        prefix => Some(prefix),
-    };
+fn create_s3_repo(config: &Config) -> Result<OcflRepo> {
+    let region = resolve_region(config)?;
 
-    let region = resolve_region(args)?;
-
-    // TODO XDG
-    OcflRepo::s3_repo(region, args.bucket.as_ref().unwrap(), prefix, "/var/tmp")
+    OcflRepo::s3_repo(
+        region,
+        config.bucket.as_ref().unwrap(),
+        config.root.as_deref(),
+        config.staging_root.as_ref().unwrap(),
+    )
 }
 
 #[cfg(feature = "s3")]
-fn init_s3_repo(args: &RocflArgs, layout: Option<StorageLayout>) -> Result<OcflRepo> {
-    let prefix = match args.root.as_str() {
-        "." => None,
-        prefix => Some(prefix),
-    };
-
-    let region = resolve_region(args)?;
+fn init_s3_repo(config: &Config, layout: Option<StorageLayout>) -> Result<OcflRepo> {
+    let region = resolve_region(config)?;
 
     OcflRepo::init_s3_repo(
         region,
-        args.bucket.as_ref().unwrap(),
-        prefix,
-        // TODO XDG
-        "/var/tmp",
+        config.bucket.as_ref().unwrap(),
+        config.root.as_deref(),
+        config.staging_root.as_ref().unwrap(),
         layout,
     )
 }
 
 #[cfg(feature = "s3")]
-fn resolve_region(args: &RocflArgs) -> Result<Region> {
-    Ok(match args.endpoint.is_some() {
+fn resolve_region(config: &Config) -> Result<Region> {
+    Ok(match config.endpoint.is_some() {
         true => Region::Custom {
-            name: args.region.as_ref().unwrap().to_owned(),
-            endpoint: args.endpoint.as_ref().unwrap().to_owned(),
+            name: config.region.as_ref().unwrap().to_owned(),
+            endpoint: config.endpoint.as_ref().unwrap().to_owned(),
         },
-        false => args.region.as_ref().unwrap().parse()?,
+        false => config.region.as_ref().unwrap().parse()?,
     })
+}
+
+fn resolve_config(args: &RocflArgs, mut config: Config) -> Config {
+    if args.root.is_some() {
+        config.root = args.root.clone();
+    }
+    if args.staging_root.is_some() {
+        config.staging_root = args.staging_root.clone();
+    }
+    if args.bucket.is_some() {
+        config.bucket = args.bucket.clone();
+    }
+    if args.region.is_some() {
+        config.region = args.region.clone();
+    }
+    if args.endpoint.is_some() {
+        config.endpoint = args.endpoint.clone();
+    }
+
+    if let Command::Commit(commit) = &args.command {
+        if commit.user_name.is_some() {
+            config.name = commit.user_name.clone();
+        }
+        if commit.user_address.is_some() {
+            config.address = commit.user_address.clone();
+        }
+    }
+
+    config
+}
+
+fn default_values(mut config: Config) -> Result<Config> {
+    if is_s3(&config) {
+        if config.staging_root.is_none() {
+            config.staging_root = Some(config::s3_staging_path(&config)?);
+        }
+    } else if config.root.is_none() {
+        config.root = Some(".".to_string());
+    }
+
+    Ok(config)
+}
+
+fn is_s3(config: &Config) -> bool {
+    config.bucket.is_some()
 }

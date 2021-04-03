@@ -19,7 +19,7 @@ use rocfl::ocfl::{
 #[test]
 fn list_all_objects() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
     let mut objects: Vec<ObjectVersionDetails> = repo.list_objects(None)?.collect();
 
@@ -97,7 +97,7 @@ fn list_all_objects() -> Result<()> {
 #[test]
 fn list_single_object_from_glob() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
     let mut objects: Vec<ObjectVersionDetails> = repo.list_objects(Some("*1"))?.collect();
 
@@ -133,7 +133,7 @@ fn list_single_object_from_glob() -> Result<()> {
 #[test]
 fn list_empty_repo() -> Result<()> {
     let repo_root = create_repo_root("empty");
-    let repo = OcflRepo::fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
     let objects: Vec<ObjectVersionDetails> = repo.list_objects(None)?.collect();
 
@@ -145,7 +145,7 @@ fn list_empty_repo() -> Result<()> {
 #[test]
 fn list_repo_with_invalid_objects() -> Result<()> {
     let repo_root = create_repo_root("invalid");
-    let repo = OcflRepo::fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
     let object_root = repo_root
         .join("925")
@@ -173,7 +173,7 @@ fn list_repo_with_invalid_objects() -> Result<()> {
 #[test]
 fn get_object_when_exists() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
     let object = repo.get_object("o2", None)?;
 
@@ -219,7 +219,7 @@ fn get_object_when_exists() -> Result<()> {
 #[test]
 fn get_object_version_when_exists() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
     let object = repo.get_object("o2", Some(VersionNum::new(2)))?;
 
@@ -274,7 +274,7 @@ fn get_object_version_when_exists() -> Result<()> {
 #[test]
 fn get_object_with_mutable_head() -> Result<()> {
     let repo_root = create_repo_root("mutable");
-    let repo = OcflRepo::fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
     let object = repo.get_object("o1", None)?;
     let object_root = PathBuf::from(&object.object_root);
@@ -315,14 +315,14 @@ fn get_object_with_mutable_head() -> Result<()> {
 #[should_panic(expected = "Not found: Object o4")]
 fn error_when_object_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root, None).unwrap();
     repo.get_object("o4", None).unwrap();
 }
 
 #[test]
 fn get_object_when_exists_using_layout() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects-with-layout");
-    let repo = OcflRepo::fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
     let object = repo.get_object("o2", None)?;
 
@@ -369,7 +369,7 @@ fn get_object_when_exists_using_layout() -> Result<()> {
 #[should_panic(expected = "Not found: Object o4")]
 fn error_when_object_not_exists_with_layout() {
     let repo_root = create_repo_root("multiple-objects-with-layout");
-    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root, None).unwrap();
     repo.get_object("o4", None).unwrap();
 }
 
@@ -377,7 +377,7 @@ fn error_when_object_not_exists_with_layout() {
 #[should_panic(expected = "Not found: Object o2 version v4")]
 fn error_when_version_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root, None).unwrap();
     repo.get_object("o2", Some(VersionNum::new(4))).unwrap();
 }
 
@@ -385,14 +385,14 @@ fn error_when_version_not_exists() {
 #[should_panic(expected = "Not found: Object o3")]
 fn error_when_get_invalid_object() {
     let repo_root = create_repo_root("invalid");
-    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root, None).unwrap();
     repo.get_object("o3", None).unwrap();
 }
 
 #[test]
 fn list_versions_when_multiple() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
     let mut versions = repo.list_object_versions("o2")?;
 
@@ -408,7 +408,7 @@ fn list_versions_when_multiple() -> Result<()> {
 #[test]
 fn list_file_versions_when_multiple() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
     let mut versions = repo.list_file_versions("o2", &"dir3/file1".try_into()?)?;
 
@@ -424,7 +424,7 @@ fn list_file_versions_when_multiple() -> Result<()> {
 #[should_panic(expected = "Not found: Object o5")]
 fn list_versions_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root, None).unwrap();
     repo.list_object_versions("o5").unwrap();
 }
 
@@ -432,7 +432,7 @@ fn list_versions_not_exists() {
 #[should_panic(expected = "Not found: Path bogus.txt not found in object o2")]
 fn list_file_versions_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root, None).unwrap();
     repo.list_file_versions("o2", &"bogus.txt".try_into().unwrap())
         .unwrap();
 }
@@ -440,7 +440,7 @@ fn list_file_versions_not_exists() {
 #[test]
 fn diff_when_left_and_right_specified() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
     let mut diff = repo.diff("o2", Some(VersionNum::new(1)), VersionNum::new(3))?;
 
@@ -457,7 +457,7 @@ fn diff_when_left_and_right_specified() -> Result<()> {
 #[test]
 fn diff_with_previous_when_left_not_specified() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
     let mut diff = repo.diff("o2", None, VersionNum::new(3))?;
 
@@ -474,7 +474,7 @@ fn diff_with_previous_when_left_not_specified() -> Result<()> {
 #[test]
 fn diff_first_version_all_adds() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
     let mut diff = repo.diff("o2", None, VersionNum::new(1))?;
 
@@ -491,7 +491,7 @@ fn diff_first_version_all_adds() -> Result<()> {
 #[test]
 fn diff_same_version_no_diff() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
     let diff = repo.diff("o2", Some(VersionNum::new(2)), VersionNum::new(2))?;
 
@@ -504,7 +504,7 @@ fn diff_same_version_no_diff() -> Result<()> {
 #[should_panic(expected = "Not found: Object o6")]
 fn diff_object_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root, None).unwrap();
     repo.diff("o6", None, VersionNum::new(2)).unwrap();
 }
 
@@ -512,14 +512,14 @@ fn diff_object_not_exists() {
 #[should_panic(expected = "Not found: Object o1 version v2")]
 fn diff_version_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root, None).unwrap();
     repo.diff("o1", None, VersionNum::new(2)).unwrap();
 }
 
 #[test]
 fn get_object_file_when_exists() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root)?;
+    let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
     let id = "o2";
     let version = VersionNum::new(2);
@@ -536,7 +536,7 @@ fn get_object_file_when_exists() -> Result<()> {
 #[should_panic(expected = "Path dir1/bogus not found in object o2 version v2")]
 fn fail_get_object_file_when_does_not_exist() {
     let repo_root = create_repo_root("multiple-objects");
-    let repo = OcflRepo::fs_repo(&repo_root).unwrap();
+    let repo = OcflRepo::fs_repo(&repo_root, None).unwrap();
 
     let id = "o2";
     let version = VersionNum::new(2);
@@ -558,6 +558,7 @@ fn create_new_repo_empty_dir() -> Result<()> {
 
     let repo = OcflRepo::init_fs_repo(
         root.path(),
+        None,
         Some(StorageLayout::new(
             LayoutExtensionName::HashedNTupleLayout,
             None,
@@ -596,6 +597,7 @@ fn create_new_flat_repo_empty_dir() -> Result<()> {
 
     let repo = OcflRepo::init_fs_repo(
         root.path(),
+        None,
         Some(StorageLayout::new(
             LayoutExtensionName::FlatDirectLayout,
             None,
@@ -626,6 +628,7 @@ fn create_new_hash_id_repo_empty_dir() -> Result<()> {
 
     let repo = OcflRepo::init_fs_repo(
         root.path(),
+        None,
         Some(StorageLayout::new(
             LayoutExtensionName::HashedNTupleObjectIdLayout,
             None,
@@ -671,6 +674,7 @@ fn create_new_repo_empty_dir_custom_layout() -> Result<()> {
 
     let repo = OcflRepo::init_fs_repo(
         root.path(),
+        None,
         Some(StorageLayout::new(
             LayoutExtensionName::HashedNTupleLayout,
             Some(layout.as_bytes()),
@@ -703,6 +707,7 @@ fn fail_new_repo_creation_when_non_empty_root() {
 
     let _repo = OcflRepo::init_fs_repo(
         root.path(),
+        None,
         Some(StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None).unwrap()),
     )
     .unwrap();
@@ -1466,7 +1471,7 @@ fn reject_object_creation_when_object_already_exists_in_staging() {
 )]
 fn reject_object_commit_when_no_known_storage_layout() {
     let root = TempDir::new().unwrap();
-    let repo = OcflRepo::fs_repo(root.path()).unwrap();
+    let repo = OcflRepo::fs_repo(root.path(), None).unwrap();
     repo.create_object("id", DigestAlgorithm::Sha512, "content", 0)
         .unwrap();
     commit("id", &repo);
@@ -1476,7 +1481,7 @@ fn reject_object_commit_when_no_known_storage_layout() {
 fn object_commit_when_no_known_storage_layout_and_root_specified() {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
-    let repo = OcflRepo::fs_repo(root.path()).unwrap();
+    let repo = OcflRepo::fs_repo(root.path(), None).unwrap();
 
     let object_id = "custom_layout";
     let object_root = "random/path/to/object";
@@ -1512,7 +1517,7 @@ fn object_commit_when_no_known_storage_layout_and_root_specified() {
 fn fail_object_commit_when_no_known_storage_layout_and_root_specified_and_obj_already_there() {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
-    let repo = OcflRepo::fs_repo(root.path()).unwrap();
+    let repo = OcflRepo::fs_repo(root.path(), None).unwrap();
 
     let object_id = "custom_layout";
     let object_root = "random/path/to/object";
@@ -4226,7 +4231,7 @@ fn do_not_stage_changes_for_objects_with_mutable_heads() {
 
     copy_existing_repo("mutable", &root);
 
-    let repo = OcflRepo::fs_repo(root.child("mutable").path()).unwrap();
+    let repo = OcflRepo::fs_repo(root.child("mutable").path(), None).unwrap();
     let object_id = "o1";
 
     repo.move_files_external(
@@ -4242,7 +4247,7 @@ fn create_and_update_object_in_repo_with_no_layout() {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
 
-    let repo = OcflRepo::init_fs_repo(root.path(), None).unwrap();
+    let repo = OcflRepo::init_fs_repo(root.path(), None, None).unwrap();
 
     let object_id = "no layout";
     let object_root = "random/path/to/obj";
@@ -4627,6 +4632,7 @@ fn o2_v3_details() -> VersionDetails {
 fn default_repo(root: impl AsRef<Path>) -> OcflRepo {
     OcflRepo::init_fs_repo(
         root,
+        None,
         Some(StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None).unwrap()),
     )
     .unwrap()
