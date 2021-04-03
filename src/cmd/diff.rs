@@ -8,6 +8,7 @@ use std::sync::atomic::AtomicBool;
 use crate::cmd::opts::{DiffCmd, LogCmd, ShowCmd};
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, Separator, TableView, TextCell};
 use crate::cmd::{println, style, Cmd, GlobalArgs, DATE_FORMAT};
+use crate::config::Config;
 use crate::ocfl::{Diff, OcflRepo, Result, VersionDetails};
 
 const DEFAULT_USER: &str = "NA";
@@ -18,7 +19,13 @@ const DELETED: &str = "Deleted";
 const RENAMED: &str = "Renamed";
 
 impl Cmd for LogCmd {
-    fn exec(&self, repo: &OcflRepo, args: GlobalArgs, _terminate: &AtomicBool) -> Result<()> {
+    fn exec(
+        &self,
+        repo: &OcflRepo,
+        args: GlobalArgs,
+        _config: &Config,
+        _terminate: &AtomicBool,
+    ) -> Result<()> {
         let mut versions = match &self.path {
             Some(path) => repo.list_file_versions(&self.object_id, &path.try_into()?)?,
             None => repo.list_object_versions(&self.object_id)?,
@@ -70,7 +77,13 @@ impl LogCmd {
 }
 
 impl Cmd for ShowCmd {
-    fn exec(&self, repo: &OcflRepo, args: GlobalArgs, _terminate: &AtomicBool) -> Result<()> {
+    fn exec(
+        &self,
+        repo: &OcflRepo,
+        args: GlobalArgs,
+        _config: &Config,
+        _terminate: &AtomicBool,
+    ) -> Result<()> {
         if self.staged {
             if !self.minimal {
                 let object = repo.get_staged_object_details(&self.object_id)?;
@@ -101,7 +114,13 @@ impl Cmd for ShowCmd {
 }
 
 impl Cmd for DiffCmd {
-    fn exec(&self, repo: &OcflRepo, args: GlobalArgs, _terminate: &AtomicBool) -> Result<()> {
+    fn exec(
+        &self,
+        repo: &OcflRepo,
+        args: GlobalArgs,
+        _config: &Config,
+        _terminate: &AtomicBool,
+    ) -> Result<()> {
         if self.left == self.right {
             return Ok(());
         }

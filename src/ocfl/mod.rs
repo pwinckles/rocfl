@@ -5,7 +5,7 @@
 //! ```rust
 //! use rocfl::ocfl::OcflRepo;
 //!
-//! let repo = OcflRepo::fs_repo("path/to/ocfl/storage/root");
+//! let repo = OcflRepo::fs_repo("path/to/ocfl/storage/root", None);
 //! ```
 
 pub use self::digest::DigestAlgorithm;

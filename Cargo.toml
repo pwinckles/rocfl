@@ -68,8 +68,9 @@ grep-matcher = "0.1"
 grep-searcher = "0.1"
 grep-regex = "0.1"
 
-# XDG
+# Config
 directories = "3"
+toml = "0.5"
 
 # Serialization
 serde = { version = "1", features = ["derive", "rc"] }
