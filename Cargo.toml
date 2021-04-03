@@ -71,6 +71,7 @@ grep-regex = "0.1"
 # Config
 directories = "3"
 toml = "0.5"
+edit = "0.1"
 
 # Serialization
 serde = { version = "1", features = ["derive", "rc"] }

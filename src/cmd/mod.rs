@@ -37,6 +37,8 @@ pub fn exec_command(args: &RocflArgs, config: Config) -> Result<()> {
             // init cmd needs to be handled differently because the repo does not exist yet
             init_repo(command, args, &config)
         }
+        Command::Config(_command) => edit_config()
+            .map_err(|e| RocflError::General(format!("Failed to edit config file: {}", e))),
         _ => {
             let repo = Arc::new(create_repo(&config)?);
             let terminate = Arc::new(AtomicBool::new(false));
@@ -286,4 +288,22 @@ fn default_values(mut config: Config) -> Result<Config> {
 
 fn is_s3(config: &Config) -> bool {
     config.bucket.is_some()
+}
+
+fn edit_config() -> Result<()> {
+    match config::config_path() {
+        Some(config_path) => {
+            if !config_path.exists() {
+                fs::create_dir_all(config_path.parent().unwrap())?;
+                let mut file = fs::File::create(&config_path)?;
+                write!(file, "{}", include_str!("../../resources/main/files/config.toml"))?;
+            }
+
+            edit::edit_file(&config_path)?;
+            Ok(())
+        }
+        None => Err(RocflError::General(
+            "Failed to find rocfl config".to_string(),
+        )),
+    }
 }
