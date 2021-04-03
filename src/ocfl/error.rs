@@ -111,6 +111,12 @@ impl From<serde_json::Error> for RocflError {
     }
 }
 
+impl From<toml::de::Error> for RocflError {
+    fn from(e: toml::de::Error) -> Self {
+        RocflError::Wrapped(Box::new(e))
+    }
+}
+
 impl From<walkdir::Error> for RocflError {
     fn from(e: walkdir::Error) -> Self {
         RocflError::Wrapped(Box::new(e))

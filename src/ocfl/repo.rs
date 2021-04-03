@@ -50,8 +50,11 @@ pub struct OcflRepo {
 impl OcflRepo {
     /// Creates a new `OcflRepo` instance backed by the local filesystem. `storage_root` is the
     /// location of the OCFL repository to open. The OCFL repository must already exist.
-    pub fn fs_repo(storage_root: impl AsRef<Path>) -> Result<Self> {
-        let staging_root = paths::staging_extension_path(storage_root.as_ref());
+    pub fn fs_repo(storage_root: impl AsRef<Path>, staging: Option<&Path>) -> Result<Self> {
+        let staging_root = match staging {
+            Some(staging) => staging.to_path_buf(),
+            None => paths::staging_extension_path(storage_root.as_ref()),
+        };
 
         Ok(Self {
             staging_root,
@@ -67,9 +70,13 @@ impl OcflRepo {
     /// most not already exist.
     pub fn init_fs_repo(
         storage_root: impl AsRef<Path>,
+        staging: Option<&Path>,
         layout: Option<StorageLayout>,
     ) -> Result<Self> {
-        let staging_root = paths::staging_extension_path(storage_root.as_ref());
+        let staging_root = match staging {
+            Some(staging) => staging.to_path_buf(),
+            None => paths::staging_extension_path(storage_root.as_ref()),
+        };
 
         Ok(Self {
             staging_root,
@@ -88,13 +95,11 @@ impl OcflRepo {
         region: Region,
         bucket: &str,
         prefix: Option<&str>,
-        local_storage: impl AsRef<Path>,
+        staging_root: impl AsRef<Path>,
         layout: Option<StorageLayout>,
     ) -> Result<Self> {
-        let staging_root = paths::staging_extension_path(local_storage.as_ref());
-
         Ok(Self {
-            staging_root,
+            staging_root: staging_root.as_ref().to_path_buf(),
             store: Box::new(S3OcflStore::init(region, bucket, prefix, layout)?),
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
@@ -110,12 +115,10 @@ impl OcflRepo {
         region: Region,
         bucket: &str,
         prefix: Option<&str>,
-        local_storage: impl AsRef<Path>,
+        staging_root: impl AsRef<Path>,
     ) -> Result<Self> {
-        let staging_root = paths::staging_extension_path(local_storage.as_ref());
-
         Ok(Self {
-            staging_root,
+            staging_root: staging_root.as_ref().to_path_buf(),
             store: Box::new(S3OcflStore::new(region, bucket, prefix)?),
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),

@@ -8,12 +8,19 @@ use globset::GlobBuilder;
 use crate::cmd::opts::{ListCmd, *};
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, Separator, TableView, TextCell};
 use crate::cmd::{style, Cmd, GlobalArgs, DATE_FORMAT};
+use crate::config::Config;
 use crate::ocfl::{
     FileDetails, InventoryPath, ObjectVersion, ObjectVersionDetails, OcflRepo, Result,
 };
 
 impl Cmd for ListCmd {
-    fn exec(&self, repo: &OcflRepo, args: GlobalArgs, terminate: &AtomicBool) -> Result<()> {
+    fn exec(
+        &self,
+        repo: &OcflRepo,
+        args: GlobalArgs,
+        _config: &Config,
+        terminate: &AtomicBool,
+    ) -> Result<()> {
         if self.objects || self.object_id.is_none() {
             self.list_objects(repo, args, terminate)
         } else {
