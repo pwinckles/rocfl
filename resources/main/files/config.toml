@@ -1,17 +1,24 @@
-# The following are example rocfl configurations
+# # The following are example rocfl configurations. This configurations allow you
+# # to invoke rocfl without needing to provide it with as many arguments. Activate
+# # a configuration by invoking rocfl with '-n NAME', where 'NAME' is the config
+# # name.
 #
-# The global section applies to all repositories and may be overriden at the repository level.
+# # The global section applies to all repositories by default and does not need
+# # to be actived manually. Any values defined in the global section are overriden
+# # by values defined in repository specific sections.
 # [global]
+# # Name and address are used to auto-populate the author information when committing
+# # a new version.
 # name = "My Name"
 # address = "mailto:me@example.com"
 #
-# This is repository specific configuration for a local repository.
-# You can acitivate this config invoking rocfl with '-n my-fs-repo'
+# # This is repository specific configuration for a local repository.
+# # You can acitivate this config by invoking rocfl with '-n my-fs-repo'
 # [my-fs-repo]
 # root = "/path/to/storage/root"
 #
-# This is repository specific configuratio for a remote S3 repository.
-# You can acitivate this config invoking rocfl with '-n my-s3-repo'
+# # This is repository specific configuratio for a remote S3 repository.
+# # You can acitivate this config by invoking rocfl with '-n my-s3-repo'
 # [my-s3-repo]
 # region = "us-east-2"
 # bucket = "my-example-ocfl-bucket"
