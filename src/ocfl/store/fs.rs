@@ -154,7 +154,20 @@ impl FsOcflStore {
         let object_root = self.storage_root.join(object_root);
 
         if object_root.exists() {
-            parse_inventory(&object_root, &self.storage_root)
+            let inventory = parse_inventory(&object_root, &self.storage_root)?;
+
+            if inventory.id != object_id {
+                Err(RocflError::CorruptObject {
+                    object_id: object_id.to_string(),
+                    message: format!(
+                        "Expected object to exist at {} but found object {} instead.",
+                        object_root.to_string_lossy(),
+                        inventory.id
+                    ),
+                })
+            } else {
+                Ok(inventory)
+            }
         } else {
             Err(not_found(&object_id, None))
         }
