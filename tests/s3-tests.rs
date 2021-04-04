@@ -1,12 +1,20 @@
+//! These tests **MUST** be run sequentially with `cargo test -- --test-threads=1` because of
+//! https://github.com/hyperium/hyper/issues/2112
+
+use std::convert::TryFrom;
 use std::panic::UnwindSafe;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::{env, fs, panic};
 
 use assert_fs::fixture::ChildPath;
 use assert_fs::prelude::*;
 use assert_fs::TempDir;
 use rand::Rng;
-use rocfl::ocfl::{CommitMeta, DigestAlgorithm, LayoutExtensionName, OcflRepo, StorageLayout};
+use rocfl::ocfl::{
+    CommitMeta, DigestAlgorithm, FileDetails, InventoryPath, LayoutExtensionName, OcflRepo,
+    StorageLayout,
+};
 use rusoto_core::Region;
 use rusoto_s3::{
     DeleteObjectRequest, GetObjectRequest, HeadObjectRequest, ListObjectsV2Request, S3Client, S3,
@@ -69,6 +77,59 @@ fn create_new_repo_empty_dir() {
     );
 }
 
+#[test]
+#[should_panic(expected = "Cannot create new repository. Storage root must be empty")]
+fn fail_create_new_repo_when_repo_already_exists() {
+    run_s3_test(
+        "fail_create_new_repo_when_repo_already_exists",
+        |_s3_client: S3Client, prefix: String, staging: TempDir, _temp: TempDir| {
+            let _ = default_repo(&prefix, staging.path());
+            let _ = default_repo(&prefix, staging.path());
+        },
+    );
+}
+
+#[test]
+fn create_new_object() {
+    run_s3_test(
+        "create_new_object",
+        |s3_client: S3Client, prefix: String, staging: TempDir, temp: TempDir| {
+            let repo = default_repo(&prefix, staging.path());
+            let object_id = "s3-object";
+
+            repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+                .unwrap();
+            repo.copy_files_external(
+                object_id,
+                &vec![create_file(&temp, "test.txt", "testing").path()],
+                "/",
+                false,
+            )
+            .unwrap();
+            repo.commit(object_id, CommitMeta::new(), None, false)
+                .unwrap();
+
+            let object = repo.get_object(object_id, None).unwrap();
+
+            assert_eq!(1, object.state.len());
+
+            assert_file_details(
+                &s3_client,
+                object.state.get(&path("test.txt")).unwrap(),
+                &object.object_root,
+                "v1/content/test.txt",
+                "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
+            );
+        },
+    );
+}
+
+// TODO create object already exists
+// TODO create and update object
+// TODO update object out of sync
+// TODO purge object
+// TODO purge object not exists
+
 /// Runs the test if the environment is configured to run S3 tests, and removes all resources
 /// created during the test run, regardless of the test's outcome.
 fn run_s3_test(name: &str, test: impl FnOnce(S3Client, String, TempDir, TempDir) + UnwindSafe) {
@@ -84,11 +145,17 @@ fn run_s3_test(name: &str, test: impl FnOnce(S3Client, String, TempDir, TempDir)
     let result = panic::catch_unwind(|| test(S3Client::new(REGION), prefix.clone(), staging, temp));
 
     if let Err(e) = panic::catch_unwind(|| delete_all(&S3Client::new(REGION), &prefix)) {
-        eprintln!("Failed to cleanup test {}: {:?}", name, e);
+        let s = e
+            .downcast()
+            .unwrap_or_else(|e| Box::new(format!("{:?}", e)));
+        eprintln!("Failed to cleanup test {}: {}", name, s);
     }
 
     if let Err(e) = result {
-        panic!("Test {} failed: {:?}", name, e);
+        let s = e
+            .downcast()
+            .unwrap_or_else(|e| Box::new(format!("{:?}", e)));
+        panic!("Test {} failed: {}", name, s);
     }
 }
 
@@ -108,6 +175,32 @@ fn should_ignore_test() -> bool {
     };
 
     !has_creds || env::var(BUCKET_VAR).is_err()
+}
+
+fn assert_file_details(
+    s3_client: &S3Client,
+    actual: &FileDetails,
+    object_root: &str,
+    content_path: &str,
+    digest: &str,
+) {
+    assert_eq!(path_rc(content_path), actual.content_path);
+    assert_eq!(
+        format!("{}/{}", object_root, content_path),
+        actual.storage_path
+    );
+    if digest.len() == 64 {
+        assert_eq!(
+            digest,
+            file_digest(s3_client, &actual.storage_path, DigestAlgorithm::Sha256).as_str()
+        )
+    } else {
+        assert_eq!(
+            digest,
+            file_digest(s3_client, &actual.storage_path, DigestAlgorithm::Sha512).as_str()
+        )
+    }
+    assert_eq!(Rc::new(digest.into()), actual.digest);
 }
 
 fn assert_file_exists(s3_client: &S3Client, root: &str, path: &str) {
@@ -162,6 +255,14 @@ fn get_content_with_key(s3_client: &S3Client, key: &str) -> String {
 
         String::from_utf8(content).unwrap()
     })
+}
+
+fn file_digest(s3_client: &S3Client, key: &str, algorithm: DigestAlgorithm) -> String {
+    let content = get_content_with_key(s3_client, key);
+    algorithm
+        .hash_hex(&mut content.as_bytes())
+        .unwrap()
+        .to_string()
 }
 
 fn delete_all(s3_client: &S3Client, root: &str) {
@@ -259,4 +360,12 @@ fn read_spec(name: &str) -> String {
     path.push("specs");
     path.push(name);
     fs::read_to_string(path).unwrap()
+}
+
+fn path(path: &str) -> InventoryPath {
+    InventoryPath::try_from(path).unwrap()
+}
+
+fn path_rc(path: &str) -> Rc<InventoryPath> {
+    Rc::new(InventoryPath::try_from(path).unwrap())
 }
