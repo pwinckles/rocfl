@@ -36,6 +36,7 @@ use crate::ocfl::{paths, specs, util, InventoryPath, LayoutExtensionName, Versio
 const TYPE_PLAIN: &str = "text/plain; charset=UTF-8";
 const TYPE_MARKDOWN: &str = "text/markdown; charset=UTF-8";
 const TYPE_JSON: &str = "application/json; charset=UTF-8";
+const ROOT_NAMASTE_CONTENT: &str = "ocfl_1.0\n";
 
 const PART_SIZE: u64 = 1024 * 1024 * 5;
 
@@ -994,7 +995,7 @@ fn init_new_repo(s3_client: &S3Client, layout: Option<&StorageLayout>) -> Result
 
     s3_client.put_object_bytes(
         REPO_NAMASTE_FILE,
-        Bytes::from(OCFL_VERSION.as_bytes()),
+        Bytes::from(ROOT_NAMASTE_CONTENT.as_bytes()),
         Some(TYPE_PLAIN),
     )?;
 

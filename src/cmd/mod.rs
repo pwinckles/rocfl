@@ -296,7 +296,11 @@ fn edit_config() -> Result<()> {
             if !config_path.exists() {
                 fs::create_dir_all(config_path.parent().unwrap())?;
                 let mut file = fs::File::create(&config_path)?;
-                write!(file, "{}", include_str!("../../resources/main/files/config.toml"))?;
+                write!(
+                    file,
+                    "{}",
+                    include_str!("../../resources/main/files/config.toml")
+                )?;
             }
 
             edit::edit_file(&config_path)?;
