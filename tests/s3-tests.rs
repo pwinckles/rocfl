@@ -1,27 +1,29 @@
+// TODO fix this so the tests can be run in parallel
 //! These tests **MUST** be run sequentially with `cargo test -- --test-threads=1` because of
 //! https://github.com/hyperium/hyper/issues/2112
 #![cfg(feature = "s3")]
 
-use std::convert::TryFrom;
 use std::panic::UnwindSafe;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::{env, fs, panic};
 
-use assert_fs::fixture::ChildPath;
 use assert_fs::prelude::*;
 use assert_fs::TempDir;
+use common::*;
 use fs_extra::dir::CopyOptions;
 use rand::Rng;
 use rocfl::ocfl::{
-    CommitMeta, DigestAlgorithm, FileDetails, InventoryPath, LayoutExtensionName, OcflRepo,
-    RocflError, StorageLayout, VersionNum,
+    CommitMeta, DigestAlgorithm, FileDetails, LayoutExtensionName, OcflRepo, RocflError,
+    StorageLayout, VersionNum,
 };
 use rusoto_core::Region;
 use rusoto_s3::{
     DeleteObjectRequest, GetObjectRequest, HeadObjectRequest, ListObjectsV2Request, S3Client, S3,
 };
 use tokio::io::AsyncReadExt;
+
+mod common;
 
 const BUCKET_VAR: &str = "OCFL_TEST_S3_BUCKET";
 const ACCESS_VAR: &str = "AWS_ACCESS_KEY_ID";
@@ -588,29 +590,6 @@ fn bucket() -> String {
     env::var(BUCKET_VAR).unwrap()
 }
 
-fn create_dirs(temp: &TempDir, path: &str) -> ChildPath {
-    let child = resolve_child(temp, path);
-    child.create_dir_all().unwrap();
-    child
-}
-
-fn create_file(temp: &TempDir, path: &str, content: &str) -> ChildPath {
-    let child = resolve_child(temp, path);
-    child.write_str(content).unwrap();
-    child
-}
-
-fn resolve_child(temp: &TempDir, path: &str) -> ChildPath {
-    let mut child: Option<ChildPath> = None;
-    for part in path.split('/') {
-        child = match child {
-            Some(child) => Some(child.child(part)),
-            None => Some(temp.child(part)),
-        };
-    }
-    child.unwrap()
-}
-
 fn read_spec(name: &str) -> String {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("resources");
@@ -618,12 +597,4 @@ fn read_spec(name: &str) -> String {
     path.push("specs");
     path.push(name);
     fs::read_to_string(path).unwrap()
-}
-
-fn path(path: &str) -> InventoryPath {
-    InventoryPath::try_from(path).unwrap()
-}
-
-fn path_rc(path: &str) -> Rc<InventoryPath> {
-    Rc::new(InventoryPath::try_from(path).unwrap())
 }

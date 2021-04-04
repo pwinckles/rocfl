@@ -1,13 +1,13 @@
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 use std::fs;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use assert_fs::fixture::ChildPath;
 use assert_fs::prelude::*;
 use assert_fs::TempDir;
 use chrono::{DateTime, Local, TimeZone};
+use common::*;
 use fs_extra::dir::CopyOptions;
 use maplit::hashmap;
 use rocfl::ocfl::{
@@ -15,6 +15,8 @@ use rocfl::ocfl::{
     ObjectVersion, ObjectVersionDetails, OcflRepo, Result, RocflError, StorageLayout,
     VersionDetails, VersionNum,
 };
+
+mod common;
 
 #[test]
 fn list_all_objects() -> Result<()> {
@@ -4310,8 +4312,6 @@ fn create_and_update_object_in_repo_with_no_layout() {
 // TODO commit on tampered staged version
 // TODO object in root has wrong id
 
-// TODO add cli sanity tests
-
 // TODO validate all test created inventories after adding validation API
 
 // TODO When version rewrite is implemented it is no longer safe to assume that logical paths
@@ -4434,29 +4434,6 @@ fn assert_layout_extension(root: &TempDir, layout_name: &str, config: &str) {
         .child("config.json")
         .assert(predicates::path::is_file())
         .assert(config);
-}
-
-fn create_dirs(temp: &TempDir, path: &str) -> ChildPath {
-    let child = resolve_child(temp, path);
-    child.create_dir_all().unwrap();
-    child
-}
-
-fn create_file(temp: &TempDir, path: &str, content: &str) -> ChildPath {
-    let child = resolve_child(temp, path);
-    child.write_str(content).unwrap();
-    child
-}
-
-fn resolve_child(temp: &TempDir, path: &str) -> ChildPath {
-    let mut child: Option<ChildPath> = None;
-    for part in path.split('/') {
-        child = match child {
-            Some(child) => Some(child.child(part)),
-            None => Some(temp.child(part)),
-        };
-    }
-    child.unwrap()
 }
 
 fn create_simple_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
@@ -4660,14 +4637,6 @@ fn sort_obj_details(objects: &mut Vec<ObjectVersionDetails>) {
 
 fn sort_diffs(diffs: &mut Vec<Diff>) {
     diffs.sort_unstable_by(|a, b| a.path().cmp(&b.path()))
-}
-
-fn path(path: &str) -> InventoryPath {
-    InventoryPath::try_from(path).unwrap()
-}
-
-fn path_rc(path: &str) -> Rc<InventoryPath> {
-    Rc::new(InventoryPath::try_from(path).unwrap())
 }
 
 fn join(base: impl AsRef<Path>, parts: &[impl AsRef<Path>]) -> PathBuf {
