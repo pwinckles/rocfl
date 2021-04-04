@@ -1,5 +1,6 @@
 //! These tests **MUST** be run sequentially with `cargo test -- --test-threads=1` because of
 //! https://github.com/hyperium/hyper/issues/2112
+#![cfg(feature = "s3")]
 
 use std::convert::TryFrom;
 use std::panic::UnwindSafe;

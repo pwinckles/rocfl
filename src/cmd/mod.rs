@@ -12,8 +12,6 @@ use rusoto_core::Region;
 
 use crate::cmd::opts::*;
 use crate::config::{self, Config};
-#[cfg(not(feature = "s3"))]
-use crate::ocfl::RocflError;
 use crate::ocfl::{LayoutExtensionName, OcflRepo, Result, RocflError, StorageLayout};
 
 mod cmds;
