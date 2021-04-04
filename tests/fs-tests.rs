@@ -4311,7 +4311,6 @@ fn create_and_update_object_in_repo_with_no_layout() {
 // TODO object in root has wrong id
 
 // TODO add cli sanity tests
-// TODO add s3 sanity tests
 
 // TODO validate all test created inventories after adding validation API
 
