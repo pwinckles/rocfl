@@ -4309,8 +4309,43 @@ fn create_and_update_object_in_repo_with_no_layout() {
     );
 }
 
+#[test]
+#[should_panic(expected = "Expected object to exist at")]
+fn fail_when_incorrect_object_in_root() {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = OcflRepo::init_fs_repo(
+        root.path(),
+        None,
+        Some(StorageLayout::new(LayoutExtensionName::FlatDirectLayout, None).unwrap()),
+    )
+    .unwrap();
+
+    let object_id_1 = "original";
+    let object_id_2 = "different";
+
+    repo.create_object(object_id_1, DigestAlgorithm::Sha256, "content", 0)
+        .unwrap();
+    repo.move_files_external(
+        object_id_1,
+        &vec![create_file(&temp, "file1.txt", "one").path()],
+        "/",
+    )
+    .unwrap();
+    repo.commit(object_id_1, CommitMeta::new(), None, false)
+        .unwrap();
+
+    fs::rename(
+        resolve_child(&root, object_id_1).path(),
+        resolve_child(&root, object_id_2).path(),
+    )
+    .unwrap();
+
+    repo.get_object(object_id_2, None).unwrap();
+}
+
 // TODO commit on tampered staged version
-// TODO object in root has wrong id
 
 // TODO validate all test created inventories after adding validation API
 

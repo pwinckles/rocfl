@@ -150,7 +150,20 @@ impl S3OcflStore {
 
     fn parse_inventory_required(&self, object_id: &str, object_root: &str) -> Result<Inventory> {
         match self.parse_inventory(object_root)? {
-            Some(inventory) => Ok(inventory),
+            Some(inventory) => {
+                if inventory.id != object_id {
+                    Err(RocflError::CorruptObject {
+                        object_id: object_id.to_string(),
+                        message: format!(
+                            "Expected object to exist at {} but found object {} instead.",
+                            object_root,
+                            inventory.id
+                        ),
+                    })
+                } else {
+                    Ok(inventory)
+                }
+            }
             None => Err(not_found(object_id, None)),
         }
     }
