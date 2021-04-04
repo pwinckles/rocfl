@@ -10,10 +10,11 @@ use std::{env, fs, panic};
 use assert_fs::fixture::ChildPath;
 use assert_fs::prelude::*;
 use assert_fs::TempDir;
+use fs_extra::dir::CopyOptions;
 use rand::Rng;
 use rocfl::ocfl::{
     CommitMeta, DigestAlgorithm, FileDetails, InventoryPath, LayoutExtensionName, OcflRepo,
-    StorageLayout,
+    RocflError, StorageLayout, VersionNum,
 };
 use rusoto_core::Region;
 use rusoto_s3::{
@@ -124,11 +125,267 @@ fn create_new_object() {
     );
 }
 
-// TODO create object already exists
-// TODO create and update object
-// TODO update object out of sync
-// TODO purge object
-// TODO purge object not exists
+#[test]
+#[should_panic(expected = "Cannot create object s3-object because it already exists")]
+fn fail_create_new_object_when_already_exists() {
+    run_s3_test(
+        "fail_create_new_object_when_already_exists",
+        |_s3_client: S3Client, prefix: String, staging: TempDir, temp: TempDir| {
+            let repo = default_repo(&prefix, staging.path());
+            let object_id = "s3-object";
+
+            repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+                .unwrap();
+            repo.copy_files_external(
+                object_id,
+                &vec![create_file(&temp, "test.txt", "testing").path()],
+                "/",
+                false,
+            )
+            .unwrap();
+            repo.commit(object_id, CommitMeta::new(), None, false)
+                .unwrap();
+
+            repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+                .unwrap();
+        },
+    );
+}
+
+#[test]
+fn create_and_update_object() {
+    run_s3_test(
+        "create_and_update_object",
+        |s3_client: S3Client, prefix: String, staging: TempDir, temp: TempDir| {
+            let repo = default_repo(&prefix, staging.path());
+            let object_id = "s3-object";
+
+            repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+                .unwrap();
+
+            create_dirs(&temp, "a/b/c");
+            create_dirs(&temp, "a/d/e");
+            create_dirs(&temp, "a/f");
+
+            create_file(&temp, "a/file1.txt", "File One");
+            create_file(&temp, "a/b/file2.txt", "File Two");
+            create_file(&temp, "a/b/file3.txt", "File Three");
+            create_file(&temp, "a/b/c/file4.txt", "File Four");
+            create_file(&temp, "a/d/e/file5.txt", "File Five");
+            create_file(&temp, "a/f/file6.txt", "File Six");
+
+            repo.move_files_external(object_id, &vec![temp.child("a").path()], "/")
+                .unwrap();
+
+            repo.commit(object_id, CommitMeta::new(), None, false)
+                .unwrap();
+
+            repo.remove_files(object_id, &vec!["a/b/file3.txt", "a/b/c/file4.txt"], false)
+                .unwrap();
+
+            repo.commit(object_id, CommitMeta::new(), None, false)
+                .unwrap();
+
+            repo.copy_files_internal(
+                object_id,
+                Some(VersionNum::new(1)),
+                &vec!["a/b/file3.txt"],
+                "/",
+                false,
+            )
+            .unwrap();
+            repo.copy_files_internal(
+                object_id,
+                Some(VersionNum::new(1)),
+                &vec!["a/file1.txt"],
+                "something/file1.txt",
+                false,
+            )
+            .unwrap();
+
+            create_dirs(&temp, "something");
+
+            repo.copy_files_external(
+                object_id,
+                &vec![create_file(&temp, "something/new.txt", "NEW").path()],
+                "something/new.txt",
+                true,
+            )
+            .unwrap();
+
+            repo.commit(object_id, CommitMeta::new(), None, false)
+                .unwrap();
+
+            repo.copy_files_external(
+                object_id,
+                &vec![create_file(&temp, "file6.txt", "UPDATED!").path()],
+                "a/f/file6.txt",
+                true,
+            )
+            .unwrap();
+
+            repo.move_files_internal(object_id, &vec!["a/d/e/file5.txt"], "a/file5.txt")
+                .unwrap();
+
+            repo.commit(object_id, CommitMeta::new(), None, false)
+                .unwrap();
+
+            let object = repo.get_object(object_id, None).unwrap();
+
+            assert_eq!(7, object.state.len());
+
+            assert_file_details(
+                &s3_client,
+                object.state.get(&path("file3.txt")).unwrap(),
+                &object.object_root,
+                "v1/content/a/b/file3.txt",
+                "e18fad97c1b6512b1588a1fa2b7f9a0e549df9cfc538ce6943b4f0f4ae78322c",
+            );
+            assert_file_details(
+                &s3_client,
+                object.state.get(&path("a/file1.txt")).unwrap(),
+                &object.object_root,
+                "v1/content/a/file1.txt",
+                "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
+            );
+            assert_file_details(
+                &s3_client,
+                object.state.get(&path("a/file5.txt")).unwrap(),
+                &object.object_root,
+                "v1/content/a/d/e/file5.txt",
+                "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
+            );
+            assert_file_details(
+                &s3_client,
+                object.state.get(&path("a/b/file2.txt")).unwrap(),
+                &object.object_root,
+                "v1/content/a/b/file2.txt",
+                "b47592b10bc3e5c8ca8703d0862df10a6e409f43478804f93a08dd1844ae81b6",
+            );
+            assert_file_details(
+                &s3_client,
+                object.state.get(&path("a/f/file6.txt")).unwrap(),
+                &object.object_root,
+                "v4/content/a/f/file6.txt",
+                "df21fb2fb83c1c64015a00e7677ccceb8da5377cba716611570230fb91d32bc9",
+            );
+            assert_file_details(
+                &s3_client,
+                object.state.get(&path("something/file1.txt")).unwrap(),
+                &object.object_root,
+                "v1/content/a/file1.txt",
+                "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
+            );
+            assert_file_details(
+                &s3_client,
+                object.state.get(&path("something/new.txt")).unwrap(),
+                &object.object_root,
+                "v3/content/something/new.txt",
+                "a253ff09c5a8678e1fd1962b2c329245e139e45f9cc6ced4e5d7ad42c4108fc0",
+            );
+        },
+    );
+}
+
+#[test]
+fn purge_object() {
+    run_s3_test(
+        "purge_object",
+        |_s3_client: S3Client, prefix: String, staging: TempDir, temp: TempDir| {
+            let repo = default_repo(&prefix, staging.path());
+            let object_id = "s3-object-purge";
+
+            repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+                .unwrap();
+            repo.copy_files_external(
+                object_id,
+                &vec![create_file(&temp, "test.txt", "testing").path()],
+                "/",
+                false,
+            )
+            .unwrap();
+            repo.commit(object_id, CommitMeta::new(), None, false)
+                .unwrap();
+
+            let _ = repo.get_object(object_id, None).unwrap();
+
+            repo.purge_object(object_id).unwrap();
+
+            match repo.get_object(object_id, None) {
+                Err(RocflError::NotFound(_)) => (),
+                _ => panic!("Expected {} to not be found.", object_id),
+            }
+        },
+    );
+}
+
+#[test]
+fn purge_object_when_not_exists() {
+    run_s3_test(
+        "purge_object_when_not_exists",
+        |_s3_client: S3Client, prefix: String, staging: TempDir, _temp: TempDir| {
+            let repo = default_repo(&prefix, staging.path());
+            let object_id = "s3-object-purge";
+            repo.purge_object(object_id).unwrap();
+        },
+    );
+}
+
+#[test]
+#[should_panic(
+    expected = "Cannot create version v2 in object out-of-sync because the HEAD is at v2"
+)]
+fn fail_commit_when_out_of_sync() {
+    run_s3_test(
+        "fail_commit_when_out_of_sync",
+        |_s3_client: S3Client, prefix: String, staging: TempDir, temp: TempDir| {
+            let repo = default_repo(&prefix, staging.path());
+            let object_id = "out-of-sync";
+            let id_hash = "46acfc156ff00023c6ff7c5cfc923eaf43123f63dd558579e90293f0eba1e574";
+
+            repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+                .unwrap();
+            repo.move_files_external(
+                object_id,
+                &vec![create_file(&temp, "test.txt", "testing").path()],
+                "/",
+            )
+            .unwrap();
+            repo.commit(object_id, CommitMeta::new(), None, false)
+                .unwrap();
+
+            repo.move_files_external(
+                object_id,
+                &vec![create_file(&temp, "test2.txt", "testing 2").path()],
+                "/",
+            )
+            .unwrap();
+
+            let staged = repo.get_staged_object(object_id).unwrap();
+            let staged_root = PathBuf::from(&staged.object_root);
+
+            let mut options = CopyOptions::new();
+            options.copy_inside = true;
+
+            fs_extra::dir::copy(&staged_root, temp.path(), &options).unwrap();
+
+            repo.commit(object_id, CommitMeta::new(), None, false)
+                .unwrap();
+
+            fs_extra::dir::copy(temp.child(id_hash).path(), &staged_root, &options).unwrap();
+
+            repo.move_files_external(
+                object_id,
+                &vec![create_file(&temp, "b-file.txt", "another").path()],
+                "/",
+            )
+            .unwrap();
+
+            repo.commit(object_id, CommitMeta::new(), None, false)
+                .unwrap();
+        },
+    );
+}
 
 /// Runs the test if the environment is configured to run S3 tests, and removes all resources
 /// created during the test run, regardless of the test's outcome.
