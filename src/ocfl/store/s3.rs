@@ -156,8 +156,7 @@ impl S3OcflStore {
                         object_id: object_id.to_string(),
                         message: format!(
                             "Expected object to exist at {} but found object {} instead.",
-                            object_root,
-                            inventory.id
+                            object_root, inventory.id
                         ),
                     })
                 } else {

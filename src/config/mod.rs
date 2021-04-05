@@ -24,7 +24,7 @@ pub struct Config {
 }
 
 impl Config {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             name: None,
             address: None,
@@ -34,6 +34,24 @@ impl Config {
             bucket: None,
             endpoint: None,
         }
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        if self.bucket.is_some() {
+            if self.region.is_none() {
+                return Err(RocflError::InvalidConfiguration(
+                    "Region must be specified when using S3".to_string(),
+                ));
+            }
+        } else if self.region.is_some() || self.endpoint.is_some() {
+            return Err(RocflError::InvalidConfiguration(
+                "Region and endpoint should not be set when not using S3. \
+                If you intended to use S3, then you must specify a bucket."
+                    .to_string(),
+            ));
+        }
+
+        Ok(())
     }
 }
 
