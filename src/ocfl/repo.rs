@@ -817,6 +817,8 @@ impl OcflRepo {
 
         let duplicates = inventory.dedup_head();
 
+        // TODO validate staged version before committing
+
         inventory.head_version_mut().update_meta(meta);
 
         staging.stage_inventory(&inventory, true, pretty_print)?;

@@ -2,65 +2,133 @@
 
 ![build](https://github.com/pwinckles/rocfl/workflows/build/badge.svg)
 
-`rocfl` is a command line utility for interrogating
-[OCFL](https://ocfl.io/) repositories. It is able to interact with
-OCFL repositories on the local filesystem or in S3, but only supports
-read operations.
+`rocfl` is a command line utility for interacting with
+[OCFL](https://ocfl.io/) repositories on the local filesystem or in
+S3.
 
-You can either download a pre-built binary from the [releases
-page](https://github.com/pwinckles/rocfl/releases), or build your own
-copy locally.
+## Extension Support
 
-## Local Build
+`rocfl` supports the following extensions:
 
-1. Install [Rust](https://www.rust-lang.org/tools/install), and make
-   sure `cargo` is on your `PATH`
-1. Execute: `cargo install rocfl`
-1. Verify the install: `rocfl help`
-
-If you want to build a binary that does not include the code for
-integrating with S3, which adds a large number of dependencies, then
-you can do so by running: `cargo install rocfl --no-default-features`.
-
-## Usage
-
-`rocfl` is intended to be run from within an OCFL repository's storage
-root. It can be run outside of a storage root by specifying the
-repository root using the `--root` option.
-
-Listing all of the objects in large repositories is a slow operation
-because the entire repository must be crawled to identify objects.
-However, listing the contents of individual objects is fast, so long
-as the OCFL repository contains an
-[ocfl_layout.json](https://ocfl.io/1.0/spec/#root-structure) file that
-defines the layout of the repository using an implemented [OCFL
-storage layout extension](https://ocfl.github.io/extensions/). `rocfl`
-supports the following layout extensions:
-
+- [0001-digest-algorithms](https://ocfl.github.io/extensions/0001-digest-algorithms.html)
 - [0002-flat-direct-storage-layout](https://ocfl.github.io/extensions/0002-flat-direct-storage-layout.html)
 - [0003-hash-and-id-n-tuple-storage-layout](https://ocfl.github.io/extensions/0003-hash-and-id-n-tuple-storage-layout.html)
 - [0004-hashed-n-tuple-storage-layout](https://ocfl.github.io/extensions/0004-hashed-n-tuple-storage-layout.html)
+- [0005-mutable-head](https://ocfl.github.io/extensions/0005-mutable-head.html):
+  Only read is supported; not write.
 
-If a repository does not define a storage layout, or it uses an
-unimplemented layout, then `rocfl` must scan the repository to locate
-a request object. While the scan does take significantly longer than
-accessing the object directly, it is still fairly fast in small to
-medium sized repositories.
+Additionally, it uses the following extensions for write support that
+have not been specified:
+
+- `rocfl-staging`: By default, new object versions are staged in this
+  extension's directory the contents of which are an OCFL repository.
+- `rocfl-locks`: This extension contains object file locks to provide
+  limited concurrent modification protection.
+
+## Install
+
+The [releases page](https://github.com/pwinckles/rocfl/releases) has
+pre-built binaries that should work on most common OSes and
+architectures. You do not need to install Rust to use them. Simply
+download the appropriate binary, rename it to `rocfl`, and execute
+`./rocfl help`.
+
+### Local Build
+
+Alternatively, you can build `rocfl` from source as follows:
+
+1. Install [Rust](https://www.rust-lang.org/tools/install), and make
+   sure `cargo` is on your `PATH`
+2. Execute: `cargo install rocfl`
+3. Verify the install: `rocfl help`
+
+If you want to build a binary that does not include the S3
+integration, which adds a large number of dependencies, then you can
+do so by running: `cargo install rocfl --no-default-features`.
+
+## Configuration
+
+`rocfl` supports optional configuration that makes it less verbose to
+use. `rocfl` expects to find its configuration file in the following,
+OS dependent location:
+
+- **Linux**: `$HOME/.config/rocfl/config.toml`
+- **Mac**: `$HOME/Library/Application
+  Support/org.rocfl.rocfl/config.toml`
+- **Windows**:
+  `{FOLDERID_RoamingAppData}/rocfl/rocfl/config/config.toml`
+  
+You can easily edit the configuration by executing `rocfl config`,
+which will create/open the config file for editing.
+
+The config file may contain any number of sections structured as
+follows:
+
+``` toml
+[repo-name]
+# The name to attribute new OCFL versions to
+name = "My Name"
+# The URI address to associate with the above name
+address = "mailto:name@example.com"
+# The absolute path to the OCFL storage root
+root = "/path/to/storage/root"
+# The absolute path to the OCFL staging root
+staging_root = "/path/to/staging/root"
+
+# The next the properties only apply when using S3
+# The AWS region your bucket is in
+region = "aws-region"
+# The URL to the S3 endpoint. This is only needed if you are using a
+non-standard region
+endpoint = "https://s3-endpoint"
+# The S3 bucket the OCFL repository is in
+bucket = "s3-bucket"
+```
+
+In this example, `repo-name` is the arbitrary name assigned the
+configuration. This is the value that you pass `rocfl` when invoked
+with the `--name` option.
+
+A special `[global]` section may be used to provide default values
+across all configurations. This is primarily useful for defining
+`name` and `address`.
+
+All of these properties correspond to values that can be specified in
+arguments to `rocfl`. `rocfl` resolves the configuration by first
+loading the `global` config, then overlays the repository specific
+config, and finally applies any values specified directly as command
+line arguments.
+
+Refer to the command line argument documentation for more information
+on the configuration properties.
+
+## Usage
 
 The following is an overview of the features that `rocfl` supports.
 For a detailed description of all of the options available, consult
 the builtin help by executing `rocfl help` or `rocfl help <COMMAND>`.
 
-### List
+### Global Options
 
-The `ls` operation can be used to either list all of the objects in a
-repository or list all of the files in an OCFL object. When listing
-files, only files in the HEAD object state are returned. Previous
-versions can be queried with the `-v` option.
+### Read Commands
 
-#### Examples
+#### List
 
-##### Listing Objects
+The `ls` command can be used to either list the objects in a
+repository or list the files in an OCFL object.
+
+`rocfl` must scan the repository to locate objects. This can be slow
+when operating on large repositories. The scan can be avoided when
+listing an object's contents if the repository uses a supported
+storage layout extension that is defined in the repositories
+`ocfl_layout.json`
+
+When listing files, only files in the most recent version are
+returned. Previous versions can be queried with the `-v` option.
+
+##### Examples
+
+###### Listing Objects
 
 The following command lists all of the object IDs in a repository
 that's rooted in the current working directory:
@@ -87,10 +155,10 @@ A subset of objects can be listed by providing a glob pattern to match
 on:
 
 ```console
-rocfl ls -lo foo*
+rocfl ls -lo 'foo*'
 ```
 
-##### Listing Object Contents
+###### Listing Object Contents
 
 The contents of an object's current state are displayed by invoking
 `ls` on a specific object ID:
@@ -133,17 +201,25 @@ The output is sorted by name by default, but can also be sorted
 version or updated date:
 
 ```console
-rocfl ls -lsversion foobar
+rocfl ls -l -s version foobar
 ```
 
-### Log
+Paths within in an object can be interpreted as containing logical
+directories by using the `-D` flag. For example, the following will
+list the logical files and logical directories that are direct
+children of the logical directory `sub/dir`:
 
-The `log` operation displays the version metadata for all versions of
-an object. It can also be executed on a file within an object, in
-which case only versions that affected the specified file are
-displayed.
+``` console
+rocfl ls -D foobar sub/dir
+```
 
-#### Examples
+#### Log
+
+The `log` command displays the version metadata for all versions of an
+object. It can also be executed on a file within an object, in which
+case only versions that affected the specified file are displayed.
+
+##### Examples
 
 Show all of the versions of an object in ascending order:
 
@@ -170,13 +246,13 @@ Show all of the versions that affected a specific file:
 rocfl log foobar file1.txt
 ```
 
-### Show
+#### Show
 
-The `show` operation displays everything that changed in an object
+The `show` command displays everything that changed in an object
 within a specific version. If no version is specified, the most recent
 changes are shown.
 
-#### Examples
+##### Examples
 
 Show the changes in the most recent version:
 
@@ -196,12 +272,12 @@ Don't show the version metadata; only show the files that changed:
 rocfl show -m foobar
 ```
 
-### Diff
+#### Diff
 
-The `diff` operation displays the files that changed between two
+The `diff` command displays the files that changed between two
 specific versions.
 
-#### Example
+##### Example
 
 Show the changes between the second and fourth versions:
 
@@ -209,11 +285,11 @@ Show the changes between the second and fourth versions:
 rocfl diff v2 v4
 ```
 
-### Cat
+#### Cat
 
-The `cat` operation writes the contents of a file to `stdout`.
+The `cat` command writes the contents of a file to `stdout`.
 
-#### Examples
+##### Examples
 
 Display the contents of the head version of a file:
 
@@ -227,11 +303,31 @@ Display the contents of a file from a specific version of the object:
 rocfl cat -v1 foobar file1.txt
 ```
 
+### Write Commands
+
+#### Init
+
+#### New
+
+#### Copy
+
+#### Move
+
+#### Remove
+
+#### Reset
+
+#### Commit
+
+#### Status
+
+#### Purge
+
 ## S3
 
-In order to interrogate a repository located in S3, you first need to
-create an IAM user with access to S3, and then setup a local
-`~/.aws/credentials` file as [described
+To connect to an OCFL repository in S3, you first need to create an
+IAM user with access to the S3 bucket, and then setup a local
+`~/.aws/credentials` file or environment variables as [described
 here](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html).
 Then, when you invoke `rocfl` you must specify the bucket the
 repository is in as well as the bucket region. For example:
@@ -245,6 +341,14 @@ rooted in within the bucket like this:
 
 ```console
 rocfl -R us-east-2 -b example-ocfl-repo -r ocfl-root ls
+```
+
+Alternatively, you can define all of this configuration in `rocfl`'s
+[config file](#configuration), and invoke `rocfl` using the
+configuration `NAME` as follows:
+
+``` console
+rocfl -n NAME ls
 ```
 
 ## Roadmap
