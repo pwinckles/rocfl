@@ -303,15 +303,17 @@ rocfl cat -v1 uri:foobar file1.txt
 #### Status
 
 The `status` command shows objects that have staged changes pending
-commit, as well as what the pending changes are.
+commit, as well as what an object's pending changes are.
 
-The following lists all of the objects with staged changes:
+##### Examples
+
+List all of the objects with staged changes:
 
 ``` console
 rocfl status
 ```
 
-And this describes what the changes are to a specific object:
+List all of the file level changes to an object:
 
 ``` console
 rocfl status uri:foobar
@@ -333,8 +335,11 @@ OCFL version.
 
 #### Init
 
-The `init` command creates new OCFL repositories. The following
-command creates a new repository using the default layout,
+The `init` command creates new OCFL repositories.
+
+##### Examples
+
+Create a new repository using the default layout,
 [0004-hashed-n-tuple-storage-layout](https://ocfl.github.io/extensions/0004-hashed-n-tuple-storage-layout.html):
 
 ``` console
@@ -351,10 +356,14 @@ my-config.json
 
 #### New
 
-The `new` command stages new OCFL objects. The objects will not exist
+The `new` command stages new OCFL objects. New objects will not exist
 in the main repository until they have been committed. When invoked
 with no options, the object is created using all of the OCFL spec
-recommend values. Otherwise, these values can be customized:
+recommend values.
+
+##### Examples
+
+Create a new object with non-standard settings:
 
 ``` console
 rocfl new uri:foobar -d sha256 -c data -z 6
@@ -367,26 +376,28 @@ staged object, or copies logical paths within an object to a new
 location within the same object. This command attempts to mimic the
 behavior of GNU `cp` as closely as possible.
 
-The following copies a directory into the object's root:
+##### Examples
+
+Copy a directory into the object's root:
 
 ``` console
 rocfl cp -r uri:foobar /path/to/src -- /
 ```
 
-This copies several files into a logical directory within the object:
+Copy several files into a logical directory within the object:
 
 ``` console
 rocfl cp uri:foobar /path/to/files/* -- sub/dir
 ```
 
-Here an existing file is internally copied to a new location:
+Copy and existing file internally to a new location:
 
 ``` console
 rocfl cp -i uri:foobar internal/file.txt -- new/location.txt
 ```
 
-Finally, this copies an entire logical directory from an old version
-to a new location in the staged version:
+Copy an entire logical directory from an old version to a new location
+in the staged version:
 
 ``` console
 rocfl cp -ir -v2 uri:foobar src/dir -- dst/dir
@@ -399,19 +410,21 @@ object, or moves logical paths within an object to a new location
 within the same object. This command attempts to mimic the behavior of
 GNU `mv` as closely as possible.
 
-The following moves a directory into the object's root:
+##### Examples
+
+Move a directory into the object's root:
 
 ``` console
 rocfl mv uri:foobar /path/to/src -- /
 ```
 
-This moves several files into a logical directory within the object:
+Move several files into a logical directory within the object:
 
 ``` console
 rocfl mv uri:foobar /path/to/files/* -- sub/dir
 ```
 
-Here an existing file is internally moved to a new location:
+Move an existing file internally to a new location:
 
 ``` console
 rocfl mv -i uri:foobar internal/file.txt -- new/location.txt
@@ -425,13 +438,15 @@ will not appear anywhere in the object. Otherwise, references to the
 files are removed from the staged version, but the files still exist
 in prior versions.
 
-The following recursively removes a logical directory:
+##### Examples
+
+Recursively remove a logical directory:
 
 ``` console
 rocfl rm -r uri:foobar path/to/dir
 ```
 
-And this removes several individual files:
+Remove several individual files:
 
 ``` console
 rocfl rm uri:foobar path/to/file1.txt path/to/file2.txt
@@ -443,14 +458,16 @@ The `reset` command unstages changes made to an object. Additions are
 removed and files that were deleted or modified are reverted to their
 previous state.
 
-This resets a file to its previous state:
+##### Examples
+
+Reset a file to its previous state:
 
 ``` console
 rocfl reset uri:foobar file.txt
 ```
 
-And this resets an entire object to its previous state, removing all
-staged changes:
+Reset an entire object to its previous state, removing all staged
+changes:
 
 ``` console
 rocfl reset uri:foobar
@@ -461,7 +478,9 @@ rocfl reset uri:foobar
 The `commit` command moves an object's staged changes into the OCFL
 object as a new version.
 
-For example:
+##### Examples
+
+Commit changes to an object:
 
 ``` console
 rocfl commit uri:foobar -n "My Name" -a "mailto:me@example.com" -m "commit
@@ -475,7 +494,7 @@ configuration](#configuration). In which case, you can simply execute:
 rocfl commit uri:foobar -m "commit message"
 ```
 
-And your name and address will automatically be added to the version
+And your name and address will be automatically added to the version
 metadata.
 
 #### Purge
