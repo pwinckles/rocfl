@@ -4345,8 +4345,6 @@ fn fail_when_incorrect_object_in_root() {
     repo.get_object(object_id_2, None).unwrap();
 }
 
-// TODO commit on tampered staged version
-
 // TODO validate all test created inventories after adding validation API
 
 // TODO When version rewrite is implemented it is no longer safe to assume that logical paths
