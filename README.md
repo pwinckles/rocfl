@@ -78,8 +78,7 @@ staging_root = "/path/to/staging/root"
 # The next the properties only apply when using S3
 # The AWS region your bucket is in
 region = "aws-region"
-# The URL to the S3 endpoint. This is only needed if you are using a
-non-standard region
+# The URL to the S3 endpoint. This is only needed if you are using a non-standard region
 endpoint = "https://s3-endpoint"
 # The S3 bucket the OCFL repository is in
 bucket = "s3-bucket"
