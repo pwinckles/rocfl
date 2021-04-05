@@ -84,9 +84,9 @@ endpoint = "https://s3-endpoint"
 bucket = "s3-bucket"
 ```
 
-In this example, `repo-name` is the arbitrary name assigned the
-configuration. This is the value that you pass `rocfl` when invoked
-with the `--name` option.
+`repo-name` is the arbitrary name assigned to the configuration. This
+is the value that you pass `rocfl` when invoked with the `--name`
+option.
 
 A special `[global]` section may be used to provide default values
 across all configurations. This is primarily useful for defining
@@ -106,8 +106,6 @@ on the configuration properties.
 The following is an overview of the features that `rocfl` supports.
 For a detailed description of all of the options available, consult
 the builtin help by executing `rocfl help` or `rocfl help <COMMAND>`.
-
-### Global Options
 
 ### Read Commands
 
@@ -163,7 +161,7 @@ The contents of an object's current state are displayed by invoking
 `ls` on a specific object ID:
 
 ```console
-rocfl ls foobar
+rocfl ls uri:foobar
 ```
 
 With the `-l` flag, additional details are displayed. In this case,
@@ -171,14 +169,14 @@ the version and date indicate when the individual file was last
 updated:
 
 ```console
-rocfl ls -l foobar
+rocfl ls -l uri:foobar
 ```
 
 The `-p` flag can also be used here to display the paths to the
 physical files on disk relative the storage root:
 
 ```console
-rocfl ls -p foobar
+rocfl ls -p uri:foobar
 ```
 
 The contents of previous versions are displayed by using the `-v`
@@ -186,21 +184,21 @@ option. The following command displays the files that were in the
 first version of the object:
 
 ```console
-rocfl ls -v1 foobar
+rocfl ls -v1 uri:foobar
 ```
 
 An object's contents can be filtered by specifying a glob pattern to
 match on:
 
 ```console
-rocfl ls foobar '*.txt'
+rocfl ls uri:foobar '*.txt'
 ```
 
 The output is sorted by name by default, but can also be sorted
 version or updated date:
 
 ```console
-rocfl ls -l -s version foobar
+rocfl ls -l -s version uri:foobar
 ```
 
 Paths within in an object can be interpreted as containing logical
@@ -209,7 +207,7 @@ list the logical files and logical directories that are direct
 children of the logical directory `sub/dir`:
 
 ``` console
-rocfl ls -D foobar sub/dir
+rocfl ls -D uri:foobar sub/dir
 ```
 
 #### Log
@@ -223,26 +221,26 @@ case only versions that affected the specified file are displayed.
 Show all of the versions of an object in ascending order:
 
 ```console
-rocfl log foobar
+rocfl log uri:foobar
 ```
 
 Only display the five most recent versions:
 
 ```console
-rocfl log -rn5 foobar
+rocfl log -rn5 uri:foobar
 ```
 
 Show all of the versions, but formatted so each version is on a single
 line:
 
 ```console
-rocfl log -c foobar
+rocfl log -c uri:foobar
 ```
 
 Show all of the versions that affected a specific file:
 
 ```console
-rocfl log foobar file1.txt
+rocfl log uri:foobar file1.txt
 ```
 
 #### Show
@@ -256,19 +254,19 @@ changes are shown.
 Show the changes in the most recent version:
 
 ```console
-rocfl show foobar
+rocfl show uri:foobar
 ```
 
 Show the changes in the first version:
 
 ```console
-rocfl show foobar v1
+rocfl show uri:foobar v1
 ```
 
 Don't show the version metadata; only show the files that changed:
 
 ```console
-rocfl show -m foobar
+rocfl show -m uri:foobar
 ```
 
 #### Diff
@@ -293,36 +291,202 @@ The `cat` command writes the contents of a file to `stdout`.
 Display the contents of the head version of a file:
 
 ```console
-rocfl cat foobar file1.txt
+rocfl cat uri:foobar file1.txt
 ```
 
 Display the contents of a file from a specific version of the object:
 
 ```console
-rocfl cat -v1 foobar file1.txt
+rocfl cat -v1 uri:foobar file1.txt
 ```
-
-### Write Commands
-
-#### Init
-
-#### New
-
-#### Copy
-
-#### Move
-
-#### Remove
-
-#### Reset
-
-#### Commit
 
 #### Status
 
+The `status` command shows objects that have staged changes pending
+commit, as well as what the pending changes are.
+
+The following lists all of the objects with staged changes:
+
+``` console
+rocfl status
+```
+
+And this describes what the changes are to a specific object:
+
+``` console
+rocfl status uri:foobar
+```
+
+Staged changes can also be examined using the more featureful `ls`,
+`show`, and `cat` commands by adding the `-S` flag.
+
+### Write Commands
+
+`rocfl` supports updating OCFL objects by staging changes to objects
+in a local staging repository. For filesystem based repositories, the
+staging repository is located within the storage root's extensions
+directory, and for S3 it's in the user's home application data.
+
+The intended workflow is to accumulate a collection of updates to an
+object, and then commit all of the changes to the object a single new
+OCFL version.
+
+#### Init
+
+The `init` command creates new OCFL repositories. The following
+command creates a new repository using the default layout,
+[0004-hashed-n-tuple-storage-layout](https://ocfl.github.io/extensions/0004-hashed-n-tuple-storage-layout.html):
+
+``` console
+rocfl -r /var/tmp/ocfl-repo-1 init
+```
+
+The default layout configuration can be changed by passing a config
+file that contains the desired configuration:
+
+``` console
+rocfl -r /var/tmp/ocfl-repo-2 init -l HashedNTupleObjectId -c
+my-config.json
+```
+
+#### New
+
+The `new` command stages new OCFL objects. The objects will not exist
+in the main repository until they have been committed. When invoked
+with no options, the object is created using all of the OCFL spec
+recommend values. Otherwise, these values can be customized:
+
+``` console
+rocfl new uri:foobar -d sha256 -c data -z 6
+```
+
+#### Copy
+
+The `cp` command copies files from the local filesystem into a
+staged object, or copies logical paths within an object to a new
+location within the same object. This command attempts to mimic the
+behavior of GNU `cp` as closely as possible.
+
+The following copies a directory into the object's root:
+
+``` console
+rocfl cp -r uri:foobar /path/to/src -- /
+```
+
+This copies several files into a logical directory within the object:
+
+``` console
+rocfl cp uri:foobar /path/to/files/* -- sub/dir
+```
+
+Here an existing file is internally copied to a new location:
+
+``` console
+rocfl cp -i uri:foobar internal/file.txt -- new/location.txt
+```
+
+Finally, this copies an entire logical directory from an old version
+to a new location in the staged version:
+
+``` console
+rocfl cp -ir -v2 uri:foobar src/dir -- dst/dir
+```
+
+#### Move
+
+The `mv` command moves files from the local filesystem into a staged
+object, or moves logical paths within an object to a new location
+within the same object. This command attempts to mimic the behavior of
+GNU `mv` as closely as possible.
+
+The following moves a directory into the object's root:
+
+``` console
+rocfl mv uri:foobar /path/to/src -- /
+```
+
+This moves several files into a logical directory within the object:
+
+``` console
+rocfl mv uri:foobar /path/to/files/* -- sub/dir
+```
+
+Here an existing file is internally moved to a new location:
+
+``` console
+rocfl mv -i uri:foobar internal/file.txt -- new/location.txt
+```
+
+#### Remove
+
+The `rm` command removes files from an object. If the removed files
+are new to the staged version, then they are permanently removed and
+will not appear anywhere in the object. Otherwise, references to the
+files are removed from the staged version, but the files still exist
+in prior versions.
+
+The following recursively removes a logical directory:
+
+``` console
+rocfl rm -r uri:foobar path/to/dir
+```
+
+And this removes several individual files:
+
+``` console
+rocfl rm uri:foobar path/to/file1.txt path/to/file2.txt
+```
+
+#### Reset
+
+The `reset` command unstages changes made to an object. Additions are
+removed and files that were deleted or modified are reverted to their
+previous state.
+
+This resets a file to its previous state:
+
+``` console
+rocfl reset uri:foobar file.txt
+```
+
+And this resets an entire object to its previous state, removing all
+staged changes:
+
+``` console
+rocfl reset uri:foobar
+```
+
+#### Commit
+
+The `commit` command moves an object's staged changes into the OCFL
+object as a new version.
+
+For example:
+
+``` console
+rocfl commit uri:foobar -n "My Name" -a "mailto:me@example.com" -m "commit
+message"
+```
+
+This can be simplified if you define your name and address in [rocfl
+configuration](#configuration). In which case, you can simply execute:
+
+``` console
+rocfl commit uri:foobar -m "commit message"
+```
+
+And your name and address will automatically be added to the version
+metadata.
+
 #### Purge
 
+The `purge` command permanently removes an object from the main OCFL
+repository. This is **not** an operation that stages changes. However,
+it will ask for confirmation before deleting an object.
+
 ## S3
+
+### S3 Configuration
 
 To connect to an OCFL repository in S3, you first need to create an
 IAM user with access to the S3 bucket, and then setup a local
@@ -342,13 +506,36 @@ rooted in within the bucket like this:
 rocfl -R us-east-2 -b example-ocfl-repo -r ocfl-root ls
 ```
 
-Alternatively, you can define all of this configuration in `rocfl`'s
-[config file](#configuration), and invoke `rocfl` using the
+Changes to objects are staged locally and are only pushed to S3 when
+the staged version is committed. By default, changes are staged in the
+following location:
+
+- **Linux**: `$HOME/.local/share/rocfl/staging/<sha256:BUCKET/ROOT>`
+- **Mac**: `{FOLDERID_RoamingAppData}/org.rocfl.rocfl/data/staging/<sha256:BUCKET/ROOT>`
+- **Windows**: `$HOME/Library/Application Support/rocfl/rocfl/staging/<sha256:BUCKET/ROOT>`
+
+This location can be changed by setting the `--staging-root` option.
+
+All of these properties can define defined in `rocfl`'s [config
+file](#configuration), and activated by invoking `rocfl` using the
 configuration `NAME` as follows:
 
 ``` console
 rocfl -n NAME ls
 ```
+
+### Important S3 Considerations
+
+While `rocfl` supports all of the same operations on S3, this does
+come with a couple of caveats:
+
+1. Scanning for objects in S3 is very slow, and using a defined storage
+   layout extension is key to improving performance.
+2. `rocfl` does not provide any strong concurrency guarantees when
+   modifying objects in S3. A file lock is used to guard changes in
+   the staging repository, but there is an unchecked race condition if
+   multiple processes attempt to committed changes to the same object
+   from different staging locations.
 
 ## Roadmap
 
