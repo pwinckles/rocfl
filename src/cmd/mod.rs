@@ -30,6 +30,8 @@ pub fn exec_command(args: &RocflArgs, config: Config) -> Result<()> {
 
     info!("Resolved configuration: {:?}", config);
 
+    config.validate()?;
+
     match &args.command {
         Command::Init(command) => {
             // init cmd needs to be handled differently because the repo does not exist yet

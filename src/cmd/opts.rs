@@ -36,16 +36,16 @@ pub struct RocflArgs {
     #[structopt(short, long, value_name = "STAGING_PATH")]
     pub staging_root: Option<String>,
 
-    /// Specifies the AWS region.
-    #[structopt(short = "R", long, value_name = "REGION", requires = "bucket")]
+    /// AWS region identifier. Must be specified when using S3.
+    #[structopt(short = "R", long, value_name = "REGION")]
     pub region: Option<String>,
 
-    /// Specifies the S3 bucket to use.
-    #[structopt(short, long, value_name = "BUCKET", requires = "region")]
+    /// S3 bucket name. Must be specified when using S3.
+    #[structopt(short, long, value_name = "BUCKET")]
     pub bucket: Option<String>,
 
-    /// Custom S3 endpoint to use. This should only be specified if you are using a custom region.
-    #[structopt(short, long, value_name = "ENDPOINT", requires = "region")]
+    /// Custom S3 endpoint URL. Should only be specified when using a custom region.
+    #[structopt(short, long, value_name = "ENDPOINT")]
     pub endpoint: Option<String>,
 
     /// Suppresses error messages
@@ -303,7 +303,7 @@ pub struct NewCmd {
 }
 
 /// Copies external files into an object or internal files to new locations. These changes are staged
-/// and must be `committed` before they are reflected in a new OCFL object version.
+/// and must be 'committed' before they are reflected in a new OCFL object version.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct CopyCmd {
@@ -335,7 +335,7 @@ pub struct CopyCmd {
 }
 
 /// Moves external files into an object or internal files to new locations. These changes are staged
-/// and must be `committed` before they are reflected in a new OCFL object version.
+/// and must be 'committed' before they are reflected in a new OCFL object version.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct MoveCmd {
@@ -358,7 +358,7 @@ pub struct MoveCmd {
 }
 
 /// Removes files from an object. The removed files still exist in previous versions, but are
-/// no longer referenced in the current version. These changes are staged and must be `committed`
+/// no longer referenced in the current version. These changes are staged and must be 'committed'
 /// before they are reflected in a new OCFL object version.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
@@ -389,7 +389,7 @@ pub struct CommitCmd {
     pub user_name: Option<String>,
 
     /// The URI address of the user to attribute the changes to. For example, mailto:test@example.com
-    #[structopt(short = "a", long, value_name = "ADDRESS", requires = "user-name")]
+    #[structopt(short = "a", long, value_name = "ADDRESS")]
     pub user_address: Option<String>,
 
     /// A message describing the changes
