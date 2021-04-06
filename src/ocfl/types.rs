@@ -535,11 +535,18 @@ impl ObjectVersion {
             // The content path resides in staging
             convert_path_separator(
                 util::BACKSLASH_SEPARATOR,
-                join(staging_path.unwrap().as_ref(), content_path),
+                join(
+                    util::BACKSLASH_SEPARATOR,
+                    staging_path.unwrap().as_ref(),
+                    content_path,
+                ),
             )
         } else {
             // The content path resides in the main repo
-            convert_path_separator(use_backslashes, join(storage_path.as_ref(), content_path))
+            convert_path_separator(
+                use_backslashes,
+                join(use_backslashes, storage_path.as_ref(), content_path),
+            )
         }
     }
 }
@@ -677,8 +684,12 @@ impl Diff {
 }
 
 /// Joins to strings using the file system separator
-fn join(parent: &str, child: &str) -> String {
-    format!("{}{}{}", parent, path::MAIN_SEPARATOR, child)
+fn join(use_backslashes: bool, parent: &str, child: &str) -> String {
+    if use_backslashes {
+        format!("{}\\{}", parent, child)
+    } else {
+        format!("{}/{}", parent, child)
+    }
 }
 
 /// Changes `/` to `\` on Windows

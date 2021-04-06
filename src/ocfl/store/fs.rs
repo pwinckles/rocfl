@@ -337,7 +337,7 @@ impl OcflStore for FsOcflStore {
 
         if existing_inventory.head != inventory.head.previous().unwrap() {
             return Err(RocflError::IllegalState(format!(
-                "Cannot create version {} in object {} because the HEAD is at {}",
+                "Cannot create version {} in object {} because the current version is at {}",
                 version_str,
                 inventory.id,
                 existing_inventory.head.to_string()
@@ -584,10 +584,14 @@ impl StagingStore for FsOcflStore {
             for file in WalkDir::new(&content_dir) {
                 let file = file?;
                 if file.path().is_file() {
-                    let content_path = pathdiff::diff_paths(file.path(), &object_root).unwrap();
-                    if !inventory.contains_content_path(&InventoryPath::try_from(
-                        content_path.to_string_lossy(),
-                    )?) {
+                    let relative = pathdiff::diff_paths(file.path(), &object_root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string();
+                    let content_path = util::convert_backslash_to_forward(&relative);
+                    if !inventory
+                        .contains_content_path(&InventoryPath::try_from(content_path.as_ref())?)
+                    {
                         info!("Deleting orphaned file: {}", file.path().to_string_lossy());
                         util::remove_file_ignore_not_found(file.path())?;
                         util::clean_dirs_up(file.path().parent().unwrap())?;
@@ -844,11 +848,11 @@ where
     };
 
     let relative = match pathdiff::diff_paths(&object_root, &storage_root) {
-        Some(relative) => relative.to_string_lossy().into(),
-        None => object_root.as_ref().to_string_lossy().into(),
+        Some(relative) => relative.to_string_lossy().to_string(),
+        None => object_root.as_ref().to_string_lossy().to_string(),
     };
 
-    inventory.object_root = relative;
+    inventory.object_root = util::convert_backslash_to_forward(&relative).to_string();
     inventory.storage_path =
         util::convert_forwardslash_to_back(&object_root.as_ref().to_string_lossy()).into();
     inventory.mutable_head = mutable_head;
