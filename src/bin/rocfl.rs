@@ -5,6 +5,7 @@ use rocfl::cmd::opts::*;
 use rocfl::ocfl::RocflError;
 use rocfl::{cmd, config};
 use structopt::StructOpt;
+use rocfl::config::Config;
 
 fn main() {
     let args = RocflArgs::from_args();
@@ -30,7 +31,7 @@ fn main() {
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| "Unknown".to_string());
             error!("Failed to load rocfl config at {}: {}", path, e);
-            process::exit(1);
+            Config::new()
         }
     };
 
