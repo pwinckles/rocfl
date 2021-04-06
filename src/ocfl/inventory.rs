@@ -39,10 +39,12 @@ pub struct Inventory {
     pub fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
 
     #[serde(skip)]
-    /// Path to the object's root relative the storage root
+    /// Path to the object's root relative the storage root. This path should use `/` as
+    /// the path separator
     pub object_root: String,
     #[serde(skip)]
-    /// Physical path to the object's root
+    /// Physical path to the object's root. This path should use the filesystem's path
+    /// separator
     pub storage_path: String,
     #[serde(skip)]
     /// Indicates if the head version is a mutable head extension version

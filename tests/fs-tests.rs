@@ -3534,7 +3534,8 @@ fn commit_should_pretty_print_inventory() {
     )
     .unwrap();
 
-    let meta = CommitMeta::new().with_created(Some(Local.ymd(2020, 3, 19).and_hms(6, 1, 30)));
+    let timestamp = Local.ymd(2020, 3, 19).and_hms(6, 1, 30);
+    let meta = CommitMeta::new().with_created(Some(timestamp));
 
     repo.commit(object_id, meta, None, true).unwrap();
 
@@ -3542,7 +3543,7 @@ fn commit_should_pretty_print_inventory() {
 
     let inventory_path = Path::new(&obj.object_root).join("inventory.json");
 
-    let expected = r#"{
+    let expected_p1 = r#"{
   "id": "pretty",
   "type": "https://ocfl.io/1.0/spec/#inventory",
   "digestAlgorithm": "sha256",
@@ -3555,7 +3556,9 @@ fn commit_should_pretty_print_inventory() {
   },
   "versions": {
     "v1": {
-      "created": "2020-03-19T06:01:30-05:00",
+      "created": ""#;
+
+    let expected_p2 = r#"",
       "state": {
         "8b7df143d91c716ecfa5fc1730022f6b421b05cedee8fd52b1fc65a96030ad52": [
           "blah"
@@ -3565,7 +3568,10 @@ fn commit_should_pretty_print_inventory() {
   }
 }"#;
 
-    assert_eq!(expected, fs::read_to_string(&inventory_path).unwrap());
+    assert_eq!(
+        format!("{}{}{}", expected_p1, timestamp.to_rfc3339(), expected_p2),
+        fs::read_to_string(&inventory_path).unwrap()
+    );
 }
 
 #[test]
@@ -4197,7 +4203,7 @@ fn fail_commit_when_staged_version_out_of_sync_with_main() {
     .unwrap();
 
     if let Err(e) = repo.commit(object_id, CommitMeta::new(), None, false) {
-        assert_eq!("Illegal state: Cannot create version v5 in object out-of-sync because the HEAD is at v5",
+        assert_eq!("Illegal state: Cannot create version v5 in object out-of-sync because the current version is at v5",
                    e.to_string());
     } else {
         panic!("Commit should have thrown an error");
@@ -4279,7 +4285,14 @@ fn create_and_update_object_in_repo_with_no_layout() {
         "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
     );
 
-    assert!(obj.object_root.ends_with(&format!("/{}", object_root)));
+    if std::path::MAIN_SEPARATOR == '\\' {
+        assert!(obj
+            .object_root
+            .replace("\\", "/")
+            .ends_with(&format!("/{}", object_root)));
+    } else {
+        assert!(obj.object_root.ends_with(&format!("/{}", object_root)));
+    }
 
     repo.move_files_external(
         object_id,
@@ -4391,7 +4404,12 @@ fn assert_file_details(
             .to_string(),
         actual.storage_path
     );
-    assert!(Path::new(&actual.storage_path).is_file());
+
+    assert!(
+        Path::new(&actual.storage_path).is_file(),
+        "Expected {} to exist and be a file",
+        actual.storage_path
+    );
     if digest.len() == 64 {
         assert_eq!(
             digest,
