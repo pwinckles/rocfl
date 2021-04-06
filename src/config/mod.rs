@@ -13,6 +13,7 @@ const GLOBAL: &str = "global";
 
 /// Representation of user configuration
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     pub author_name: Option<String>,
     pub author_address: Option<String>,
