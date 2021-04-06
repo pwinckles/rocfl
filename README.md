@@ -4,7 +4,8 @@
 
 `rocfl` is a command line utility for interacting with
 [OCFL](https://ocfl.io/) repositories on the local filesystem or in
-S3.
+S3. Its goal is to provide a logical view of OCFL objects and make
+them easy to interact with in a unix-like way.
 
 ## Extension Support
 

@@ -14,8 +14,20 @@ use strum_macros::{Display as EnumDisplay, EnumString, EnumVariantNames};
 
 use crate::ocfl::VersionNum;
 
-// TODO review all of these docs so that the language agrees
-
+/// A CLI for OCFL repositories
+///
+/// rocfl provides a variety of subcommands for interacting with OCFL repositories on the
+/// local filesystem or in S3. Its goal is to provide a logical view of OCFL objects and
+/// make them easy to interact with in a unix-like way.
+///
+/// rocfl is able to interact with repositories without a defined storage layout, but this
+/// does come at a significant performance cost.
+///
+/// Each subcommand has its own help page that provides details about how to use the command.
+/// There are a number of global options that apply to most, if not all, subcommands that
+/// are described here. A number of these options, such as repository location information,
+/// can be defined in a configuration file so that they do not needed to be specified on
+/// every invokation. The easiest way to do this is by invoking: 'rocfl config'.
 #[derive(Debug, StructOpt)]
 #[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
 #[structopt(setting(ColorAuto), setting(ColoredHelp))]
@@ -27,7 +39,7 @@ pub struct RocflArgs {
     #[structopt(short, long, value_name = "NAME")]
     pub name: Option<String>,
 
-    /// Path to the repositories storage root. By default, this is the current directory.
+    /// Path to the repository's storage root. By default, this is the current directory.
     #[structopt(short, long, value_name = "ROOT_PATH")]
     pub root: Option<String>,
 
@@ -68,7 +80,6 @@ pub struct RocflArgs {
     pub command: Command,
 }
 
-/// A CLI for OCFL repositories.
 #[enum_dispatch(Cmd)]
 #[derive(Debug, StructOpt)]
 pub enum Command {
@@ -104,32 +115,49 @@ pub enum Command {
     Purge(PurgeCmd),
 }
 
-/// Edit your rocfl configuration
+/// Edit rocfl configuration
+///
+/// The config file can have one global section, [global], that defines defaults across all
+/// configurations, and any number of named sections, [NAME]. Each section can define any
+/// of the following properties: author_name, author_address, root, staging_root, region,
+/// bucket, and endpoint.
+///
+/// Global configuration is always active, and named configuration is activated by invoking
+/// rocfl with '-n NAME'. When resolving configuration, command line arguments have highest
+/// precedence, followed by named configuration, and finally global configuration.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct ConfigCmd {}
 
-/// Lists objects or files within objects.
+/// Lists objects or files within objects
+///
+/// When listing objects, rocfl must scan the entire repository, and can therefore be very slow
+/// when operating on large repositories or repositories in S3.
+///
+/// This command supports glob expressions. When you use globs, it is usually a good idea to
+/// quote them so that your shell does not attempt to expand them.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct ListCmd {
-    /// Enables the interpretation of logical path parts as logical directories
+    /// Interpret logical path parts as logical directories. Rather than listing all of the
+    /// paths in the object, only the paths that are direct logical children of the query
+    /// are returned.
     #[structopt(short = "D", long)]
     pub logical_dirs: bool,
 
-    /// Enables long output format: Version, Updated, Name (Object ID or Logical Path)
+    /// Enable long output format: Version, Updated, Name (Object ID or Logical Path)
     #[structopt(short, long)]
     pub long: bool,
 
-    /// Displays the physical path to the item relative the storage root
+    /// Display the physical path to the item relative the repository storage root
     #[structopt(short, long)]
     pub physical: bool,
 
-    /// Displays the digest of the item
+    /// Display the digest of the item in the format 'algorithm:digest'
     #[structopt(short, long)]
     pub digest: bool,
 
-    /// Displays a header row
+    /// Display a header row
     #[structopt(short, long)]
     pub header: bool,
 
@@ -137,15 +165,15 @@ pub struct ListCmd {
     #[structopt(short, long)]
     pub tsv: bool,
 
-    /// Lists staged objects or the contents of a specific staged object
+    /// List staged objects or the contents of a specific staged object
     #[structopt(short = "S", long, conflicts_with = "version")]
     pub staged: bool,
 
-    /// Specifies the version of the object to list
+    /// Version of the object to list
     #[structopt(short, long, value_name = "VERSION")]
     pub version: Option<VersionNum>,
 
-    /// Specifies the field to sort on.
+    /// Field to sort on
     #[structopt(short, long,
     value_name = "FIELD",
     possible_values = &Field::variants(),
@@ -153,11 +181,11 @@ pub struct ListCmd {
     case_insensitive = true)]
     pub sort: Field,
 
-    /// Reverses the direction of the sort
+    /// Reverse the direction of the sort
     #[structopt(short, long)]
     pub reverse: bool,
 
-    /// Lists only objects; not their contents
+    /// List only objects; not their contents. This is useful when glob matching on object IDs
     #[structopt(short, long)]
     pub objects: bool,
 
