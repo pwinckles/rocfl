@@ -264,10 +264,10 @@ fn resolve_config(args: &RocflArgs, mut config: Config) -> Config {
 
     if let Command::Commit(commit) = &args.command {
         if commit.user_name.is_some() {
-            config.name = commit.user_name.clone();
+            config.author_name = commit.user_name.clone();
         }
         if commit.user_address.is_some() {
-            config.address = commit.user_address.clone();
+            config.author_address = commit.user_address.clone();
         }
     }
 

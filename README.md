@@ -21,8 +21,8 @@ Additionally, it uses the following extensions for write support that
 have not been specified:
 
 - `rocfl-staging`: By default, new object versions are staged in this
-  extension's directory the contents of which are an OCFL repository.
-- `rocfl-locks`: This extension contains object file locks to provide
+  extension's directory the contents of which are OCFL repository like.
+- `rocfl-locks`: This extension contains object file locks that provide
   limited concurrent modification protection.
 
 ## Install
@@ -67,9 +67,9 @@ follows:
 ``` toml
 [repo-name]
 # The name to attribute new OCFL versions to
-name = "My Name"
+author_name = "My Name"
 # The URI address to associate with the above name
-address = "mailto:name@example.com"
+author_address = "mailto:name@example.com"
 # The absolute path to the OCFL storage root
 root = "/path/to/storage/root"
 # The absolute path to the OCFL staging root
@@ -85,12 +85,11 @@ bucket = "s3-bucket"
 ```
 
 `repo-name` is the arbitrary name assigned to the configuration. This
-is the value that you pass `rocfl` when invoked with the `--name`
-option.
+is the value that you pass `rocfl` when invoking the `--name` option.
 
 A special `[global]` section may be used to provide default values
 across all configurations. This is primarily useful for defining
-`name` and `address`.
+`author_name` and `author_address`.
 
 All of these properties correspond to values that can be specified in
 arguments to `rocfl`. `rocfl` resolves the configuration by first
@@ -117,7 +116,7 @@ repository or list the files in an OCFL object.
 `rocfl` must scan the repository to locate objects. This can be slow
 when operating on large repositories. The scan can be avoided when
 listing an object's contents if the repository uses a supported
-storage layout extension that is defined in the repositories
+storage layout extension that is defined in the repository's
 `ocfl_layout.json`
 
 When listing files, only files in the most recent version are
@@ -152,7 +151,7 @@ A subset of objects can be listed by providing a glob pattern to match
 on:
 
 ```console
-rocfl ls -lo 'foo*'
+rocfl ls -lo '*object*'
 ```
 
 ###### Listing Object Contents
@@ -161,7 +160,7 @@ The contents of an object's current state are displayed by invoking
 `ls` on a specific object ID:
 
 ```console
-rocfl ls uri:foobar
+rocfl ls uri:object-1
 ```
 
 With the `-l` flag, additional details are displayed. In this case,
@@ -169,14 +168,14 @@ the version and date indicate when the individual file was last
 updated:
 
 ```console
-rocfl ls -l uri:foobar
+rocfl ls -l uri:object-1
 ```
 
 The `-p` flag can also be used here to display the paths to the
 physical files on disk relative the storage root:
 
 ```console
-rocfl ls -p uri:foobar
+rocfl ls -p uri:object-1
 ```
 
 The contents of previous versions are displayed by using the `-v`
@@ -184,21 +183,21 @@ option. The following command displays the files that were in the
 first version of the object:
 
 ```console
-rocfl ls -v1 uri:foobar
+rocfl ls -v1 uri:object-1
 ```
 
 An object's contents can be filtered by specifying a glob pattern to
 match on:
 
 ```console
-rocfl ls uri:foobar '*.txt'
+rocfl ls uri:object-1 '*.txt'
 ```
 
 The output is sorted by name by default, but can also be sorted
 version or updated date:
 
 ```console
-rocfl ls -l -s version uri:foobar
+rocfl ls -l -s version uri:object-1
 ```
 
 Paths within in an object can be interpreted as containing logical
@@ -207,7 +206,7 @@ list the logical files and logical directories that are direct
 children of the logical directory `sub/dir`:
 
 ``` console
-rocfl ls -D uri:foobar sub/dir
+rocfl ls -D uri:object-1 sub/dir
 ```
 
 #### Log
@@ -221,26 +220,26 @@ case only versions that affected the specified file are displayed.
 Show all of the versions of an object in ascending order:
 
 ```console
-rocfl log uri:foobar
+rocfl log uri:object-1
 ```
 
 Only display the five most recent versions:
 
 ```console
-rocfl log -rn5 uri:foobar
+rocfl log -rn5 uri:object-1
 ```
 
 Show all of the versions, but formatted so each version is on a single
 line:
 
 ```console
-rocfl log -c uri:foobar
+rocfl log -c uri:object-1
 ```
 
 Show all of the versions that affected a specific file:
 
 ```console
-rocfl log uri:foobar file1.txt
+rocfl log uri:object-1 file1.txt
 ```
 
 #### Show
@@ -254,19 +253,19 @@ changes are shown.
 Show the changes in the most recent version:
 
 ```console
-rocfl show uri:foobar
+rocfl show uri:object-1
 ```
 
 Show the changes in the first version:
 
 ```console
-rocfl show uri:foobar v1
+rocfl show uri:object-1 v1
 ```
 
 Don't show the version metadata; only show the files that changed:
 
 ```console
-rocfl show -m uri:foobar
+rocfl show -m uri:object-1
 ```
 
 #### Diff
@@ -291,13 +290,13 @@ The `cat` command writes the contents of a file to `stdout`.
 Display the contents of the head version of a file:
 
 ```console
-rocfl cat uri:foobar file1.txt
+rocfl cat uri:object-1 file1.txt
 ```
 
 Display the contents of a file from a specific version of the object:
 
 ```console
-rocfl cat -v1 uri:foobar file1.txt
+rocfl cat -v1 uri:object-1 file1.txt
 ```
 
 #### Status
@@ -316,7 +315,7 @@ rocfl status
 List all of the file level changes to an object:
 
 ``` console
-rocfl status uri:foobar
+rocfl status uri:object-1
 ```
 
 Staged changes can also be examined using the more featureful `ls`,
@@ -350,7 +349,7 @@ The default layout configuration can be changed by passing a config
 file that contains the desired configuration:
 
 ``` console
-rocfl -r /var/tmp/ocfl-repo-2 init -l HashedNTupleObjectId -c
+rocfl -r /var/tmp/ocfl-repo-2 init -l 0003-hash-and-id-n-tuple-storage-layout -c
 my-config.json
 ```
 
@@ -366,7 +365,7 @@ recommend values.
 Create a new object with non-standard settings:
 
 ``` console
-rocfl new uri:foobar -d sha256 -c data -z 6
+rocfl new uri:object-1 -d sha256 -c data -z 6
 ```
 
 #### Copy
@@ -381,26 +380,26 @@ behavior of GNU `cp` as closely as possible.
 Copy a directory into the object's root:
 
 ``` console
-rocfl cp -r uri:foobar /path/to/src -- /
+rocfl cp -r uri:object-1 /path/to/src -- /
 ```
 
 Copy several files into a logical directory within the object:
 
 ``` console
-rocfl cp uri:foobar /path/to/files/* -- sub/dir
+rocfl cp uri:object-1 /path/to/files/* -- sub/dir
 ```
 
-Copy and existing file internally to a new location:
+Copy several existing files internally to a new location:
 
 ``` console
-rocfl cp -i uri:foobar internal/file.txt -- new/location.txt
+rocfl cp -i uri:object-1 'internal/*.txt' -- new-location
 ```
 
 Copy an entire logical directory from an old version to a new location
 in the staged version:
 
 ``` console
-rocfl cp -ir -v2 uri:foobar src/dir -- dst/dir
+rocfl cp -ir -v2 uri:object-1 src/dir -- dst/dir
 ```
 
 #### Move
@@ -415,25 +414,25 @@ GNU `mv` as closely as possible.
 Move a directory into the object's root:
 
 ``` console
-rocfl mv uri:foobar /path/to/src -- /
+rocfl mv uri:object-1 /path/to/src -- /
 ```
 
 Move several files into a logical directory within the object:
 
 ``` console
-rocfl mv uri:foobar /path/to/files/* -- sub/dir
+rocfl mv uri:object-1 /path/to/files/* -- sub/dir
 ```
 
 Move an existing file internally to a new location:
 
 ``` console
-rocfl mv -i uri:foobar internal/file.txt -- new/location.txt
+rocfl mv -i uri:object-1 internal/file.txt -- new/location.txt
 ```
 
 #### Remove
 
 The `rm` command removes files from an object. If the removed files
-are new to the staged version, then they are permanently removed and
+were new to the staged version, then they are permanently removed and
 will not appear anywhere in the object. Otherwise, references to the
 files are removed from the staged version, but the files still exist
 in prior versions.
@@ -443,13 +442,19 @@ in prior versions.
 Recursively remove a logical directory:
 
 ``` console
-rocfl rm -r uri:foobar path/to/dir
+rocfl rm -r uri:object-1 path/to/dir
 ```
 
 Remove several individual files:
 
 ``` console
-rocfl rm uri:foobar path/to/file1.txt path/to/file2.txt
+rocfl rm uri:object-1 path/to/file1.txt path/to/file2.txt
+```
+
+Or with a glob:
+
+``` console
+rocfl rm uri:object-1 'path/to/*.txt'
 ```
 
 #### Reset
@@ -463,14 +468,14 @@ previous state.
 Reset a file to its previous state:
 
 ``` console
-rocfl reset uri:foobar file.txt
+rocfl reset uri:object-1 file.txt
 ```
 
 Reset an entire object to its previous state, removing all staged
 changes:
 
 ``` console
-rocfl reset uri:foobar
+rocfl reset uri:object-1
 ```
 
 #### Commit
@@ -483,7 +488,7 @@ object as a new version.
 Commit changes to an object:
 
 ``` console
-rocfl commit uri:foobar -n "My Name" -a "mailto:me@example.com" -m "commit
+rocfl commit uri:object-1 -n "My Name" -a "mailto:me@example.com" -m "commit
 message"
 ```
 
@@ -491,11 +496,19 @@ This can be simplified if you define your name and address in [rocfl
 configuration](#configuration). In which case, you can simply execute:
 
 ``` console
-rocfl commit uri:foobar -m "commit message"
+rocfl commit uri:object-1 -m "commit message"
 ```
 
 And your name and address will be automatically added to the version
 metadata.
+
+In order to commit an object to a repository without a defined storage
+layout, the location to store the object with the repository must be
+manually specified as follows:
+
+``` console
+rocfl commit uri:object-1 -m "commit message" -r relative/path/to/object/root
+```
 
 #### Purge
 
@@ -545,15 +558,15 @@ rocfl -n NAME ls
 
 ### Important S3 Considerations
 
-While `rocfl` supports all of the same operations on S3, this does
-come with a couple of caveats:
+While `rocfl` supports all of the same operations on S3 as it does the
+local filesystem, this does come with a couple of caveats:
 
 1. Scanning for objects in S3 is very slow, and using a defined storage
    layout extension is key to improving performance.
 2. `rocfl` does not provide any strong concurrency guarantees when
    modifying objects in S3. A file lock is used to guard changes in
    the staging repository, but there is an unchecked race condition if
-   multiple processes attempt to committed changes to the same object
+   multiple processes attempt to commit changes to the same object
    from different staging locations.
 
 ## Roadmap
