@@ -3534,7 +3534,8 @@ fn commit_should_pretty_print_inventory() {
     )
     .unwrap();
 
-    let meta = CommitMeta::new().with_created(Some(Local.ymd(2020, 3, 19).and_hms(6, 1, 30)));
+    let timestamp = Local.ymd(2020, 3, 19).and_hms(6, 1, 30);
+    let meta = CommitMeta::new().with_created(Some(timestamp));
 
     repo.commit(object_id, meta, None, true).unwrap();
 
@@ -3542,7 +3543,7 @@ fn commit_should_pretty_print_inventory() {
 
     let inventory_path = Path::new(&obj.object_root).join("inventory.json");
 
-    let expected = r#"{
+    let expected_p1 = r#"{
   "id": "pretty",
   "type": "https://ocfl.io/1.0/spec/#inventory",
   "digestAlgorithm": "sha256",
@@ -3555,7 +3556,9 @@ fn commit_should_pretty_print_inventory() {
   },
   "versions": {
     "v1": {
-      "created": "2020-03-19T06:01:30-05:00",
+      "created": ""#;
+
+    let expected_p2 = r#"",
       "state": {
         "8b7df143d91c716ecfa5fc1730022f6b421b05cedee8fd52b1fc65a96030ad52": [
           "blah"
@@ -3565,7 +3568,10 @@ fn commit_should_pretty_print_inventory() {
   }
 }"#;
 
-    assert_eq!(expected, fs::read_to_string(&inventory_path).unwrap());
+    assert_eq!(
+        format!("{}{}{}", expected_p1, timestamp.to_rfc3339(), expected_p2),
+        fs::read_to_string(&inventory_path).unwrap()
+    );
 }
 
 #[test]
