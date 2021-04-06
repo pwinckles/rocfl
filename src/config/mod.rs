@@ -93,7 +93,7 @@ pub fn project_dirs() -> Option<ProjectDirs> {
 pub fn s3_staging_path(config: &Config) -> Result<String> {
     match project_dirs() {
         Some(dirs) => {
-            let mut staging = dirs.data_dir().join("staging");
+            let mut staging = dirs.data_dir().join("s3").join("staging");
             staging.push(s3_identifier(config)?);
             Ok(staging.to_string_lossy().to_string())
         }

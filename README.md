@@ -543,9 +543,9 @@ Changes to objects are staged locally and are only pushed to S3 when
 the staged version is committed. By default, changes are staged in the
 following location:
 
-- **Linux**: `$HOME/.local/share/rocfl/staging/<sha256:BUCKET/ROOT>`
-- **Mac**: `{FOLDERID_RoamingAppData}/org.rocfl.rocfl/data/staging/<sha256:BUCKET/ROOT>`
-- **Windows**: `$HOME/Library/Application Support/rocfl/rocfl/staging/<sha256:BUCKET/ROOT>`
+- **Linux**: `$HOME/.local/share/rocfl/s3/staging/<sha256:BUCKET/ROOT>`
+- **Mac**: `{FOLDERID_RoamingAppData}/org.rocfl.rocfl/data/s3/staging/<sha256:BUCKET/ROOT>`
+- **Windows**: `$HOME/Library/Application Support/rocfl/rocfl/s3/staging/<sha256:BUCKET/ROOT>`
 
 This location can be changed by setting the `--staging-root` option.
 
