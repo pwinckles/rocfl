@@ -32,7 +32,7 @@ The [releases page](https://github.com/pwinckles/rocfl/releases) has
 pre-built binaries that should work on most common OSes and
 architectures. You do not need to install Rust to use them. Simply
 download the appropriate binary, rename it to `rocfl`, and execute
-`./rocfl help`.
+`./rocfl --help`.
 
 ### Local Build
 
@@ -41,7 +41,7 @@ Alternatively, you can build `rocfl` from source as follows:
 1. Install [Rust](https://www.rust-lang.org/tools/install), and make
    sure `cargo` is on your `PATH`
 2. Execute: `cargo install rocfl`
-3. Verify the install: `rocfl help`
+3. Verify the install: `rocfl --help`
 
 If you want to build a binary that does not include the S3
 integration, which adds a large number of dependencies, then you can
@@ -105,7 +105,7 @@ on the configuration properties.
 
 The following is an overview of the features that `rocfl` supports.
 For a detailed description of all of the options available, consult
-the builtin help by executing `rocfl help` or `rocfl help <COMMAND>`.
+the builtin help by executing `rocfl --help` or `rocfl <COMMAND> --help`.
 
 ### Read Commands
 
