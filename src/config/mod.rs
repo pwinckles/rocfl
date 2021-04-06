@@ -14,8 +14,8 @@ const GLOBAL: &str = "global";
 /// Representation of user configuration
 #[derive(Deserialize, Debug)]
 pub struct Config {
-    pub name: Option<String>,
-    pub address: Option<String>,
+    pub author_name: Option<String>,
+    pub author_address: Option<String>,
     pub root: Option<String>,
     pub staging_root: Option<String>,
     pub region: Option<String>,
@@ -26,8 +26,8 @@ pub struct Config {
 impl Config {
     pub fn new() -> Self {
         Self {
-            name: None,
-            address: None,
+            author_name: None,
+            author_address: None,
             root: None,
             staging_root: None,
             region: None,
@@ -132,8 +132,8 @@ fn resolve_config(name: &Option<String>, mut config: HashMap<String, Config>) ->
         (Some(global), Some(repo)) => {
             let mut resolved = Config::new();
 
-            resolved.name = resolve_field(global.name, repo.name);
-            resolved.address = resolve_field(global.address, repo.address);
+            resolved.author_name = resolve_field(global.author_name, repo.author_name);
+            resolved.author_address = resolve_field(global.author_address, repo.author_address);
             resolved.root = resolve_field(global.root, repo.root);
             resolved.staging_root = resolve_field(global.staging_root, repo.staging_root);
             resolved.region = resolve_field(global.region, repo.region);

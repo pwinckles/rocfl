@@ -164,7 +164,7 @@ impl Cmd for CommitCmd {
         _terminate: &AtomicBool,
     ) -> Result<()> {
         let meta = CommitMeta::new()
-            .with_user(config.name.clone(), config.address.clone())?
+            .with_user(config.author_name.clone(), config.author_address.clone())?
             .with_message(self.message.clone())
             .with_created(self.created);
         let object_root: Option<InventoryPath> = match &self.object_root {

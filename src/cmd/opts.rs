@@ -2,12 +2,15 @@ use std::fmt::{self, Display, Formatter};
 use std::num::ParseIntError;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::string::ToString;
 
 use chrono::{DateTime, Local};
 use clap::arg_enum;
 use enum_dispatch::enum_dispatch;
 use structopt::clap::AppSettings::{ColorAuto, ColoredHelp, DisableVersion};
 use structopt::StructOpt;
+use strum::VariantNames;
+use strum_macros::{Display as EnumDisplay, EnumString, EnumVariantNames};
 
 use crate::ocfl::VersionNum;
 
@@ -271,8 +274,8 @@ pub struct InitCmd {
     /// is used. Custom configuration may be specified using '--config-file'.
     #[structopt(short, long,
     value_name = "LAYOUT",
-    possible_values = &Layout::variants(),
-    default_value = "HashedNTuple",
+    possible_values = &Layout::VARIANTS,
+    default_value = "0004-hashed-n-tuple-storage-layout",
     case_insensitive = true)]
     pub layout: Layout,
 }
@@ -470,14 +473,16 @@ arg_enum! {
     }
 }
 
-arg_enum! {
-    #[derive(Debug, Clone, Copy)]
-    pub enum Layout {
-        None,
-        FlatDirect,
-        HashedNTuple,
-        HashedNTupleObjectId,
-    }
+#[derive(Debug, Clone, Copy, EnumDisplay, EnumString, EnumVariantNames)]
+pub enum Layout {
+    #[strum(serialize = "None", serialize = "none")]
+    None,
+    #[strum(serialize = "0002-flat-direct-storage-layout")]
+    FlatDirect,
+    #[strum(serialize = "0004-hashed-n-tuple-storage-layout")]
+    HashedNTuple,
+    #[strum(serialize = "0003-hash-and-id-n-tuple-storage-layout")]
+    HashedNTupleObjectId,
 }
 
 arg_enum! {

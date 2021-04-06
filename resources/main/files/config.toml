@@ -9,8 +9,8 @@
 # [global]
 # # Name and address are used to auto-populate the author information when committing
 # # a new version.
-# name = "My Name"
-# address = "mailto:me@example.com"
+# author_name = "My Name"
+# author_address = "mailto:me@example.com"
 #
 # # This is repository specific configuration for a local repository.
 # # You can acitivate this config by invoking rocfl with '-n my-fs-repo'
