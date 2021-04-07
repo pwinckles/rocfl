@@ -35,7 +35,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: -- --test-threads=1
+          args: -- --test-threads=1 --nocapture
       - name: Clippy
         uses: actions-rs/clippy-check@v1
         with:
