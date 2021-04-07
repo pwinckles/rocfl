@@ -48,7 +48,7 @@ pub trait OcflStore {
         &self,
         inventory: &mut Inventory,
         src_object_path: &Path,
-        object_root: Option<InventoryPath>,
+        object_root: Option<&str>,
     ) -> Result<()>;
 
     /// Writes a new version to the OCFL object. The contents at `version_path` must be a fully
