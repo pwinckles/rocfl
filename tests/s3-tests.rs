@@ -22,7 +22,6 @@ use rusoto_s3::{
     DeleteObjectRequest, GetObjectRequest, HeadObjectRequest, ListObjectsV2Request, S3Client, S3,
 };
 use tokio::io::AsyncReadExt;
-use log::LevelFilter;
 
 mod common;
 
@@ -399,7 +398,7 @@ fn run_s3_test(name: &str, test: impl FnOnce(S3Client, String, TempDir, TempDir)
         return;
     }
 
-    let _ = env_logger::builder().is_test(true).filter_level(LevelFilter::Info).try_init();
+    // let _ = env_logger::builder().is_test(true).filter_level(LevelFilter::Info).try_init();
 
     let staging = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
