@@ -4203,7 +4203,7 @@ fn fail_commit_when_staged_version_out_of_sync_with_main() {
     .unwrap();
 
     if let Err(e) = repo.commit(object_id, CommitMeta::new(), None, false) {
-        assert_eq!("Illegal state: Cannot create version v5 in object out-of-sync because the HEAD is at v5",
+        assert_eq!("Illegal state: Cannot create version v5 in object out-of-sync because the current version is at v5",
                    e.to_string());
     } else {
         panic!("Commit should have thrown an error");

@@ -336,7 +336,7 @@ fn purge_object_when_not_exists() {
 
 #[test]
 #[should_panic(
-    expected = "Cannot create version v2 in object out-of-sync because the HEAD is at v2"
+    expected = "Cannot create version v2 in object out-of-sync because the current version is at v2"
 )]
 fn fail_commit_when_out_of_sync() {
     run_s3_test(
@@ -397,6 +397,8 @@ fn run_s3_test(name: &str, test: impl FnOnce(S3Client, String, TempDir, TempDir)
         println!("Skipping test {}", name);
         return;
     }
+
+    let _ = env_logger::builder().is_test(true).try_init();
 
     let staging = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
