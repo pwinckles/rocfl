@@ -21,13 +21,14 @@ use crate::ocfl::VersionNum;
 /// make them easy to interact with in a unix-like way.
 ///
 /// rocfl is able to interact with repositories without a defined storage layout, but this
-/// does come at a significant performance cost.
+/// does come at a significant performance cost. Defining your OCFL storage layout is strongly
+/// recommended.
 ///
 /// Each subcommand has its own help page that provides details about how to use the command.
 /// There are a number of global options that apply to most, if not all, subcommands that
 /// are described here. A number of these options, such as repository location information,
 /// can be defined in a configuration file so that they do not needed to be specified on
-/// every invokation. The easiest way to do this is by invoking: 'rocfl config'.
+/// every invocation. The easiest way to do this is by invoking: 'rocfl config'.
 #[derive(Debug, StructOpt)]
 #[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
 #[structopt(setting(ColorAuto), setting(ColoredHelp))]
@@ -40,17 +41,17 @@ pub struct RocflArgs {
     #[structopt(short, long, value_name = "NAME")]
     pub name: Option<String>,
 
-    /// Path to the repository's storage root
+    /// Absolute or relative path to the repository's storage root
     ///
     /// By default, this is the current directory.
     #[structopt(short, long, value_name = "ROOT_PATH")]
     pub root: Option<String>,
 
-    /// Path to the staging directory
+    /// Absolute or relative path to the staging directory
     ///
     /// By default, versions are staged in an extensions directory in the main repository.
     /// This is the recommended configuration. If the repository is in S3, then versions are
-    /// staged in an OS specific user home directory. Staging directories  should NOT be shared
+    /// staged in an OS specific user home directory. Staging directories should NOT be shared
     /// by multiple different repositories.
     #[structopt(short, long, value_name = "STAGING_PATH")]
     pub staging_root: Option<String>,
@@ -67,15 +68,15 @@ pub struct RocflArgs {
     #[structopt(short, long, value_name = "ENDPOINT")]
     pub endpoint: Option<String>,
 
-    /// Suppresses error messages
+    /// Suppress error messages
     #[structopt(short, long)]
     pub quiet: bool,
 
-    /// Increases log level
+    /// Increase log level
     #[structopt(short = "V", long)]
     pub verbose: bool,
 
-    /// Disables all output styling
+    /// Disable all output styling
     #[structopt(short = "S", long)]
     pub no_styles: bool,
 
@@ -299,6 +300,9 @@ pub struct CatCmd {
 }
 
 /// Create a new OCFL repository
+///
+/// The repository is created in the current directory unless the global option '-r PATH'
+/// was specified.
 ///
 /// A new repository may only be created in an empty directory. By default, new repositories
 /// are configured to use the storage layout extension 0004-hashed-n-tuple-storage-layout.
