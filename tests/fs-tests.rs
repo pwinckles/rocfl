@@ -4285,7 +4285,14 @@ fn create_and_update_object_in_repo_with_no_layout() {
         "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
     );
 
-    assert!(obj.object_root.ends_with(&format!("/{}", object_root)));
+    if std::path::MAIN_SEPARATOR == '\\' {
+        assert!(obj
+            .object_root
+            .replace("\\", "/")
+            .ends_with(&format!("/{}", object_root)));
+    } else {
+        assert!(obj.object_root.ends_with(&format!("/{}", object_root)));
+    }
 
     repo.move_files_external(
         object_id,
@@ -4397,27 +4404,6 @@ fn assert_file_details(
             .to_string(),
         actual.storage_path
     );
-
-    // TODO windows debugging
-    if !Path::new(&actual.storage_path).is_file() {
-        let p = PathBuf::from(&actual.storage_path);
-        let c: Vec<String> = p
-            .components()
-            .into_iter()
-            .map(|c| c.as_os_str().to_string_lossy().to_string())
-            .collect();
-        let s = c.join("\\");
-        println!("{}: {}", s, Path::new(&s).exists());
-
-        let p = PathBuf::from(&actual.storage_path);
-        if let Ok(listing) = fs::read_dir(p.parent().unwrap()) {
-            for f in listing {
-                if let Ok(f) = f {
-                    println!("{}", f.path().to_string_lossy());
-                }
-            }
-        }
-    }
 
     assert!(
         Path::new(&actual.storage_path).is_file(),
