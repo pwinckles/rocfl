@@ -4397,6 +4397,24 @@ fn assert_file_details(
             .to_string(),
         actual.storage_path
     );
+
+    // TODO windows debugging
+    if !Path::new(&actual.storage_path).is_file() {
+        let p = PathBuf::from(&actual.storage_path);
+        let c: Vec<String> = p.components().into_iter().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
+        let s = c.join("\\");
+        println!("{}: {}", s, Path::new(&s).exists());
+
+        let p = PathBuf::from(&actual.storage_path);
+        if let Ok(listing) = fs::read_dir(p.parent().unwrap()) {
+            for f in listing {
+                if let Ok(f) = f {
+                    println!("{}", f.path().to_string_lossy());
+                }
+            }
+        }
+    }
+
     assert!(
         Path::new(&actual.storage_path).is_file(),
         "Expected {} to exist and be a file",
