@@ -4397,7 +4397,11 @@ fn assert_file_details(
             .to_string(),
         actual.storage_path
     );
-    assert!(Path::new(&actual.storage_path).is_file());
+    assert!(
+        Path::new(&actual.storage_path).is_file(),
+        "Expected {} to exist and be a file",
+        actual.storage_path
+    );
     if digest.len() == 64 {
         assert_eq!(
             digest,
