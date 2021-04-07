@@ -10,7 +10,7 @@ use crate::cmd::opts::{
 };
 use crate::cmd::{print, println, Cmd, GlobalArgs};
 use crate::config::Config;
-use crate::ocfl::{CommitMeta, DigestAlgorithm, InventoryPath, OcflRepo, Result};
+use crate::ocfl::{CommitMeta, DigestAlgorithm, OcflRepo, Result};
 
 impl Cmd for CatCmd {
     fn exec(
@@ -167,11 +167,12 @@ impl Cmd for CommitCmd {
             .with_user(config.author_name.clone(), config.author_address.clone())?
             .with_message(self.message.clone())
             .with_created(self.created);
-        let object_root: Option<InventoryPath> = match &self.object_root {
-            None => None,
-            Some(root) => Some(root.try_into()?),
-        };
-        repo.commit(&self.object_id, meta, object_root, self.pretty_print)?;
+        repo.commit(
+            &self.object_id,
+            meta,
+            self.object_root.as_ref().map(|r| r.as_ref()),
+            self.pretty_print,
+        )?;
 
         Ok(())
     }

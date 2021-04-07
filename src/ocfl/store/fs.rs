@@ -279,7 +279,7 @@ impl OcflStore for FsOcflStore {
         &self,
         inventory: &mut Inventory,
         src_object_path: &Path,
-        object_root: Option<InventoryPath>,
+        object_root: Option<&str>,
     ) -> Result<()> {
         self.ensure_open()?;
 
@@ -287,7 +287,7 @@ impl OcflStore for FsOcflStore {
             Some(object_root) => object_root,
             None => {
                 if let Some(root) = object_root {
-                    root.to_string()
+                    util::trim_slashes(root).to_string()
                 } else {
                     return Err(RocflError::IllegalState(
                             "Cannot create object because the repository does not have a defined storage layout, and an object root path was not specified."

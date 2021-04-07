@@ -65,3 +65,18 @@ pub fn convert_backslash_to_forward(path: &str) -> Cow<str> {
     }
     path.into()
 }
+
+/// Trims all trailing slashes from the path
+pub fn trim_trailing_slashes(path: &str) -> &str {
+    path.trim_end_matches('/')
+}
+
+/// Trims all trailing slashes from the path
+pub fn trim_leading_slashes(path: &str) -> &str {
+    path.trim_start_matches('/')
+}
+
+/// Trims all lead and trailing slashes from the path
+pub fn trim_slashes(path: &str) -> &str {
+    trim_trailing_slashes(trim_leading_slashes(path))
+}
