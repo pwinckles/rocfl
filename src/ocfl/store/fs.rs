@@ -848,11 +848,11 @@ where
     };
 
     let relative = match pathdiff::diff_paths(&object_root, &storage_root) {
-        Some(relative) => relative.to_string_lossy().into(),
-        None => object_root.as_ref().to_string_lossy().into(),
+        Some(relative) => relative.to_string_lossy().to_string(),
+        None => object_root.as_ref().to_string_lossy().to_string(),
     };
 
-    inventory.object_root = relative;
+    inventory.object_root = util::convert_backslash_to_forward(&relative).to_string();
     inventory.storage_path =
         util::convert_forwardslash_to_back(&object_root.as_ref().to_string_lossy()).into();
     inventory.mutable_head = mutable_head;
