@@ -4401,7 +4401,11 @@ fn assert_file_details(
     // TODO windows debugging
     if !Path::new(&actual.storage_path).is_file() {
         let p = PathBuf::from(&actual.storage_path);
-        let c: Vec<String> = p.components().into_iter().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
+        let c: Vec<String> = p
+            .components()
+            .into_iter()
+            .map(|c| c.as_os_str().to_string_lossy().to_string())
+            .collect();
         let s = c.join("\\");
         println!("{}: {}", s, Path::new(&s).exists());
 

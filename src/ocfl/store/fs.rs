@@ -584,10 +584,14 @@ impl StagingStore for FsOcflStore {
             for file in WalkDir::new(&content_dir) {
                 let file = file?;
                 if file.path().is_file() {
-                    let content_path = pathdiff::diff_paths(file.path(), &object_root).unwrap();
-                    if !inventory.contains_content_path(&InventoryPath::try_from(
-                        content_path.to_string_lossy(),
-                    )?) {
+                    let relative = pathdiff::diff_paths(file.path(), &object_root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string();
+                    let content_path = util::convert_backslash_to_forward(&relative);
+                    if !inventory
+                        .contains_content_path(&InventoryPath::try_from(content_path.as_ref())?)
+                    {
                         info!("Deleting orphaned file: {}", file.path().to_string_lossy());
                         util::remove_file_ignore_not_found(file.path())?;
                         util::clean_dirs_up(file.path().parent().unwrap())?;
