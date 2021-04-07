@@ -1499,7 +1499,7 @@ fn object_commit_when_no_known_storage_layout_and_root_specified() {
     )
     .unwrap();
 
-    repo.commit(object_id, CommitMeta::new(), Some(path(object_root)), false)
+    repo.commit(object_id, CommitMeta::new(), Some(object_root), false)
         .unwrap();
 
     let committed_obj = repo.get_object(object_id, None).unwrap();
@@ -1535,7 +1535,7 @@ fn fail_object_commit_when_no_known_storage_layout_and_root_specified_and_obj_al
     )
     .unwrap();
 
-    repo.commit(object_id, CommitMeta::new(), Some(path(object_root)), false)
+    repo.commit(object_id, CommitMeta::new(), Some(object_root), false)
         .unwrap();
 
     let committed_obj = repo.get_object(object_id, None).unwrap();
@@ -1565,7 +1565,7 @@ fn fail_object_commit_when_no_known_storage_layout_and_root_specified_and_obj_al
     repo.commit(
         object_2_id,
         CommitMeta::new(),
-        Some(path(object_root)),
+        Some(object_root),
         false,
     )
     .unwrap();
@@ -4270,7 +4270,7 @@ fn create_and_update_object_in_repo_with_no_layout() {
     )
     .unwrap();
 
-    repo.commit(object_id, CommitMeta::new(), Some(path(object_root)), false)
+    repo.commit(object_id, CommitMeta::new(), Some(object_root), false)
         .unwrap();
 
     let obj = repo.get_object(object_id, None).unwrap();
@@ -4301,7 +4301,7 @@ fn create_and_update_object_in_repo_with_no_layout() {
     )
     .unwrap();
 
-    repo.commit(object_id, CommitMeta::new(), Some(path(object_root)), false)
+    repo.commit(object_id, CommitMeta::new(), Some(object_root), false)
         .unwrap();
 
     let obj = repo.get_object(object_id, None).unwrap();

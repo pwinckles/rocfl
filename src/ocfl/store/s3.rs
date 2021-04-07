@@ -1,6 +1,5 @@
 //! S3 OCFL storage implementation.
 
-use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
@@ -65,7 +64,7 @@ impl S3OcflStore {
             s3_client,
             storage_layout,
             id_path_cache: RwLock::new(HashMap::new()),
-            prefix: prefix.map(|p| p.to_string().trim_end_matches('/').to_string()),
+            prefix: prefix.map(|p| util::trim_trailing_slashes(p).to_string()),
             closed: Arc::new(AtomicBool::new(false)),
         })
     }
@@ -85,7 +84,7 @@ impl S3OcflStore {
             s3_client,
             storage_layout: layout,
             id_path_cache: RwLock::new(HashMap::new()),
-            prefix: prefix.map(|p| p.to_string().trim_end_matches('/').to_string()),
+            prefix: prefix.map(|p| util::trim_trailing_slashes(p).to_string()),
             closed: Arc::new(AtomicBool::new(false)),
         })
     }
@@ -184,8 +183,7 @@ impl S3OcflStore {
                     )))
                 }
             };
-            inventory.object_root =
-                strip_leading_slash(strip_trailing_slash(object_root).as_ref()).into();
+            inventory.object_root = util::trim_slashes(object_root).to_string();
 
             inventory.storage_path = match &self.prefix {
                 Some(prefix) => join(prefix, &inventory.object_root),
@@ -369,7 +367,7 @@ impl OcflStore for S3OcflStore {
         &self,
         inventory: &mut Inventory,
         src_object_path: &Path,
-        object_root: Option<InventoryPath>,
+        object_root: Option<&str>,
     ) -> Result<()> {
         self.ensure_open()?;
 
@@ -377,7 +375,7 @@ impl OcflStore for S3OcflStore {
             Some(object_root) => object_root,
             None => {
                 if let Some(root) = object_root {
-                    root.to_string()
+                    util::trim_slashes(root).to_string()
                 } else {
                     return Err(RocflError::IllegalState(
                             "Cannot create object because the repository does not have a defined storage layout, and an object root path was not specified."
@@ -1161,25 +1159,9 @@ fn join_with_trailing_slash(part1: &str, part2: &str) -> String {
     joined
 }
 
-fn strip_trailing_slash(path: &str) -> Cow<str> {
-    if let Some(stripped) = path.strip_suffix('/') {
-        Cow::Owned(stripped.to_string())
-    } else {
-        path.into()
-    }
-}
-
-fn strip_leading_slash(path: &str) -> Cow<str> {
-    if path.starts_with('/') {
-        Cow::Owned(path[1..path.len()].to_string())
-    } else {
-        path.into()
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{is_object_dir, join, join_with_trailing_slash, strip_trailing_slash};
+    use super::{is_object_dir, join, join_with_trailing_slash};
 
     #[test]
     fn join_path_when_both_empty() {
@@ -1221,13 +1203,6 @@ mod tests {
     fn join_path_when_both_no_slashes() {
         assert_eq!(join("foo", "bar"), "foo/bar");
         assert_eq!(join_with_trailing_slash("foo", "bar"), "foo/bar/");
-    }
-
-    #[test]
-    fn remove_trailing_slash() {
-        assert_eq!(strip_trailing_slash("/"), "");
-        assert_eq!(strip_trailing_slash("/foo/bar/"), "/foo/bar");
-        assert_eq!(strip_trailing_slash("/foo/bar"), "/foo/bar");
     }
 
     #[test]

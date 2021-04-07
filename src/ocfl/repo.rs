@@ -795,7 +795,7 @@ impl OcflRepo {
         &self,
         object_id: &str,
         meta: CommitMeta,
-        object_root: Option<InventoryPath>,
+        object_root: Option<&str>,
         pretty_print: bool,
     ) -> Result<()> {
         self.ensure_open()?;
