@@ -7,6 +7,8 @@
 S3. Its goal is to provide a logical view of OCFL objects and make
 them easy to interact with in a unix-like way.
 
+![gif](./media/demo.gif)
+
 ## Extension Support
 
 `rocfl` supports the following extensions:
