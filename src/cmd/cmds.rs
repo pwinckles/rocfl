@@ -147,7 +147,7 @@ impl Cmd for ResetCmd {
         _config: &Config,
         _terminate: &AtomicBool,
     ) -> Result<()> {
-        if self.paths.is_empty() {
+        if !self.paths.is_empty() {
             repo.reset(&self.object_id, &self.paths, self.recursive)
         } else {
             repo.reset_all(&self.object_id)
