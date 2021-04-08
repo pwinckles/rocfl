@@ -32,7 +32,7 @@ const REGION: Region = Region::UsEast2;
 
 #[test]
 fn create_new_repo_empty_dir() {
-    run_s3_test(
+    skip_or_run_s3_test(
         "create_new_repo_empty_dir",
         |s3_client: S3Client, prefix: String, staging: TempDir, temp: TempDir| {
             let repo = default_repo(&prefix, staging.path());
@@ -84,8 +84,9 @@ fn create_new_repo_empty_dir() {
 #[test]
 #[should_panic(expected = "Cannot create new repository. Storage root must be empty")]
 fn fail_create_new_repo_when_repo_already_exists() {
-    run_s3_test(
+    panic_or_run_s3_test(
         "fail_create_new_repo_when_repo_already_exists",
+        "Cannot create new repository. Storage root must be empty",
         |_s3_client: S3Client, prefix: String, staging: TempDir, _temp: TempDir| {
             let _ = default_repo(&prefix, staging.path());
             let _ = default_repo(&prefix, staging.path());
@@ -95,7 +96,7 @@ fn fail_create_new_repo_when_repo_already_exists() {
 
 #[test]
 fn create_new_object() {
-    run_s3_test(
+    skip_or_run_s3_test(
         "create_new_object",
         |s3_client: S3Client, prefix: String, staging: TempDir, temp: TempDir| {
             let repo = default_repo(&prefix, staging.path());
@@ -131,8 +132,9 @@ fn create_new_object() {
 #[test]
 #[should_panic(expected = "Cannot create object s3-object because it already exists")]
 fn fail_create_new_object_when_already_exists() {
-    run_s3_test(
+    panic_or_run_s3_test(
         "fail_create_new_object_when_already_exists",
+        "Cannot create object s3-object because it already exists",
         |_s3_client: S3Client, prefix: String, staging: TempDir, temp: TempDir| {
             let repo = default_repo(&prefix, staging.path());
             let object_id = "s3-object";
@@ -157,7 +159,7 @@ fn fail_create_new_object_when_already_exists() {
 
 #[test]
 fn create_and_update_object() {
-    run_s3_test(
+    skip_or_run_s3_test(
         "create_and_update_object",
         |s3_client: S3Client, prefix: String, staging: TempDir, temp: TempDir| {
             let repo = default_repo(&prefix, staging.path());
@@ -292,7 +294,7 @@ fn create_and_update_object() {
 
 #[test]
 fn purge_object() {
-    run_s3_test(
+    skip_or_run_s3_test(
         "purge_object",
         |_s3_client: S3Client, prefix: String, staging: TempDir, temp: TempDir| {
             let repo = default_repo(&prefix, staging.path());
@@ -324,7 +326,7 @@ fn purge_object() {
 
 #[test]
 fn purge_object_when_not_exists() {
-    run_s3_test(
+    skip_or_run_s3_test(
         "purge_object_when_not_exists",
         |_s3_client: S3Client, prefix: String, staging: TempDir, _temp: TempDir| {
             let repo = default_repo(&prefix, staging.path());
@@ -339,8 +341,9 @@ fn purge_object_when_not_exists() {
     expected = "Cannot create version v2 in object out-of-sync because the current version is at v2"
 )]
 fn fail_commit_when_out_of_sync() {
-    run_s3_test(
+    panic_or_run_s3_test(
         "fail_commit_when_out_of_sync",
+        "Cannot create version v2 in object out-of-sync because the current version is at v2",
         |_s3_client: S3Client, prefix: String, staging: TempDir, temp: TempDir| {
             let repo = default_repo(&prefix, staging.path());
             let object_id = "out-of-sync";
@@ -390,14 +393,27 @@ fn fail_commit_when_out_of_sync() {
     );
 }
 
-/// Runs the test if the environment is configured to run S3 tests, and removes all resources
-/// created during the test run, regardless of the test's outcome.
-fn run_s3_test(name: &str, test: impl FnOnce(S3Client, String, TempDir, TempDir) + UnwindSafe) {
+fn panic_or_run_s3_test(name: &str, message: &str, test: impl FnOnce(S3Client, String, TempDir, TempDir) + UnwindSafe) {
+    if should_ignore_test() {
+        println!("Skipping test {}", name);
+        panic!("{}", message);
+    }
+
+    run_s3_test(name, test)
+}
+
+fn skip_or_run_s3_test(name: &str, test: impl FnOnce(S3Client, String, TempDir, TempDir) + UnwindSafe) {
     if should_ignore_test() {
         println!("Skipping test {}", name);
         return;
     }
 
+    run_s3_test(name, test)
+}
+
+/// Runs the test if the environment is configured to run S3 tests, and removes all resources
+/// created during the test run, regardless of the test's outcome.
+fn run_s3_test(name: &str, test: impl FnOnce(S3Client, String, TempDir, TempDir) + UnwindSafe) {
     // let _ = env_logger::builder().is_test(true).filter_level(LevelFilter::Info).try_init();
 
     let staging = TempDir::new().unwrap();
