@@ -32,9 +32,11 @@ have not been specified:
 
 The [releases page](https://github.com/pwinckles/rocfl/releases) has
 pre-built binaries that should work on most common OSes and
-architectures. You do not need to install Rust to use them. Simply
-download the appropriate binary, rename it to `rocfl`, and execute
-`./rocfl --help`.
+architectures. You do _not_ need to install Rust to use them.
+
+1. Download and unzip the appropriate binary
+2. On Linux or Mac, execute `chmod +x rocfl` to [fix the permissions](https://github.com/actions/upload-artifact/issues/38)
+3. Execute `./rocfl --help` to verify it works
 
 ### Local Build
 
