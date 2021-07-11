@@ -76,11 +76,7 @@ pub fn load_config(name: &Option<String>) -> Result<Config> {
 /// The path to the rocfl config file, or None if the config directory cannot be resolved.
 /// The file may not exist.
 pub fn config_path() -> Option<PathBuf> {
-    if let Some(dirs) = project_dirs() {
-        Some(dirs.config_dir().join(CONFIG_FILE))
-    } else {
-        None
-    }
+    project_dirs().map(|dirs| dirs.config_dir().join(CONFIG_FILE))
 }
 
 /// Reference to the rocfl project directories. These directories do **not** necessarily exist
