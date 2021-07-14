@@ -1562,13 +1562,8 @@ fn fail_object_commit_when_no_known_storage_layout_and_root_specified_and_obj_al
     )
     .unwrap();
 
-    repo.commit(
-        object_2_id,
-        CommitMeta::new(),
-        Some(object_root),
-        false,
-    )
-    .unwrap();
+    repo.commit(object_2_id, CommitMeta::new(), Some(object_root), false)
+        .unwrap();
 }
 
 #[test]

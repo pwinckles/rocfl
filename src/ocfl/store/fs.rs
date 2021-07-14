@@ -1056,6 +1056,7 @@ fn write_layout_config(root: impl AsRef<Path>, layout: &StorageLayout) -> Result
         LayoutExtensionName::FlatDirectLayout => specs::EXT_0002_SPEC,
         LayoutExtensionName::HashedNTupleObjectIdLayout => specs::EXT_0003_SPEC,
         LayoutExtensionName::HashedNTupleLayout => specs::EXT_0004_SPEC,
+        LayoutExtensionName::FlatOmitPrefixLayout => specs::EXT_0006_SPEC,
     };
 
     write!(

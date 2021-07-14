@@ -23,6 +23,7 @@ pub const HASHED_NTUPLE_OBJECT_ID_LAYOUT_EXTENSION: &str =
     "0003-hash-and-id-n-tuple-storage-layout";
 pub const HASHED_NTUPLE_LAYOUT_EXTENSION: &str = "0004-hashed-n-tuple-storage-layout";
 pub const MUTABLE_HEAD_EXTENSION: &str = "0005-mutable-head";
+pub const FLAT_OMIT_PREFIX_LAYOUT_EXTENSION: &str = "0006-flat-omit-prefix-storage-layout";
 pub const ROCFL_STAGING_EXTENSION: &str = "rocfl-staging";
 pub const ROCFL_LOCKS_EXTENSION: &str = "rocfl-locks";
 
@@ -32,6 +33,7 @@ pub static SUPPORTED_EXTENSIONS: Lazy<HashSet<&str>> = Lazy::new(|| {
     set.insert(HASHED_NTUPLE_OBJECT_ID_LAYOUT_EXTENSION);
     set.insert(HASHED_NTUPLE_LAYOUT_EXTENSION);
     set.insert(MUTABLE_HEAD_EXTENSION);
+    set.insert(FLAT_OMIT_PREFIX_LAYOUT_EXTENSION);
     set.insert(ROCFL_STAGING_EXTENSION);
     set.insert(ROCFL_LOCKS_EXTENSION);
     set

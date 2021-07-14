@@ -1053,6 +1053,7 @@ fn write_layout_config(s3_client: &S3Client, layout: &StorageLayout) -> Result<(
         LayoutExtensionName::FlatDirectLayout => specs::EXT_0002_SPEC,
         LayoutExtensionName::HashedNTupleObjectIdLayout => specs::EXT_0003_SPEC,
         LayoutExtensionName::HashedNTupleLayout => specs::EXT_0004_SPEC,
+        LayoutExtensionName::FlatOmitPrefixLayout => specs::EXT_0006_SPEC,
     };
 
     s3_client.put_object_bytes(

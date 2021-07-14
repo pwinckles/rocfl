@@ -193,6 +193,10 @@ fn create_layout(layout_name: Layout, config_file: Option<&Path>) -> Result<Opti
             LayoutExtensionName::HashedNTupleObjectIdLayout,
             config_bytes.as_deref(),
         )?),
+        Layout::FlatOmitPrefix => Some(StorageLayout::new(
+            LayoutExtensionName::FlatOmitPrefixLayout,
+            config_bytes.as_deref(),
+        )?),
     };
 
     Ok(layout)

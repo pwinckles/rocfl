@@ -32,6 +32,9 @@ pub enum LayoutExtensionName {
     #[strum(serialize = "0003-hash-and-id-n-tuple-storage-layout")]
     #[serde(rename = "0003-hash-and-id-n-tuple-storage-layout")]
     HashedNTupleObjectIdLayout,
+    #[strum(serialize = "0006-flat-omit-prefix-storage-layout")]
+    #[serde(rename = "0006-flat-omit-prefix-storage-layout")]
+    FlatOmitPrefixLayout,
 }
 
 impl StorageLayout {
@@ -46,6 +49,9 @@ impl StorageLayout {
                 }
                 LayoutExtensionName::HashedNTupleObjectIdLayout => {
                     Ok(HashedNTupleObjectIdLayoutExtension::new(config_bytes)?.into())
+                }
+                LayoutExtensionName::FlatOmitPrefixLayout => {
+                    Ok(FlatOmitPrefixLayoutExtension::new(config_bytes)?.into())
                 }
             }
         };
@@ -92,6 +98,14 @@ struct HashedNTupleObjectIdLayoutExtension {
     config: HashedNTupleObjectIdLayoutConfig,
 }
 
+/// [Flat Omit Prefix Storage Layout Extension](https://ocfl.github.io/extensions/0006-flat-omit-prefix-storage-layout.html)
+#[derive(Debug)]
+struct FlatOmitPrefixLayoutExtension {
+    config: FlatOmitPrefixLayoutConfig,
+    case_matters: bool,
+    normalized_delimiter: String,
+}
+
 /// [Flat Direct Storage Layout Config](https://ocfl.github.io/extensions/0002-flat-direct-storage-layout.html)
 #[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase", default)]
@@ -120,11 +134,20 @@ struct HashedNTupleObjectIdLayoutConfig {
     number_of_tuples: usize,
 }
 
+/// [Flat Omit Prefix Storage Layout Config](https://ocfl.github.io/extensions/0006-flat-omit-prefix-storage-layout.html)
+#[derive(Deserialize, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct FlatOmitPrefixLayoutConfig {
+    extension_name: LayoutExtensionName,
+    delimiter: String,
+}
+
 #[derive(Debug)]
 enum LayoutExtension {
     FlatDirect(FlatDirectLayoutExtension),
     HashedNTuple(HashedNTupleLayoutExtension),
     HashedNTupleObjectId(HashedNTupleObjectIdLayoutExtension),
+    FlatOmitPrefix(FlatOmitPrefixLayoutExtension),
 }
 
 impl FlatDirectLayoutConfig {
@@ -194,12 +217,30 @@ impl Default for HashedNTupleObjectIdLayoutConfig {
     }
 }
 
+impl FlatOmitPrefixLayoutConfig {
+    fn validate(&self) -> Result<()> {
+        validate_extension_name(
+            &LayoutExtensionName::FlatOmitPrefixLayout,
+            &self.extension_name,
+        )?;
+
+        if self.delimiter.is_empty() {
+            return Err(RocflError::InvalidConfiguration(
+                "delimiter was empty but it must be non-empty".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+}
+
 impl LayoutExtension {
     fn map_object_id(&self, object_id: &str) -> String {
         match self {
             LayoutExtension::FlatDirect(ext) => ext.map_object_id(object_id),
             LayoutExtension::HashedNTuple(ext) => ext.map_object_id(object_id),
             LayoutExtension::HashedNTupleObjectId(ext) => ext.map_object_id(object_id),
+            LayoutExtension::FlatOmitPrefix(ext) => ext.map_object_id(object_id),
         }
     }
 
@@ -208,6 +249,7 @@ impl LayoutExtension {
             LayoutExtension::FlatDirect(ext) => ext.config.extension_name,
             LayoutExtension::HashedNTuple(ext) => ext.config.extension_name,
             LayoutExtension::HashedNTupleObjectId(ext) => ext.config.extension_name,
+            LayoutExtension::FlatOmitPrefix(ext) => ext.config.extension_name,
         }
     }
 
@@ -218,6 +260,7 @@ impl LayoutExtension {
             LayoutExtension::HashedNTupleObjectId(ext) => {
                 Ok(serde_json::to_vec_pretty(&ext.config)?)
             }
+            LayoutExtension::FlatOmitPrefix(ext) => Ok(serde_json::to_vec_pretty(&ext.config)?),
         }
     }
 }
@@ -237,6 +280,12 @@ impl From<HashedNTupleLayoutExtension> for LayoutExtension {
 impl From<HashedNTupleObjectIdLayoutExtension> for LayoutExtension {
     fn from(extension: HashedNTupleObjectIdLayoutExtension) -> Self {
         LayoutExtension::HashedNTupleObjectId(extension)
+    }
+}
+
+impl From<FlatOmitPrefixLayoutExtension> for LayoutExtension {
+    fn from(extension: FlatOmitPrefixLayoutExtension) -> Self {
+        LayoutExtension::FlatOmitPrefix(extension)
     }
 }
 
@@ -355,6 +404,59 @@ impl HashedNTupleObjectIdLayoutExtension {
     }
 }
 
+impl FlatOmitPrefixLayoutExtension {
+    fn new(config_bytes: Option<&[u8]>) -> Result<Self> {
+        let config = match config_bytes {
+            Some(config_bytes) => {
+                let config: FlatOmitPrefixLayoutConfig = serde_json::from_slice(config_bytes)?;
+                config.validate()?;
+                config
+            }
+            None => {
+                return Err(RocflError::InvalidConfiguration(
+                    "Storage layout extension configuration must be specified".to_string(),
+                ))
+            }
+        };
+
+        let case_matters = config.delimiter.to_lowercase() != config.delimiter.to_uppercase();
+
+        let normalized_delimiter = if case_matters {
+            config.delimiter.to_lowercase()
+        } else {
+            config.delimiter.clone()
+        };
+
+        Ok(Self {
+            config,
+            case_matters,
+            normalized_delimiter,
+        })
+    }
+
+    /// Object IDs have a prefix removed and the remaining part is returned
+    fn map_object_id(&self, object_id: &str) -> String {
+        let test_id = if self.case_matters {
+            Cow::Owned(object_id.to_lowercase())
+        } else {
+            Cow::Borrowed(object_id)
+        };
+
+        match test_id.rfind(&self.normalized_delimiter) {
+            None => object_id.to_string(),
+            Some(index) => {
+                let length = self.normalized_delimiter.len();
+                if object_id.len() == index + length {
+                    // FIXME this should really be an error
+                    "".to_string()
+                } else {
+                    object_id[index + length..].to_string()
+                }
+            }
+        }
+    }
+}
+
 /// Splits the digest into N tuples of M size, joined with a /
 fn digest_to_tuples(digest: &str, tuple_size: usize, number_of_tuples: usize) -> String {
     let mut path = String::new();
@@ -460,6 +562,7 @@ mod tests {
     use super::{
         lower_percent_escape, HashedNTupleLayoutExtension, HashedNTupleObjectIdLayoutExtension,
     };
+    use crate::ocfl::store::layout::FlatOmitPrefixLayoutExtension;
     use crate::ocfl::Result;
 
     const ID_1: &str = "info:example/test-123";
@@ -809,6 +912,48 @@ mod tests {
         let _ = hashed_ntuple_ext("sha256", 10, 10, false).unwrap();
     }
 
+    #[test]
+    fn flat_omit_mapping_single_char() {
+        let ext = flat_omit_ext(":").unwrap();
+
+        assert_eq!("example/test-123", ext.map_object_id(ID_1));
+        assert_eq!("lè-$id", ext.map_object_id(ID_2));
+        assert_eq!(ID_3, ext.map_object_id(ID_3));
+        assert_eq!(
+            "6e8bc430-9c3a-11d9-9669-0800200c9a66",
+            ext.map_object_id("urn:uuid:6e8bc430-9c3a-11d9-9669-0800200c9a66")
+        );
+        assert_eq!(
+            "",
+            ext.map_object_id("urn:uuid:6e8bc430-9c3a-11d9-9669-0800200c9a66:")
+        );
+    }
+
+    #[test]
+    fn flat_omit_mapping_multi_char() {
+        let ext = flat_omit_ext("edu/").unwrap();
+
+        assert_eq!(
+            "3448793",
+            ext.map_object_id("https://institution.edu/3448793")
+        );
+        assert_eq!(
+            "f8.05v",
+            ext.map_object_id("https://institution.edu/abc/edu/f8.05v")
+        );
+        assert_eq!("", ext.map_object_id("https://example.edu/"));
+        assert_eq!(
+            "https://example.com/",
+            ext.map_object_id("https://example.com/")
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "delimiter was empty")]
+    fn flat_omit_fail_when_delimiter_empty() {
+        let _ = flat_omit_ext("").unwrap();
+    }
+
     fn hashed_ntuple_ext(
         algorithm: &str,
         tuple_size: usize,
@@ -844,6 +989,19 @@ mod tests {
             \"numberOfTuples\": {}
         }}",
                 algorithm, tuple_size, number_of_tuples
+            )
+            .as_bytes(),
+        ))
+    }
+
+    fn flat_omit_ext(delimiter: &str) -> Result<FlatOmitPrefixLayoutExtension> {
+        FlatOmitPrefixLayoutExtension::new(Some(
+            format!(
+                "{{
+            \"extensionName\": \"0006-flat-omit-prefix-storage-layout\",
+            \"delimiter\": \"{}\"
+        }}",
+                delimiter
             )
             .as_bytes(),
         ))

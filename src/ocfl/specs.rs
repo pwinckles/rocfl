@@ -5,3 +5,5 @@ pub const EXT_0003_SPEC: &str =
     include_str!("../../resources/main/specs/0003-hash-and-id-n-tuple-storage-layout.md");
 pub const EXT_0004_SPEC: &str =
     include_str!("../../resources/main/specs/0004-hashed-n-tuple-storage-layout.md");
+pub const EXT_0006_SPEC: &str =
+    include_str!("../../resources/main/specs/0006-flat-omit-prefix-storage-layout.md");

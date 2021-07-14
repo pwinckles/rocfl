@@ -393,7 +393,11 @@ fn fail_commit_when_out_of_sync() {
     );
 }
 
-fn panic_or_run_s3_test(name: &str, message: &str, test: impl FnOnce(S3Client, String, TempDir, TempDir) + UnwindSafe) {
+fn panic_or_run_s3_test(
+    name: &str,
+    message: &str,
+    test: impl FnOnce(S3Client, String, TempDir, TempDir) + UnwindSafe,
+) {
     if should_ignore_test() {
         println!("Skipping test {}", name);
         panic!("{}", message);
@@ -402,7 +406,10 @@ fn panic_or_run_s3_test(name: &str, message: &str, test: impl FnOnce(S3Client, S
     run_s3_test(name, test)
 }
 
-fn skip_or_run_s3_test(name: &str, test: impl FnOnce(S3Client, String, TempDir, TempDir) + UnwindSafe) {
+fn skip_or_run_s3_test(
+    name: &str,
+    test: impl FnOnce(S3Client, String, TempDir, TempDir) + UnwindSafe,
+) {
     if should_ignore_test() {
         println!("Skipping test {}", name);
         return;

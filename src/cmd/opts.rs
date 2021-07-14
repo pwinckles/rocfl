@@ -565,6 +565,8 @@ pub enum Layout {
     HashedNTuple,
     #[strum(serialize = "0003-hash-and-id-n-tuple-storage-layout")]
     HashedNTupleObjectId,
+    #[strum(serialize = "0006-flat-omit-prefix-storage-layout")]
+    FlatOmitPrefix,
 }
 
 arg_enum! {
