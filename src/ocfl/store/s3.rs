@@ -595,18 +595,23 @@ impl S3Client {
                         ..Default::default()
                     }))?;
 
+            let prefix_offset = if self.prefix.is_empty() {
+                0
+            } else {
+                self.prefix.len() + 1
+            };
+
             if let Some(contents) = &result.contents {
                 for object in contents {
-                    objects.push(object.key.as_ref().unwrap()[self.prefix.len() + 1..].to_owned());
+                    objects.push(object.key.as_ref().unwrap()[prefix_offset..].to_owned());
                 }
             }
 
             if let Some(prefixes) = &result.common_prefixes {
                 for prefix in prefixes {
                     let length = prefix.prefix.as_ref().unwrap().len() - 1;
-                    directories.push(
-                        prefix.prefix.as_ref().unwrap()[self.prefix.len() + 1..length].to_owned(),
-                    );
+                    directories
+                        .push(prefix.prefix.as_ref().unwrap()[prefix_offset..length].to_owned());
                 }
             }
 
