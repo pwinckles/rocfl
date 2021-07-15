@@ -220,6 +220,7 @@ fn create_s3_repo(config: &Config) -> Result<OcflRepo> {
     OcflRepo::s3_repo(
         region,
         config.bucket.as_ref().unwrap(),
+        config.profile.as_deref(),
         config.root.as_deref(),
         config.staging_root.as_ref().unwrap(),
     )
@@ -232,6 +233,7 @@ fn init_s3_repo(config: &Config, layout: Option<StorageLayout>) -> Result<OcflRe
     OcflRepo::init_s3_repo(
         region,
         config.bucket.as_ref().unwrap(),
+        config.profile.as_deref(),
         config.root.as_deref(),
         config.staging_root.as_ref().unwrap(),
         layout,
@@ -264,6 +266,9 @@ fn resolve_config(args: &RocflArgs, mut config: Config) -> Config {
     }
     if args.endpoint.is_some() {
         config.endpoint = args.endpoint.clone();
+    }
+    if args.profile.is_some() {
+        config.profile = args.profile.clone()
     }
 
     if let Command::Commit(commit) = &args.command {

@@ -68,6 +68,10 @@ pub struct RocflArgs {
     #[structopt(short, long, value_name = "ENDPOINT")]
     pub endpoint: Option<String>,
 
+    /// AWS profile to load credentials from.
+    #[structopt(short, long, value_name = "PROFILE")]
+    pub profile: Option<String>,
+
     /// Suppress error messages
     #[structopt(short, long)]
     pub quiet: bool,
