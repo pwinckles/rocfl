@@ -22,6 +22,7 @@ pub struct Config {
     pub region: Option<String>,
     pub bucket: Option<String>,
     pub endpoint: Option<String>,
+    pub profile: Option<String>,
 }
 
 impl Config {
@@ -34,6 +35,7 @@ impl Config {
             region: None,
             bucket: None,
             endpoint: None,
+            profile: None,
         }
     }
 
@@ -136,6 +138,7 @@ fn resolve_config(name: &Option<String>, mut config: HashMap<String, Config>) ->
             resolved.region = resolve_field(global.region, repo.region);
             resolved.bucket = resolve_field(global.bucket, repo.bucket);
             resolved.endpoint = resolve_field(global.endpoint, repo.endpoint);
+            resolved.profile = resolve_field(global.profile, repo.profile);
 
             resolved
         }

@@ -14,7 +14,8 @@ use futures::{FutureExt, TryStreamExt};
 use globset::GlobBuilder;
 use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
-use rusoto_core::{ByteStream, Region, RusotoError};
+use rusoto_core::credential::{AutoRefreshingProvider, ChainProvider, ProfileProvider};
+use rusoto_core::{ByteStream, Client, HttpClient, Region, RusotoError};
 use rusoto_s3::{
     AbortMultipartUploadRequest, CompleteMultipartUploadRequest, CompletedMultipartUpload,
     CompletedPart, CreateMultipartUploadRequest, DeleteObjectRequest, GetObjectError,
@@ -54,8 +55,13 @@ pub struct S3OcflStore {
 
 impl S3OcflStore {
     /// Creates a new S3OcflStore
-    pub fn new(region: Region, bucket: &str, prefix: Option<&str>) -> Result<Self> {
-        let s3_client = S3Client::new(region, bucket, prefix)?;
+    pub fn new(
+        region: Region,
+        bucket: &str,
+        profile: Option<&str>,
+        prefix: Option<&str>,
+    ) -> Result<Self> {
+        let s3_client = S3Client::new(region, bucket, profile, prefix)?;
 
         check_extensions(&s3_client);
         let storage_layout = load_storage_layout(&s3_client);
@@ -73,10 +79,11 @@ impl S3OcflStore {
     pub fn init(
         region: Region,
         bucket: &str,
+        profile: Option<&str>,
         prefix: Option<&str>,
         layout: Option<StorageLayout>,
     ) -> Result<Self> {
-        let s3_client = S3Client::new(region, bucket, prefix)?;
+        let s3_client = S3Client::new(region, bucket, profile, prefix)?;
 
         init_new_repo(&s3_client, layout.as_ref())?;
 
@@ -540,9 +547,14 @@ struct InventoryIter<'a> {
 }
 
 impl S3Client {
-    fn new(region: Region, bucket: &str, prefix: Option<&str>) -> Result<Self> {
+    fn new(
+        region: Region,
+        bucket: &str,
+        profile: Option<&str>,
+        prefix: Option<&str>,
+    ) -> Result<Self> {
         Ok(S3Client {
-            s3_client: RusotoS3Client::new(region),
+            s3_client: create_rusoto_client(region, profile),
             bucket: bucket.to_owned(),
             prefix: prefix.unwrap_or_default().to_owned(),
             runtime: Runtime::new()?,
@@ -988,6 +1000,24 @@ fn check_extensions(s3_client: &S3Client) {
             }
         }
         Err(e) => error!("Failed to list storage root extensions: {}", e),
+    }
+}
+
+fn create_rusoto_client(region: Region, profile: Option<&str>) -> RusotoS3Client {
+    match profile {
+        Some(profile) => {
+            // Client setup code copied from Rusoto -- they don't make it easy to set the profile
+            let credentials_provider =
+                AutoRefreshingProvider::new(ChainProvider::with_profile_provider(
+                    ProfileProvider::with_default_credentials(profile)
+                        .expect("failed to create profile provider"),
+                ))
+                .expect("failed to create credentials provider");
+            let dispatcher = HttpClient::new().expect("failed to create request dispatcher");
+            let client = Client::new_with(credentials_provider, dispatcher);
+            RusotoS3Client::new_with_client(client, region)
+        }
+        None => RusotoS3Client::new(region),
     }
 }
 

@@ -84,6 +84,8 @@ staging_root = "/path/to/staging/root"
 # The next properties only apply when using S3
 # The AWS region your bucket is in
 region = "aws-region"
+# The AWS credentials profile to load credentials from. If not specified, "default" is used.
+profile = "aws-credentials-profile"
 # The URL to the S3 endpoint. This is only needed if you are using a non-standard region
 endpoint = "https://s3-endpoint"
 # The S3 bucket the OCFL repository is in
@@ -530,6 +532,7 @@ To connect to an OCFL repository in S3, you first need to create an
 IAM user with access to the S3 bucket, and then setup a local
 `~/.aws/credentials` file or environment variables as [described
 here](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html).
+Credential profiles can be specified using the `--profile` option.
 Then, when you invoke `rocfl` you must specify the bucket the
 repository is in as well as the bucket region. For example:
 

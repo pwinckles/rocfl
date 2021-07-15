@@ -17,9 +17,10 @@
 # [my-fs-repo]
 # root = "/path/to/storage/root"
 #
-# # This is repository specific configuratio for a remote S3 repository.
+# # This is repository specific configuration for a remote S3 repository.
 # # You can acitivate this config by invoking rocfl with '-n my-s3-repo'
 # [my-s3-repo]
+# profile = "my-aws-credentials-profile"
 # region = "us-east-2"
 # bucket = "my-example-ocfl-bucket"
 # root = "my-s3-repo"
