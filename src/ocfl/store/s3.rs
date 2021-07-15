@@ -58,10 +58,10 @@ impl S3OcflStore {
     pub fn new(
         region: Region,
         bucket: &str,
-        profile: Option<&str>,
         prefix: Option<&str>,
+        profile: Option<&str>,
     ) -> Result<Self> {
-        let s3_client = S3Client::new(region, bucket, profile, prefix)?;
+        let s3_client = S3Client::new(region, bucket, prefix, profile)?;
 
         check_extensions(&s3_client);
         let storage_layout = load_storage_layout(&s3_client);
@@ -79,11 +79,11 @@ impl S3OcflStore {
     pub fn init(
         region: Region,
         bucket: &str,
-        profile: Option<&str>,
         prefix: Option<&str>,
         layout: Option<StorageLayout>,
+        profile: Option<&str>,
     ) -> Result<Self> {
-        let s3_client = S3Client::new(region, bucket, profile, prefix)?;
+        let s3_client = S3Client::new(region, bucket, prefix, profile)?;
 
         init_new_repo(&s3_client, layout.as_ref())?;
 
@@ -550,8 +550,8 @@ impl S3Client {
     fn new(
         region: Region,
         bucket: &str,
-        profile: Option<&str>,
         prefix: Option<&str>,
+        profile: Option<&str>,
     ) -> Result<Self> {
         Ok(S3Client {
             s3_client: create_rusoto_client(region, profile),

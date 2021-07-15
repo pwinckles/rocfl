@@ -602,7 +602,7 @@ fn default_repo(prefix: &str, staging: impl AsRef<Path>) -> OcflRepo {
 }
 
 fn init_repo(prefix: &str, staging: impl AsRef<Path>, layout: Option<StorageLayout>) -> OcflRepo {
-    OcflRepo::init_s3_repo(REGION, &bucket(), None, Some(prefix), staging, layout).unwrap()
+    OcflRepo::init_s3_repo(REGION, &bucket(), Some(prefix), staging, layout, None).unwrap()
 }
 
 fn s3_prefix() -> String {

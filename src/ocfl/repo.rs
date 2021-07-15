@@ -94,14 +94,14 @@ impl OcflRepo {
     pub fn init_s3_repo(
         region: Region,
         bucket: &str,
-        profile: Option<&str>,
         prefix: Option<&str>,
         staging_root: impl AsRef<Path>,
         layout: Option<StorageLayout>,
+        profile: Option<&str>,
     ) -> Result<Self> {
         Ok(Self {
             staging_root: staging_root.as_ref().to_path_buf(),
-            store: Box::new(S3OcflStore::init(region, bucket, profile, prefix, layout)?),
+            store: Box::new(S3OcflStore::init(region, bucket, prefix, layout, profile)?),
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
             use_backslashes: false,
@@ -115,13 +115,13 @@ impl OcflRepo {
     pub fn s3_repo(
         region: Region,
         bucket: &str,
-        profile: Option<&str>,
         prefix: Option<&str>,
         staging_root: impl AsRef<Path>,
+        profile: Option<&str>,
     ) -> Result<Self> {
         Ok(Self {
             staging_root: staging_root.as_ref().to_path_buf(),
-            store: Box::new(S3OcflStore::new(region, bucket, profile, prefix)?),
+            store: Box::new(S3OcflStore::new(region, bucket, prefix, profile)?),
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
             use_backslashes: false,
