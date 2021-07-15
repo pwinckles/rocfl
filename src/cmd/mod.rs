@@ -220,9 +220,9 @@ fn create_s3_repo(config: &Config) -> Result<OcflRepo> {
     OcflRepo::s3_repo(
         region,
         config.bucket.as_ref().unwrap(),
-        config.profile.as_deref(),
         config.root.as_deref(),
         config.staging_root.as_ref().unwrap(),
+        config.profile.as_deref(),
     )
 }
 
@@ -233,10 +233,10 @@ fn init_s3_repo(config: &Config, layout: Option<StorageLayout>) -> Result<OcflRe
     OcflRepo::init_s3_repo(
         region,
         config.bucket.as_ref().unwrap(),
-        config.profile.as_deref(),
         config.root.as_deref(),
         config.staging_root.as_ref().unwrap(),
         layout,
+        config.profile.as_deref(),
     )
 }
 
