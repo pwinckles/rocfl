@@ -389,7 +389,7 @@ impl HashedNTupleObjectIdLayoutExtension {
         );
 
         // sadly, this produced uppercase hex; lowercase is required
-        let encoded = utf8_percent_encode(&object_id, &NON_ALPHA_PLUS).to_string();
+        let encoded = utf8_percent_encode(object_id, &NON_ALPHA_PLUS).to_string();
         let lower = lower_percent_escape(&encoded);
 
         if lower.len() <= MAX_0003_ENCAPSULATION_LENGTH {

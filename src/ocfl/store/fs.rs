@@ -137,7 +137,7 @@ impl FsOcflStore {
         );
 
         let mut iter =
-            InventoryIter::new_id_matching(&self.storage_root, &object_id, self.closed.clone())?;
+            InventoryIter::new_id_matching(&self.storage_root, object_id, self.closed.clone())?;
 
         match iter.next() {
             Some(inventory) => {
@@ -146,7 +146,7 @@ impl FsOcflStore {
                 }
                 Ok(inventory)
             }
-            None => Err(not_found(&object_id, None)),
+            None => Err(not_found(object_id, None)),
         }
     }
 
@@ -169,7 +169,7 @@ impl FsOcflStore {
                 Ok(inventory)
             }
         } else {
-            Err(not_found(&object_id, None))
+            Err(not_found(object_id, None))
         }
     }
 
@@ -226,7 +226,7 @@ impl OcflStore for FsOcflStore {
 
         match self.get_object_root_path(object_id) {
             Some(object_root) => self.get_inventory_by_path(object_id, &object_root),
-            None => self.scan_for_inventory(&object_id),
+            None => self.scan_for_inventory(object_id),
         }
     }
 
@@ -360,7 +360,7 @@ impl OcflStore for FsOcflStore {
 
         fs::rename(version_path, &destination)?;
 
-        if let Err(e) = self.copy_inventory_files(&inventory, &destination, &object_root) {
+        if let Err(e) = self.copy_inventory_files(inventory, &destination, &object_root) {
             if let Err(e) = fs::rename(&destination, version_path) {
                 error!("Failed to rollback version {} of object {} at {}: {}. Manual intervention may be required.",
                        version_str, inventory.id, version_path.to_string_lossy(), e);
@@ -478,7 +478,7 @@ impl StagingStore for FsOcflStore {
             .open(paths::object_namaste_path(&storage_path))?;
 
         writeln!(file, "{}", OCFL_OBJECT_VERSION)?;
-        self.stage_inventory(&inventory, false, false)?;
+        self.stage_inventory(inventory, false, false)?;
 
         Ok(())
     }
@@ -490,7 +490,7 @@ impl StagingStore for FsOcflStore {
         source: &mut impl Read,
         logical_path: &InventoryPath,
     ) -> Result<()> {
-        let content_path = inventory.new_content_path_head(&logical_path)?;
+        let content_path = inventory.new_content_path_head(logical_path)?;
 
         let mut storage_path = PathBuf::from(&inventory.storage_path);
         storage_path.push(&content_path.as_ref());
@@ -510,7 +510,7 @@ impl StagingStore for FsOcflStore {
     ) -> Result<()> {
         let object_root = PathBuf::from(&inventory.storage_path);
 
-        let dst_content = inventory.new_content_path_head(&dst_logical)?;
+        let dst_content = inventory.new_content_path_head(dst_logical)?;
 
         let src_storage = object_root.join(src_content.as_ref());
         let dst_storage = object_root.join(dst_content.as_ref());
@@ -528,7 +528,7 @@ impl StagingStore for FsOcflStore {
         source: &impl AsRef<Path>,
         logical_path: &InventoryPath,
     ) -> Result<()> {
-        let content_path = inventory.new_content_path_head(&logical_path)?;
+        let content_path = inventory.new_content_path_head(logical_path)?;
 
         let mut storage_path = PathBuf::from(&inventory.storage_path);
         storage_path.push(&content_path.as_ref());
@@ -548,7 +548,7 @@ impl StagingStore for FsOcflStore {
     ) -> Result<()> {
         let object_root = PathBuf::from(&inventory.storage_path);
 
-        let dst_content = inventory.new_content_path_head(&dst_logical)?;
+        let dst_content = inventory.new_content_path_head(dst_logical)?;
 
         let src_storage = object_root.join(src_content.as_ref());
         let dst_storage = object_root.join(dst_content.as_ref());
@@ -633,7 +633,7 @@ impl StagingStore for FsOcflStore {
         if finalize {
             let version_path = paths::version_path(&object_root, inventory.head);
             fs::create_dir_all(&version_path)?;
-            self.copy_inventory_files(&inventory, &object_root, &version_path)?;
+            self.copy_inventory_files(inventory, &object_root, &version_path)?;
         }
 
         Ok(())

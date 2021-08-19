@@ -136,11 +136,11 @@ impl S3OcflStore {
             &object_id
         );
 
-        let mut iter = InventoryIter::new_id_matching(&self, &object_id, self.closed.clone());
+        let mut iter = InventoryIter::new_id_matching(self, object_id, self.closed.clone());
 
         match iter.next() {
             Some(inventory) => Ok(inventory),
-            None => Err(not_found(&object_id, None)),
+            None => Err(not_found(object_id, None)),
         }
     }
 
@@ -177,7 +177,7 @@ impl S3OcflStore {
     /// This is normally the `inventory.json` file in the object's root, but it could also be
     /// the inventory file in an extension directory, such as the mutable HEAD extension.
     fn parse_inventory(&self, object_root: &str) -> Result<Option<Inventory>> {
-        let bytes = self.get_inventory_bytes(&object_root)?;
+        let bytes = self.get_inventory_bytes(object_root)?;
         // TODO should validate hash
 
         if let Some((bytes, mutable_head)) = bytes {
@@ -327,7 +327,7 @@ impl OcflStore for S3OcflStore {
 
         match self.get_object_root_path(object_id) {
             Some(object_root) => self.parse_inventory_required(object_id, &object_root),
-            None => self.scan_for_inventory(&object_id),
+            None => self.scan_for_inventory(object_id),
         }
     }
 
@@ -341,8 +341,8 @@ impl OcflStore for S3OcflStore {
         self.ensure_open()?;
 
         Ok(Box::new(match filter_glob {
-            Some(glob) => InventoryIter::new_glob_matching(&self, glob, self.closed.clone())?,
-            None => InventoryIter::new(&self, None, self.closed.clone()),
+            Some(glob) => InventoryIter::new_glob_matching(self, glob, self.closed.clone())?,
+            None => InventoryIter::new(self, None, self.closed.clone()),
         }))
     }
 
@@ -576,7 +576,7 @@ impl S3Client {
     /// Returns all of the object keys or logical directories that are under the specified prefix.
     /// All returned keys and key parts are relative the repository prefix; not the search prefix.
     fn list_prefix(&self, path: &str, delimiter: Option<String>) -> Result<ListResult> {
-        let prefix = join_with_trailing_slash(&self.prefix, &path);
+        let prefix = join_with_trailing_slash(&self.prefix, path);
 
         info!("Listing S3 prefix: {}", prefix);
 
@@ -629,7 +629,7 @@ impl S3Client {
     }
 
     fn get_object(&self, path: &str) -> Result<Option<Vec<u8>>> {
-        let key = join(&self.prefix, &path);
+        let key = join(&self.prefix, path);
 
         info!("Getting object from S3: {}", key);
 
@@ -658,7 +658,7 @@ impl S3Client {
     }
 
     fn stream_object(&self, path: &str, sink: &mut dyn Write) -> Result<()> {
-        let key = join(&self.prefix, &path);
+        let key = join(&self.prefix, path);
 
         info!("Streaming object from S3: {}", key);
 
@@ -688,7 +688,7 @@ impl S3Client {
     }
 
     fn delete_object(&self, path: &str) -> Result<()> {
-        let key = join(&self.prefix, &path);
+        let key = join(&self.prefix, path);
 
         info!("Deleting object in S3: {}", key);
 
@@ -708,7 +708,7 @@ impl S3Client {
         content: Bytes,
         content_type: Option<&str>,
     ) -> Result<()> {
-        let key = join(&self.prefix, &path);
+        let key = join(&self.prefix, path);
 
         info!("Putting object in S3: {}", key);
 
@@ -738,7 +738,7 @@ impl S3Client {
         if content_length > PART_SIZE {
             self.multipart_put_file(path, file_path, content_length, content_type)?;
         } else {
-            let key = join(&self.prefix, &path);
+            let key = join(&self.prefix, path);
             info!(
                 "Putting {} in S3 at {}",
                 file_path.as_ref().to_string_lossy(),
@@ -770,7 +770,7 @@ impl S3Client {
         content_length: u64,
         content_type: Option<&str>,
     ) -> Result<()> {
-        let key = join(&self.prefix, &path);
+        let key = join(&self.prefix, path);
 
         info!(
             "Initiating S3 multipart upload of {} to {}",

@@ -1,4 +1,3 @@
-use core::iter;
 use std::fmt::{self, Display, Formatter};
 use std::io::{ErrorKind, Result, Write};
 use std::{cmp, io};
@@ -234,7 +233,7 @@ impl<'a> TextCell<'a> {
         let spaces: String = if width == 0 {
             "".to_owned()
         } else {
-            iter::repeat(' ').take(width - self.width).collect()
+            " ".repeat(width - self.width)
         };
 
         let style = if enable_style {

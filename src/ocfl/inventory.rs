@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::hash_map::Iter;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryInto;
 use std::mem;
@@ -10,7 +11,7 @@ use log::error;
 use once_cell::unsync::OnceCell;
 use serde::{Deserialize, Serialize};
 
-use crate::ocfl::bimap::{IntoIter, Iter, PathBiMap};
+use crate::ocfl::bimap::PathBiMap;
 use crate::ocfl::consts::{DEFAULT_CONTENT_DIR, INVENTORY_TYPE, MUTABLE_HEAD_EXT_DIR};
 use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
 use crate::ocfl::error::{not_found, not_found_path, Result, RocflError};
@@ -218,7 +219,7 @@ impl Inventory {
         let version_num = version_num.unwrap_or(self.head);
         let version = self.get_version(version_num)?;
 
-        let digest = match version.lookup_digest(&logical_path) {
+        let digest = match version.lookup_digest(logical_path) {
             Some(digest) => digest,
             None => {
                 return Err(RocflError::NotFound(format!(
@@ -376,7 +377,7 @@ impl Inventory {
             None => Rc::new(digest),
         };
 
-        let src_content_path = self.new_content_path_head(&src_path)?;
+        let src_content_path = self.new_content_path_head(src_path)?;
         self.manifest.remove_path(&src_content_path);
 
         let content_path = self.new_content_path_head(&dst_path)?;
@@ -542,13 +543,8 @@ impl Version {
         self.created = meta.created.unwrap_or_else(Local::now);
     }
 
-    /// Returns a consuming iterator for the version's state
-    pub fn state_into_iter(&mut self) -> IntoIter {
-        self.remove_state().into_iter()
-    }
-
     /// Returns non-consuming iterator for the version's state
-    pub fn state_iter(&self) -> Iter {
+    pub fn state_iter(&self) -> Iter<Rc<InventoryPath>, Rc<HexDigest>> {
         self.state.iter()
     }
 
@@ -568,7 +564,7 @@ impl Version {
 
     /// Returns true if the specified path exists as either a logical file or directory
     pub fn exists(&self, path: &InventoryPath) -> bool {
-        self.is_file(&path) || self.is_dir(path)
+        self.is_file(path) || self.is_dir(path)
     }
 
     /// Returns true if the specified path exists and is a logical file
@@ -590,7 +586,7 @@ impl Version {
     /// A path conflicts if it a portion of the path is interpreted as both a directory
     /// and a file.
     pub fn validate_non_conflicting(&self, path: &InventoryPath) -> Result<()> {
-        if self.is_dir(&path) {
+        if self.is_dir(path) {
             return Err(RocflError::IllegalState(format!(
                 "Conflicting logical path {}: This path is already in use as a directory",
                 path
@@ -700,7 +696,7 @@ impl Version {
             let mut seen = HashSet::with_capacity(left.state.len());
 
             for (path, left_digest) in left.state_iter() {
-                match self.lookup_digest(&path) {
+                match self.lookup_digest(path) {
                     None => {
                         deletes
                             .entry(left_digest.clone())

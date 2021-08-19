@@ -260,7 +260,7 @@ impl PartialOrd for DiffLine {
 
 impl Ord for DiffLine {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.diff.path().cmp(&other.diff.path())
+        self.diff.path().cmp(other.diff.path())
     }
 }
 

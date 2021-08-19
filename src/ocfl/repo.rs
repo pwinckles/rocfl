@@ -342,7 +342,7 @@ impl OcflRepo {
         let mut current_digest: Option<Rc<HexDigest>> = None;
 
         for (id, version) in inventory.versions {
-            match version.lookup_digest(&path) {
+            match version.lookup_digest(path) {
                 Some(digest) => {
                     if current_digest.is_none()
                         || current_digest.as_ref().unwrap().as_ref().ne(digest)
@@ -395,7 +395,7 @@ impl OcflRepo {
             return Ok(Vec::new());
         }
 
-        match self.get_staging()?.get_inventory(&object_id) {
+        match self.get_staging()?.get_inventory(object_id) {
             Err(RocflError::NotFound(_)) => Ok(Vec::new()),
             Err(e) => Err(e),
             Ok(inventory) => inventory.diff_versions(None, inventory.head),
@@ -455,7 +455,7 @@ impl OcflRepo {
 
         let _lock = self.get_lock_manager()?.acquire(object_id)?;
 
-        match self.store.get_inventory(&object_id) {
+        match self.store.get_inventory(object_id) {
             Err(RocflError::NotFound(_)) => (),
             Err(e) => return Err(e),
             _ => {
@@ -729,7 +729,7 @@ impl OcflRepo {
 
         let _lock = self.get_lock_manager()?.acquire(object_id)?;
 
-        let mut inventory = match staging.get_inventory(&object_id) {
+        let mut inventory = match staging.get_inventory(object_id) {
             Ok(inventory) => inventory,
             Err(RocflError::NotFound(_)) => return Ok(()),
             Err(e) => return Err(e),
@@ -806,7 +806,7 @@ impl OcflRepo {
 
         let _lock = self.get_lock_manager()?.acquire(object_id)?;
 
-        let mut inventory = match staging.get_inventory(&object_id) {
+        let mut inventory = match staging.get_inventory(object_id) {
             Ok(inventory) => inventory,
             Err(RocflError::NotFound(_)) => {
                 return Err(RocflError::General(format!(
@@ -857,10 +857,10 @@ impl OcflRepo {
     fn get_or_created_staged_inventory(&self, object_id: &str) -> Result<Inventory> {
         let staging = self.get_staging()?;
 
-        match staging.get_inventory(&object_id) {
+        match staging.get_inventory(object_id) {
             Ok(inventory) => Ok(inventory),
             Err(RocflError::NotFound(_)) => {
-                let mut inventory = self.store.get_inventory(&object_id)?;
+                let mut inventory = self.store.get_inventory(object_id)?;
 
                 if inventory.mutable_head {
                     return Err(RocflError::IllegalState(
@@ -1038,7 +1038,7 @@ impl OcflRepo {
         // paths were already validated for conflicts. It is possible the file move could fail
         // if the source files conflict, but this will not corrupt anything.
         self.get_staging()?
-            .stage_file_copy(&inventory, &mut reader, &logical_path)?;
+            .stage_file_copy(inventory, &mut reader, &logical_path)?;
         let digest = reader.finalize_hex();
         inventory.add_file_to_head(digest, logical_path)
     }
@@ -1063,7 +1063,7 @@ impl OcflRepo {
         // paths were already validated for conflicts. It is possible the file move could fail
         // if the source files conflict, but this will not corrupt anything.
         self.get_staging()?
-            .stage_file_move(&inventory, &file, &logical_path)?;
+            .stage_file_move(inventory, &file, &logical_path)?;
         inventory.add_file_to_head(digest, logical_path)
     }
 
@@ -1124,7 +1124,7 @@ impl OcflRepo {
                             {
                                 logical_path_in_dst_dir_internal(&file, &dir.parent(), dst)?
                             } else {
-                                logical_path_in_dst_dir_internal(&file, &dir, dst)?
+                                logical_path_in_dst_dir_internal(&file, dir, dst)?
                             };
 
                             has_matches = true;
@@ -1303,10 +1303,10 @@ fn lookup_staged_digest_and_content_path(
 
     match inventory
         .get_version(src_version_num)?
-        .lookup_digest(&src_path)
+        .lookup_digest(src_path)
     {
         Some(digest) => {
-            let content_path = inventory.content_path_for_digest(&digest, None, Some(&src_path))?;
+            let content_path = inventory.content_path_for_digest(digest, None, Some(src_path))?;
 
             if content_path.as_ref().as_ref().starts_with(&staging_prefix) {
                 Ok(Some((digest.as_ref().clone(), content_path.clone())))

@@ -1,4 +1,5 @@
-use std::collections::{hash_map, HashMap, HashSet};
+use std::collections::hash_map::{IntoIter, Iter};
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::Formatter;
 use std::rc::Rc;
@@ -136,17 +137,13 @@ impl PathBiMap {
     }
 
     /// Returns an iterator that iterates over references to all path-id pairs
-    pub fn iter(&self) -> Iter {
-        Iter {
-            iter: self.path_to_id.iter(),
-        }
+    pub fn iter(&self) -> Iter<Rc<InventoryPath>, Rc<HexDigest>> {
+        self.path_to_id.iter()
     }
 
     /// Returns an iterator that iterates over id-paths pairs
-    pub fn iter_id_paths(&self) -> IterIdPaths {
-        IterIdPaths {
-            iter: self.id_to_paths.iter(),
-        }
+    pub fn iter_id_paths(&self) -> Iter<Rc<HexDigest>, HashSet<Rc<InventoryPath>>> {
+        self.id_to_paths.iter()
     }
 
     /// Returns the number of path-id pairs in the map
@@ -163,48 +160,10 @@ impl Default for PathBiMap {
 
 impl IntoIterator for PathBiMap {
     type Item = (Rc<InventoryPath>, Rc<HexDigest>);
-    type IntoIter = IntoIter;
+    type IntoIter = IntoIter<Rc<InventoryPath>, Rc<HexDigest>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        IntoIter {
-            iter: self.path_to_id.into_iter(),
-        }
-    }
-}
-
-pub struct IntoIter {
-    iter: hash_map::IntoIter<Rc<InventoryPath>, Rc<HexDigest>>,
-}
-
-impl Iterator for IntoIter {
-    type Item = (Rc<InventoryPath>, Rc<HexDigest>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
-pub struct Iter<'a> {
-    iter: hash_map::Iter<'a, Rc<InventoryPath>, Rc<HexDigest>>,
-}
-
-impl<'a> Iterator for Iter<'a> {
-    type Item = (&'a Rc<InventoryPath>, &'a Rc<HexDigest>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
-pub struct IterIdPaths<'a> {
-    iter: hash_map::Iter<'a, Rc<HexDigest>, HashSet<Rc<InventoryPath>>>,
-}
-
-impl<'a> Iterator for IterIdPaths<'a> {
-    type Item = (&'a Rc<HexDigest>, &'a HashSet<Rc<InventoryPath>>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
+        self.path_to_id.into_iter()
     }
 }
 
