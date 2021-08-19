@@ -289,7 +289,7 @@ impl S3OcflStore {
         mut callable: impl FnMut(&mut Vec<String>) -> Result<()>,
     ) -> Result<Vec<String>> {
         if let Err(e) = callable(&mut done) {
-            for path in done.iter() {
+            for path in &done {
                 if let Err(e2) = self.s3_client.delete_object(path) {
                     error!("Failed to rollback file {}: {}", path, e2);
                 }

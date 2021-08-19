@@ -193,7 +193,7 @@ impl Inventory {
                         self.defaulted_content_dir(),
                         logical_path.unwrap()
                     );
-                    for path in matches.iter() {
+                    for path in &matches {
                         if path.as_ref().as_ref().ends_with(&suffix) {
                             return Ok(path);
                         }
@@ -625,7 +625,7 @@ impl Version {
             .build()?
             .compile_matcher();
 
-        for (path, _digest) in self.state.iter() {
+        for (path, _digest) in &self.state {
             if matcher.is_match(path.as_ref().as_ref()) {
                 matches.insert(path.clone());
             }
@@ -676,7 +676,7 @@ impl Version {
             prefix.into()
         };
 
-        for (path, _digest) in self.state.iter() {
+        for (path, _digest) in &self.state {
             if path.as_ref().as_ref().starts_with(prefix.as_ref()) {
                 matches.push(path.clone());
             }

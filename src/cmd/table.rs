@@ -110,7 +110,7 @@ impl<'a> TableView<'a> {
             self.write_header(writer)?;
         }
 
-        for row in self.rows.iter() {
+        for row in &self.rows {
             row.write(writer, &self.columns, self.separator, self.enable_styling)?;
         }
 

@@ -65,7 +65,7 @@ impl ListCmd {
 
         let mut table = self.object_table(args);
 
-        for object in objects.iter() {
+        for object in &objects {
             if terminate.load(AOrdering::Acquire) {
                 return Ok(());
             }

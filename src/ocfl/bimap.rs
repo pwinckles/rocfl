@@ -167,6 +167,15 @@ impl IntoIterator for PathBiMap {
     }
 }
 
+impl<'a> IntoIterator for &'a PathBiMap {
+    type Item = (&'a Rc<InventoryPath>, &'a Rc<HexDigest>);
+    type IntoIter = Iter<'a, Rc<InventoryPath>, Rc<HexDigest>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.path_to_id.iter()
+    }
+}
+
 struct PathBiMapVisitor {}
 
 impl<'a> Visitor<'a> for PathBiMapVisitor {
