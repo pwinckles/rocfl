@@ -1267,6 +1267,7 @@ dependencies = [
  "ansi_term 0.12.1",
  "assert_cmd",
  "assert_fs",
+ "atty",
  "blake2",
  "bytes",
  "chrono",

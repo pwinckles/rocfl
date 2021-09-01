@@ -49,6 +49,7 @@ structopt = "0.3"
 clap = "2"
 ansi_term = "0.12"
 ctrlc = "3"
+atty = "0.2"
 
 # Logging
 log = "0.4"

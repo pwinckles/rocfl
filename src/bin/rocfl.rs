@@ -8,7 +8,7 @@ use rocfl::{cmd, config};
 use structopt::StructOpt;
 
 fn main() {
-    let args = RocflArgs::from_args();
+    let mut args = RocflArgs::from_args();
 
     let log_level = if args.quiet {
         LevelFilter::Off
@@ -34,6 +34,11 @@ fn main() {
             Config::new()
         }
     };
+
+    // If the output is being piped then we should disable styling
+    if atty::isnt(atty::Stream::Stdout) {
+        args.no_styles = true;
+    }
 
     if let Err(e) = cmd::exec_command(&args, config) {
         match e {
