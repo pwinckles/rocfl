@@ -155,7 +155,7 @@ impl Inventory {
         digest: &HexDigest,
         version_num: Option<VersionNum>,
         logical_path: Option<&InventoryPath>,
-    ) -> Result<&Rc<InventoryPath>> {
+    ) -> Result<Rc<InventoryPath>> {
         let version_num = version_num.unwrap_or(self.head);
 
         match self.manifest.get_paths(digest) {
@@ -164,12 +164,14 @@ impl Inventory {
 
                 for path in paths {
                     // TODO move this to `ContentPath` after it's created
-                    if let Some(slash) = path.as_ref().as_ref().find('/') {
-                        let version_str = &path.as_ref().as_ref().as_str()[0..slash];
+                    if let Some(slash) = (**path).as_ref().find('/') {
+                        // TODO add slice to InventoryPath
+                        let version_str = &(**path).as_ref()[0..slash];
 
                         // Unfortunately, mutable head extension paths do not contain a version num
                         let version = if self.mutable_head
-                            && path.as_ref().as_ref().starts_with(MUTABLE_HEAD_EXT_DIR)
+                            // TODO add starts_with to inventory path?
+                            && (**path).as_ref().starts_with(MUTABLE_HEAD_EXT_DIR)
                         {
                             self.head
                         } else {
@@ -177,7 +179,7 @@ impl Inventory {
                         };
 
                         if version <= version_num {
-                            matches.push(path);
+                            matches.push(path.clone());
                         }
                     }
                 }
@@ -194,13 +196,13 @@ impl Inventory {
                         logical_path.unwrap()
                     );
                     for path in &matches {
-                        if path.as_ref().as_ref().ends_with(&suffix) {
-                            return Ok(path);
+                        if (**path).as_ref().ends_with(&suffix) {
+                            return Ok(path.clone());
                         }
                     }
                 }
 
-                Ok(matches.first().unwrap())
+                Ok(matches.first().unwrap().clone())
             }
             None => Err(RocflError::CorruptObject {
                 object_id: self.id.clone(),
@@ -215,7 +217,7 @@ impl Inventory {
         &self,
         logical_path: &InventoryPath,
         version_num: Option<VersionNum>,
-    ) -> Result<&Rc<InventoryPath>> {
+    ) -> Result<Rc<InventoryPath>> {
         let version_num = version_num.unwrap_or(self.head);
         let version = self.get_version(version_num)?;
 
@@ -267,7 +269,7 @@ impl Inventory {
         for (digest, paths) in self.manifest.iter_id_paths() {
             if paths.len() > 1 {
                 for path in paths {
-                    if path.as_ref().as_ref().starts_with(&prefix) {
+                    if (**path).as_ref().starts_with(&prefix) {
                         matches
                             .entry(digest.clone())
                             .or_insert_with(HashSet::new)
@@ -626,7 +628,8 @@ impl Version {
             .compile_matcher();
 
         for (path, _digest) in &self.state {
-            if matcher.is_match(path.as_ref().as_ref()) {
+            // TODO implement AsRef<Path>?
+            if matcher.is_match((**path).as_ref()) {
                 matches.insert(path.clone());
             }
         }
@@ -677,7 +680,7 @@ impl Version {
         };
 
         for (path, _digest) in &self.state {
-            if path.as_ref().as_ref().starts_with(prefix.as_ref()) {
+            if (**path).as_ref().starts_with(prefix.as_ref()) {
                 matches.push(path.clone());
             }
         }

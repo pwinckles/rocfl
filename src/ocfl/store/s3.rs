@@ -361,7 +361,7 @@ impl OcflStore for S3OcflStore {
         let inventory = self.get_inventory(object_id)?;
 
         let content_path = inventory.content_path_for_logical_path(path, version_num)?;
-        let storage_path = join(&inventory.object_root, content_path.as_ref().as_ref());
+        let storage_path = join(&inventory.object_root, (*content_path).as_ref());
 
         self.s3_client.stream_object(&storage_path, sink)
     }

@@ -815,14 +815,14 @@ fn copy_files_into_new_object() -> Result<()> {
     assert_file_details(
         obj.state.get(&path("test.txt")).unwrap(),
         &obj_root,
-        deduped_path.as_ref().as_ref(),
+        (*deduped_path).as_ref(),
         "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
                         30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
     );
     assert_file_details(
         obj.state.get(&path("another/test.txt")).unwrap(),
         &obj_root,
-        deduped_path.as_ref().as_ref(),
+        (*deduped_path).as_ref(),
         "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
                         30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
     );
@@ -1736,13 +1736,13 @@ fn internal_copy_files_added_in_staged_version() -> Result<()> {
     assert_file_details(
         committed_obj.state.get(&path("just in.txt")).unwrap(),
         &Path::new(&committed_obj.object_root),
-        deduped_path.as_ref().as_ref(),
+        (*deduped_path).as_ref(),
         "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
     );
     assert_file_details(
         committed_obj.state.get(&path("just-in.txt")).unwrap(),
         &Path::new(&committed_obj.object_root),
-        deduped_path.as_ref().as_ref(),
+        (*deduped_path).as_ref(),
         "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
     );
 
@@ -4430,11 +4430,11 @@ fn assert_deduped_path(
     details: &FileDetails,
     possible_paths: &[&str],
 ) -> Rc<InventoryPath> {
-    assert!(possible_paths.contains(&details.content_path.as_ref().as_ref().as_str()));
+    assert!(possible_paths.contains(&(*details.content_path).as_ref()));
 
     let deduped = details.content_path.clone();
 
-    let storage_path = object_root.as_ref().join(deduped.as_ref().as_ref());
+    let storage_path = object_root.as_ref().join((*deduped).as_ref());
     assert!(
         storage_path.exists(),
         "Expected '{}' to exist",
@@ -4443,7 +4443,7 @@ fn assert_deduped_path(
 
     possible_paths
         .iter()
-        .filter(|p| &deduped.as_ref().as_ref() != p)
+        .filter(|p| (*deduped).as_ref() != **p)
         .for_each(|path| assert!(!object_root.as_ref().join(path).exists()));
 
     deduped

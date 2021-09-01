@@ -88,18 +88,12 @@ impl PathBiMap {
 
     // Gets the underlying Rc value of the specified id if it exists
     pub fn get_id_rc(&self, id: &HexDigest) -> Option<&Rc<HexDigest>> {
-        match self.id_to_paths.get_key_value(id) {
-            Some((id, _)) => Some(id),
-            None => None,
-        }
+        self.id_to_paths.get_key_value(id).map(|(id, _)| id)
     }
 
     // Gets the underlying Rc value of the specified path if it exists
     pub fn get_path_rc(&self, path: &InventoryPath) -> Option<&Rc<InventoryPath>> {
-        match self.path_to_id.get_key_value(path) {
-            Some((path, _)) => Some(path),
-            None => None,
-        }
+        self.path_to_id.get_key_value(path).map(|(path, _)| path)
     }
 
     /// True, if a mapping exists for the path

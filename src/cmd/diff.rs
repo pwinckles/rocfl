@@ -228,18 +228,18 @@ impl DiffLine {
                 "{} -> {}",
                 original
                     .iter()
-                    .map(|e| e.as_ref().as_ref().as_ref())
+                    .map(|e| (**e).as_ref())
                     .collect::<Vec<&str>>()
                     .join(", "),
                 renamed
                     .iter()
-                    .map(|e| e.as_ref().as_ref().as_ref())
+                    .map(|e| (**e).as_ref())
                     .collect::<Vec<&str>>()
                     .join(", ")
             )),
-            Diff::Added(path) => path.as_ref().as_ref().into(),
-            Diff::Modified(path) => path.as_ref().as_ref().into(),
-            Diff::Deleted(path) => path.as_ref().as_ref().into(),
+            Diff::Added(path) => (**path).as_ref().into(),
+            Diff::Modified(path) => (**path).as_ref().into(),
+            Diff::Deleted(path) => (**path).as_ref().into(),
         }
     }
 }

@@ -371,8 +371,8 @@ impl From<InventoryPath> for String {
     }
 }
 
-impl AsRef<String> for InventoryPath {
-    fn as_ref(&self) -> &String {
+impl AsRef<str> for InventoryPath {
+    fn as_ref(&self) -> &str {
         &self.0
     }
 }
@@ -454,7 +454,7 @@ impl ObjectVersion {
                     )?;
 
                     let storage_path = ObjectVersion::storage_path(
-                        content_path.as_ref().as_ref(),
+                        (*content_path).as_ref(),
                         object_storage_path,
                         use_backslashes,
                         &staging_version_prefix,
@@ -491,7 +491,7 @@ impl ObjectVersion {
                     )?;
 
                     let storage_path = ObjectVersion::storage_path(
-                        content_path.as_ref().as_ref(),
+                        (*content_path).as_ref(),
                         object_storage_path,
                         use_backslashes,
                         &staging_version_prefix,

@@ -263,7 +263,7 @@ impl OcflStore for FsOcflStore {
 
         let content_path = inventory.content_path_for_logical_path(path, version_num)?;
         let mut storage_path = PathBuf::from(&inventory.storage_path);
-        storage_path.push(content_path.as_ref().as_ref());
+        storage_path.push((*content_path).as_ref());
 
         let mut file = File::open(storage_path)?;
         io::copy(&mut file, sink)?;

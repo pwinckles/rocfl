@@ -242,7 +242,7 @@ impl<'a> TextCell<'a> {
             &*style::DEFAULT
         };
 
-        let value = self.value.as_ref().as_ref();
+        let value = (*self.value).as_ref();
 
         match alignment {
             Alignment::Left => write!(writer, "{}{}", style.paint(value), spaces),

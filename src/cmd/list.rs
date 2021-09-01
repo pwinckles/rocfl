@@ -190,7 +190,7 @@ impl ListCmd {
         let mut not_matched = HashMap::new();
 
         for (path, details) in object.state {
-            if matcher.is_match(path.as_ref().as_ref()) {
+            if matcher.is_match((*path).as_ref()) {
                 listings.push(Listing::File(ContentListing {
                     logical_path: path.to_string(),
                     details,
@@ -229,7 +229,7 @@ impl ListCmd {
                     .compile_matcher();
 
                 for (path, details) in not_matched {
-                    if sub_matcher.is_match(path.as_ref().as_ref()) {
+                    if sub_matcher.is_match((*path).as_ref()) {
                         listings.push(Listing::File(ContentListing {
                             logical_path: path.to_string(),
                             details,
