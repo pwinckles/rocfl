@@ -31,7 +31,7 @@ use super::{OcflLayout, OcflStore};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
-use crate::ocfl::{paths, specs, util, InventoryPath, LayoutExtensionName, VersionNum};
+use crate::ocfl::{paths, specs, util, LayoutExtensionName, LogicalPath, VersionNum};
 
 const TYPE_PLAIN: &str = "text/plain; charset=UTF-8";
 const TYPE_MARKDOWN: &str = "text/markdown; charset=UTF-8";
@@ -352,7 +352,7 @@ impl OcflStore for S3OcflStore {
     fn get_object_file(
         &self,
         object_id: &str,
-        path: &InventoryPath,
+        path: &LogicalPath,
         version_num: Option<VersionNum>,
         sink: &mut dyn Write,
     ) -> Result<()> {

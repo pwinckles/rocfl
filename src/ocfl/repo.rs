@@ -26,8 +26,8 @@ use crate::ocfl::store::layout::{LayoutExtensionName, StorageLayout};
 use crate::ocfl::store::s3::S3OcflStore;
 use crate::ocfl::store::{OcflStore, StagingStore};
 use crate::ocfl::{
-    paths, util, CommitMeta, Diff, DigestAlgorithm, InventoryPath, ObjectVersion,
-    ObjectVersionDetails, VersionDetails, VersionNum,
+    paths, util, CommitMeta, ContentPath, Diff, DigestAlgorithm, InventoryPath, LogicalPath,
+    ObjectVersion, ObjectVersionDetails, VersionDetails, VersionNum,
 };
 
 /// Interface for interacting with an OCFL repository
@@ -287,7 +287,7 @@ impl OcflRepo {
     pub fn get_object_file(
         &self,
         object_id: &str,
-        path: &InventoryPath,
+        path: &LogicalPath,
         version_num: Option<VersionNum>,
         sink: &mut dyn Write,
     ) -> Result<()> {
@@ -303,7 +303,7 @@ impl OcflRepo {
     pub fn get_staged_object_file(
         &self,
         object_id: &str,
-        path: &InventoryPath,
+        path: &LogicalPath,
         sink: &mut dyn Write,
     ) -> Result<()> {
         self.ensure_open()?;
@@ -331,7 +331,7 @@ impl OcflRepo {
     pub fn list_file_versions(
         &self,
         object_id: &str,
-        path: &InventoryPath,
+        path: &LogicalPath,
     ) -> Result<Vec<VersionDetails>> {
         self.ensure_open()?;
 
@@ -759,7 +759,7 @@ impl OcflRepo {
         let reset_adds = head_paths
             .into_iter()
             .filter(|path| !previous_paths.contains(path))
-            .collect::<HashSet<Rc<InventoryPath>>>();
+            .collect::<HashSet<Rc<LogicalPath>>>();
 
         // Need to apply add resets first to attempt to avoid path conflicts
         for path in reset_adds {
@@ -829,7 +829,7 @@ impl OcflRepo {
             &duplicates
                 .iter()
                 .map(|p| p.as_ref())
-                .collect::<Vec<&InventoryPath>>(),
+                .collect::<Vec<&ContentPath>>(),
         )?;
         staging.rm_orphaned_files(&inventory)?;
 
@@ -912,7 +912,7 @@ impl OcflRepo {
         src: &[impl AsRef<Path>],
         dst: &str,
         recursive: bool,
-        operator: impl Fn(&Path, InventoryPath, &mut Inventory) -> Result<()>,
+        operator: impl Fn(&Path, LogicalPath, &mut Inventory) -> Result<()>,
     ) -> Result<()> {
         if src.is_empty() {
             return Ok(());
@@ -1023,7 +1023,7 @@ impl OcflRepo {
     fn copy_file(
         &self,
         file: impl AsRef<Path>,
-        logical_path: InventoryPath,
+        logical_path: LogicalPath,
         inventory: &mut Inventory,
     ) -> Result<()> {
         let mut reader = inventory.digest_algorithm.reader(File::open(&file)?)?;
@@ -1046,7 +1046,7 @@ impl OcflRepo {
     fn move_file(
         &self,
         file: impl AsRef<Path>,
-        logical_path: InventoryPath,
+        logical_path: LogicalPath,
         inventory: &mut Inventory,
     ) -> Result<()> {
         info!(
@@ -1077,7 +1077,7 @@ impl OcflRepo {
         src: &[impl AsRef<str>],
         dst: &str,
         recursive: bool,
-    ) -> Result<(HashMap<Rc<InventoryPath>, InventoryPath>, Vec<String>)> {
+    ) -> Result<(HashMap<Rc<LogicalPath>, LogicalPath>, Vec<String>)> {
         let mut to_move = HashMap::new();
         let mut errors = Vec::new();
 
@@ -1256,7 +1256,7 @@ fn logical_path_in_dst_dir(
     src: impl AsRef<Path>,
     base: impl AsRef<Path>,
     dst: &str,
-) -> Result<InventoryPath> {
+) -> Result<LogicalPath> {
     let mut logical_path = dst.to_string();
     if !logical_path.ends_with('/') {
         logical_path.push('/');
@@ -1269,12 +1269,12 @@ fn logical_path_in_dst_dir(
     logical_path.try_into()
 }
 
-/// Same as `logical_path_in_dst_dir()` but operates on `InventoryPath`s
+/// Same as `logical_path_in_dst_dir()` but operates on `LogicalPath`s
 fn logical_path_in_dst_dir_internal(
-    src: &InventoryPath,
-    base: &InventoryPath,
+    src: &LogicalPath,
+    base: &LogicalPath,
     dst: &str,
-) -> Result<InventoryPath> {
+) -> Result<LogicalPath> {
     let mut logical_path = dst.to_string();
     if !logical_path.ends_with('/') {
         logical_path.push('/');
@@ -1297,8 +1297,8 @@ fn logical_path_in_dst_dir_internal(
 fn lookup_staged_digest_and_content_path(
     inventory: &Inventory,
     src_version_num: VersionNum,
-    src_path: &InventoryPath,
-) -> Result<Option<(HexDigest, Rc<InventoryPath>)>> {
+    src_path: &LogicalPath,
+) -> Result<Option<(HexDigest, Rc<ContentPath>)>> {
     let staging_prefix = format!("{}/", inventory.head);
 
     match inventory

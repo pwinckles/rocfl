@@ -120,7 +120,7 @@ fn create_new_object() {
 
             assert_file_details(
                 &s3_client,
-                object.state.get(&path("test.txt")).unwrap(),
+                object.state.get(&lpath("test.txt")).unwrap(),
                 &object.object_root,
                 "v1/content/test.txt",
                 "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
@@ -241,49 +241,49 @@ fn create_and_update_object() {
 
             assert_file_details(
                 &s3_client,
-                object.state.get(&path("file3.txt")).unwrap(),
+                object.state.get(&lpath("file3.txt")).unwrap(),
                 &object.object_root,
                 "v1/content/a/b/file3.txt",
                 "e18fad97c1b6512b1588a1fa2b7f9a0e549df9cfc538ce6943b4f0f4ae78322c",
             );
             assert_file_details(
                 &s3_client,
-                object.state.get(&path("a/file1.txt")).unwrap(),
+                object.state.get(&lpath("a/file1.txt")).unwrap(),
                 &object.object_root,
                 "v1/content/a/file1.txt",
                 "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
             );
             assert_file_details(
                 &s3_client,
-                object.state.get(&path("a/file5.txt")).unwrap(),
+                object.state.get(&lpath("a/file5.txt")).unwrap(),
                 &object.object_root,
                 "v1/content/a/d/e/file5.txt",
                 "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
             );
             assert_file_details(
                 &s3_client,
-                object.state.get(&path("a/b/file2.txt")).unwrap(),
+                object.state.get(&lpath("a/b/file2.txt")).unwrap(),
                 &object.object_root,
                 "v1/content/a/b/file2.txt",
                 "b47592b10bc3e5c8ca8703d0862df10a6e409f43478804f93a08dd1844ae81b6",
             );
             assert_file_details(
                 &s3_client,
-                object.state.get(&path("a/f/file6.txt")).unwrap(),
+                object.state.get(&lpath("a/f/file6.txt")).unwrap(),
                 &object.object_root,
                 "v4/content/a/f/file6.txt",
                 "df21fb2fb83c1c64015a00e7677ccceb8da5377cba716611570230fb91d32bc9",
             );
             assert_file_details(
                 &s3_client,
-                object.state.get(&path("something/file1.txt")).unwrap(),
+                object.state.get(&lpath("something/file1.txt")).unwrap(),
                 &object.object_root,
                 "v1/content/a/file1.txt",
                 "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
             );
             assert_file_details(
                 &s3_client,
-                object.state.get(&path("something/new.txt")).unwrap(),
+                object.state.get(&lpath("something/new.txt")).unwrap(),
                 &object.object_root,
                 "v3/content/something/new.txt",
                 "a253ff09c5a8678e1fd1962b2c329245e139e45f9cc6ced4e5d7ad42c4108fc0",
@@ -469,7 +469,7 @@ fn assert_file_details(
     content_path: &str,
     digest: &str,
 ) {
-    assert_eq!(path_rc(content_path), actual.content_path);
+    assert_eq!(cpath_rc(content_path), actual.content_path);
     assert_eq!(
         format!("{}/{}", object_root, content_path),
         actual.storage_path

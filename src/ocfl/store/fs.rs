@@ -24,7 +24,7 @@ use super::{OcflLayout, OcflStore, StagingStore};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
-use crate::ocfl::{paths, specs, util, InventoryPath, VersionNum};
+use crate::ocfl::{paths, specs, util, ContentPath, LogicalPath, VersionNum};
 
 static OBJECT_ID_MATCHER: Lazy<RegexMatcher> =
     Lazy::new(|| RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap());
@@ -253,7 +253,7 @@ impl OcflStore for FsOcflStore {
     fn get_object_file(
         &self,
         object_id: &str,
-        path: &InventoryPath,
+        path: &LogicalPath,
         version_num: Option<VersionNum>,
         sink: &mut dyn Write,
     ) -> Result<()> {
@@ -488,7 +488,7 @@ impl StagingStore for FsOcflStore {
         &self,
         inventory: &Inventory,
         source: &mut impl Read,
-        logical_path: &InventoryPath,
+        logical_path: &LogicalPath,
     ) -> Result<()> {
         let content_path = inventory.new_content_path_head(logical_path)?;
 
@@ -505,8 +505,8 @@ impl StagingStore for FsOcflStore {
     fn copy_staged_file(
         &self,
         inventory: &Inventory,
-        src_content: &InventoryPath,
-        dst_logical: &InventoryPath,
+        src_content: &ContentPath,
+        dst_logical: &LogicalPath,
     ) -> Result<()> {
         let object_root = PathBuf::from(&inventory.storage_path);
 
@@ -526,7 +526,7 @@ impl StagingStore for FsOcflStore {
         &self,
         inventory: &Inventory,
         source: &impl AsRef<Path>,
-        logical_path: &InventoryPath,
+        logical_path: &LogicalPath,
     ) -> Result<()> {
         let content_path = inventory.new_content_path_head(logical_path)?;
 
@@ -543,8 +543,8 @@ impl StagingStore for FsOcflStore {
     fn move_staged_file(
         &self,
         inventory: &Inventory,
-        src_content: &InventoryPath,
-        dst_logical: &InventoryPath,
+        src_content: &ContentPath,
+        dst_logical: &LogicalPath,
     ) -> Result<()> {
         let object_root = PathBuf::from(&inventory.storage_path);
 
@@ -561,7 +561,7 @@ impl StagingStore for FsOcflStore {
     }
 
     /// Deletes staged content files.
-    fn rm_staged_files(&self, inventory: &Inventory, paths: &[&InventoryPath]) -> Result<()> {
+    fn rm_staged_files(&self, inventory: &Inventory, paths: &[&ContentPath]) -> Result<()> {
         let object_root = PathBuf::from(&inventory.storage_path);
 
         for path in paths.iter() {
@@ -590,7 +590,7 @@ impl StagingStore for FsOcflStore {
                         .to_string();
                     let content_path = util::convert_backslash_to_forward(&relative);
                     if !inventory
-                        .contains_content_path(&InventoryPath::try_from(content_path.as_ref())?)
+                        .contains_content_path(&ContentPath::try_from(content_path.as_ref())?)
                     {
                         info!("Deleting orphaned file: {}", file.path().to_string_lossy());
                         util::remove_file_ignore_not_found(file.path())?;

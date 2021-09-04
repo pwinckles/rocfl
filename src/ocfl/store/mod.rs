@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::ocfl::error::Result;
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::store::layout::LayoutExtensionName;
-use crate::ocfl::{InventoryPath, VersionNum};
+use crate::ocfl::{ContentPath, LogicalPath, VersionNum};
 
 pub mod fs;
 pub mod layout;
@@ -35,7 +35,7 @@ pub trait OcflStore {
     fn get_object_file(
         &self,
         object_id: &str,
-        path: &InventoryPath,
+        path: &LogicalPath,
         version_num: Option<VersionNum>,
         sink: &mut dyn Write,
     ) -> Result<()>;
@@ -81,15 +81,15 @@ pub trait StagingStore: OcflStore {
         &self,
         inventory: &Inventory,
         source: &mut impl Read,
-        logical_path: &InventoryPath,
+        logical_path: &LogicalPath,
     ) -> Result<()>;
 
     /// Copies an existing staged file to a new location
     fn copy_staged_file(
         &self,
         inventory: &Inventory,
-        src_content: &InventoryPath,
-        dst_logical: &InventoryPath,
+        src_content: &ContentPath,
+        dst_logical: &LogicalPath,
     ) -> Result<()>;
 
     /// Moves a file in the staging area
@@ -97,19 +97,19 @@ pub trait StagingStore: OcflStore {
         &self,
         inventory: &Inventory,
         source: &impl AsRef<Path>,
-        logical_path: &InventoryPath,
+        logical_path: &LogicalPath,
     ) -> Result<()>;
 
     /// Moves an existing staged file to a new location
     fn move_staged_file(
         &self,
         inventory: &Inventory,
-        src_content: &InventoryPath,
-        dst_logical: &InventoryPath,
+        src_content: &ContentPath,
+        dst_logical: &LogicalPath,
     ) -> Result<()>;
 
     /// Deletes staged content files.
-    fn rm_staged_files(&self, inventory: &Inventory, paths: &[&InventoryPath]) -> Result<()>;
+    fn rm_staged_files(&self, inventory: &Inventory, paths: &[&ContentPath]) -> Result<()>;
 
     /// Deletes any staged files that are not referenced in the manifest
     fn rm_orphaned_files(&self, inventory: &Inventory) -> Result<()>;

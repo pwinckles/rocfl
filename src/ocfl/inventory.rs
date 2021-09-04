@@ -15,7 +15,7 @@ use crate::ocfl::bimap::PathBiMap;
 use crate::ocfl::consts::{DEFAULT_CONTENT_DIR, INVENTORY_TYPE, MUTABLE_HEAD_EXT_DIR};
 use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
 use crate::ocfl::error::{not_found, not_found_path, Result, RocflError};
-use crate::ocfl::{CommitMeta, Diff, InventoryPath, VersionNum};
+use crate::ocfl::{CommitMeta, ContentPath, Diff, InventoryPath, LogicalPath, VersionNum};
 
 const STAGING_MESSAGE: &str = "Staging new version";
 const ROCFL_USER: &str = "rocfl";
@@ -34,7 +34,7 @@ pub struct Inventory {
     pub head: VersionNum,
     pub content_directory: Option<String>,
     // TODO look into deduping all HexDigests and InventoryPaths using a deserialize seed
-    manifest: PathBiMap,
+    manifest: PathBiMap<ContentPath>,
     pub versions: BTreeMap<VersionNum, Version>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
@@ -60,7 +60,7 @@ pub struct InventoryBuilder {
     digest_algorithm: DigestAlgorithm,
     head: VersionNum,
     content_directory: String,
-    manifest: PathBiMap,
+    manifest: PathBiMap<ContentPath>,
     versions: BTreeMap<VersionNum, Version>,
     object_root: String,
     storage_path: String,
@@ -70,7 +70,7 @@ pub struct InventoryBuilder {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Version {
     pub created: DateTime<Local>,
-    state: PathBiMap,
+    state: PathBiMap<LogicalPath>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -78,7 +78,7 @@ pub struct Version {
 
     /// All of the logical path parts that should be treated as directories
     #[serde(skip)]
-    logical_dirs: OnceCell<HashSet<InventoryPath>>,
+    logical_dirs: OnceCell<HashSet<LogicalPath>>,
 }
 
 /// OCFL user serialization object
@@ -138,7 +138,7 @@ impl Inventory {
     }
 
     /// Returns true if the path exists in the manifest
-    pub fn contains_content_path(&self, content_path: &InventoryPath) -> bool {
+    pub fn contains_content_path(&self, content_path: &ContentPath) -> bool {
         self.manifest.contains_path(content_path)
     }
 
@@ -154,8 +154,8 @@ impl Inventory {
         &self,
         digest: &HexDigest,
         version_num: Option<VersionNum>,
-        logical_path: Option<&InventoryPath>,
-    ) -> Result<Rc<InventoryPath>> {
+        logical_path: Option<&LogicalPath>,
+    ) -> Result<Rc<ContentPath>> {
         let version_num = version_num.unwrap_or(self.head);
 
         match self.manifest.get_paths(digest) {
@@ -215,9 +215,9 @@ impl Inventory {
     /// is not found.
     pub fn content_path_for_logical_path(
         &self,
-        logical_path: &InventoryPath,
+        logical_path: &LogicalPath,
         version_num: Option<VersionNum>,
-    ) -> Result<Rc<InventoryPath>> {
+    ) -> Result<Rc<ContentPath>> {
         let version_num = version_num.unwrap_or(self.head);
         let version = self.get_version(version_num)?;
 
@@ -260,11 +260,11 @@ impl Inventory {
 
     /// Dedups all of the content paths that were added in the most recent version. All of the
     /// paths that are removed from the manifest are returned.
-    pub fn dedup_head(&mut self) -> Vec<Rc<InventoryPath>> {
+    pub fn dedup_head(&mut self) -> Vec<Rc<ContentPath>> {
         let mut removed = Vec::new();
         let prefix = format!("{}/", self.head.to_string());
 
-        let mut matches: HashMap<Rc<HexDigest>, HashSet<Rc<InventoryPath>>> = HashMap::new();
+        let mut matches: HashMap<Rc<HexDigest>, HashSet<Rc<ContentPath>>> = HashMap::new();
 
         for (digest, paths) in self.manifest.iter_id_paths() {
             if paths.len() > 1 {
@@ -309,11 +309,7 @@ impl Inventory {
     /// Content paths are NOT deduped until the version is committed.
     ///
     /// If the logical path already exists in the version, then the existing file is overwritten.
-    pub fn add_file_to_head(
-        &mut self,
-        digest: HexDigest,
-        logical_path: InventoryPath,
-    ) -> Result<()> {
+    pub fn add_file_to_head(&mut self, digest: HexDigest, logical_path: LogicalPath) -> Result<()> {
         let digest_rc = match self.manifest.get_id_rc(&digest) {
             Some(digest_rc) => digest_rc.clone(),
             None => Rc::new(digest),
@@ -331,8 +327,8 @@ impl Inventory {
     pub fn copy_file_to_head(
         &mut self,
         src_version_num: VersionNum,
-        src_path: &InventoryPath,
-        dst_path: InventoryPath,
+        src_path: &LogicalPath,
+        dst_path: LogicalPath,
     ) -> Result<()> {
         let src_version = self.get_version(src_version_num)?;
         let digest = match src_version.lookup_digest(src_path) {
@@ -347,8 +343,8 @@ impl Inventory {
     /// path is validated prior to the move.
     pub fn move_file_in_head(
         &mut self,
-        src_path: &InventoryPath,
-        dst_path: InventoryPath,
+        src_path: &LogicalPath,
+        dst_path: LogicalPath,
     ) -> Result<()> {
         let head = self.head_version_mut();
         let digest = match head.lookup_digest(src_path) {
@@ -371,8 +367,8 @@ impl Inventory {
     pub fn move_new_in_head_file(
         &mut self,
         digest: HexDigest,
-        src_path: &InventoryPath,
-        dst_path: InventoryPath,
+        src_path: &LogicalPath,
+        dst_path: LogicalPath,
     ) -> Result<()> {
         let digest_rc = match self.manifest.get_id_rc(&digest) {
             Some(digest_rc) => digest_rc.clone(),
@@ -398,8 +394,8 @@ impl Inventory {
     /// and returned.
     pub fn remove_logical_path_from_head(
         &mut self,
-        logical_path: &InventoryPath,
-    ) -> Option<InventoryPath> {
+        logical_path: &LogicalPath,
+    ) -> Option<ContentPath> {
         let head = self.head_version_mut();
 
         if head.remove_file(logical_path).is_some() {
@@ -419,7 +415,7 @@ impl Inventory {
 
     /// Returns a new content path for the specified logical path, assuming a direct one-to-one
     /// mapping of logical path to content path.
-    pub fn new_content_path_head(&self, logical_path: &InventoryPath) -> Result<InventoryPath> {
+    pub fn new_content_path_head(&self, logical_path: &LogicalPath) -> Result<ContentPath> {
         self.new_content_path(self.head, logical_path)
     }
 
@@ -428,8 +424,8 @@ impl Inventory {
     pub fn new_content_path(
         &self,
         version_num: VersionNum,
-        logical_path: &InventoryPath,
-    ) -> Result<InventoryPath> {
+        logical_path: &LogicalPath,
+    ) -> Result<ContentPath> {
         format!(
             "{}/{}/{}",
             version_num.to_string(),
@@ -523,7 +519,7 @@ impl Version {
         Self::staged_version(self.state.clone())
     }
 
-    fn staged_version(state: PathBiMap) -> Self {
+    fn staged_version(state: PathBiMap<LogicalPath>) -> Self {
         Self {
             created: Local::now(),
             message: Some(STAGING_MESSAGE.to_string()),
@@ -546,12 +542,12 @@ impl Version {
     }
 
     /// Returns non-consuming iterator for the version's state
-    pub fn state_iter(&self) -> Iter<Rc<InventoryPath>, Rc<HexDigest>> {
+    pub fn state_iter(&self) -> Iter<Rc<LogicalPath>, Rc<HexDigest>> {
         self.state.iter()
     }
 
     /// Moves the current state map out, replacing it when an empty state
-    pub fn remove_state(&mut self) -> PathBiMap {
+    pub fn remove_state(&mut self) -> PathBiMap<LogicalPath> {
         if self.logical_dirs.get().is_some() {
             self.logical_dirs = OnceCell::default();
         }
@@ -560,22 +556,22 @@ impl Version {
 
     /// Returns a reference to the digest associated to a logical path, or None if the logical
     /// path does not exist in the version's state.
-    pub fn lookup_digest(&self, logical_path: &InventoryPath) -> Option<&Rc<HexDigest>> {
+    pub fn lookup_digest(&self, logical_path: &LogicalPath) -> Option<&Rc<HexDigest>> {
         self.state.get_id(logical_path)
     }
 
     /// Returns true if the specified path exists as either a logical file or directory
-    pub fn exists(&self, path: &InventoryPath) -> bool {
+    pub fn exists(&self, path: &LogicalPath) -> bool {
         self.is_file(path) || self.is_dir(path)
     }
 
     /// Returns true if the specified path exists and is a logical file
-    pub fn is_file(&self, path: &InventoryPath) -> bool {
+    pub fn is_file(&self, path: &LogicalPath) -> bool {
         self.state.contains_path(path)
     }
 
     // Returns true if the specified path exists and is a logical directory
-    pub fn is_dir(&self, path: &InventoryPath) -> bool {
+    pub fn is_dir(&self, path: &LogicalPath) -> bool {
         self.get_logical_dirs().contains(path)
     }
 
@@ -587,7 +583,7 @@ impl Version {
     /// Returns an error if the specified path conflicts with the existing state.
     /// A path conflicts if it a portion of the path is interpreted as both a directory
     /// and a file.
-    pub fn validate_non_conflicting(&self, path: &InventoryPath) -> Result<()> {
+    pub fn validate_non_conflicting(&self, path: &LogicalPath) -> Result<()> {
         if self.is_dir(path) {
             return Err(RocflError::IllegalState(format!(
                 "Conflicting logical path {}: This path is already in use as a directory",
@@ -608,7 +604,7 @@ impl Version {
     }
 
     /// Returns a set of all of the logical paths that match the provided glob pattern
-    pub fn resolve_glob(&self, glob: &str, recursive: bool) -> Result<HashSet<Rc<InventoryPath>>> {
+    pub fn resolve_glob(&self, glob: &str, recursive: bool) -> Result<HashSet<Rc<LogicalPath>>> {
         let mut matches = HashSet::new();
 
         // Logical paths do not have leading slashes
@@ -648,7 +644,7 @@ impl Version {
     }
 
     /// Returns a set of all of the logical dirs that match the glob
-    pub fn resolve_glob_to_dirs(&self, glob: &str) -> Result<HashSet<&InventoryPath>> {
+    pub fn resolve_glob_to_dirs(&self, glob: &str) -> Result<HashSet<&LogicalPath>> {
         let mut matches = HashSet::new();
 
         // Logical paths do not have leading slashes
@@ -669,8 +665,8 @@ impl Version {
         Ok(matches)
     }
 
-    /// Returns a list of all of the paths that beging with the specified prefix
-    pub fn paths_with_prefix(&self, prefix: &str) -> Vec<Rc<InventoryPath>> {
+    /// Returns a list of all of the paths that begin with the specified prefix
+    pub fn paths_with_prefix(&self, prefix: &str) -> Vec<Rc<LogicalPath>> {
         let mut matches = Vec::new();
 
         let prefix = if !prefix.ends_with('/') && !prefix.is_empty() {
@@ -693,7 +689,7 @@ impl Version {
     /// this version's paths are returned as Adds.
     pub fn diff(&self, other: Option<&Version>) -> Vec<Diff> {
         let mut diffs = Vec::new();
-        let mut deletes: HashMap<Rc<HexDigest>, Vec<Rc<InventoryPath>>> = HashMap::new();
+        let mut deletes: HashMap<Rc<HexDigest>, Vec<Rc<LogicalPath>>> = HashMap::new();
 
         if let Some(left) = other {
             let mut seen = HashSet::with_capacity(left.state.len());
@@ -760,7 +756,7 @@ impl Version {
 
     /// Adds a new logical path to the version, and updates the logical directory set, if needed.
     /// This path MUST be added to the inventory manifest separately for the inventory to be valid.
-    fn add_file(&mut self, digest: Rc<HexDigest>, logical_path: InventoryPath) -> Result<()> {
+    fn add_file(&mut self, digest: Rc<HexDigest>, logical_path: LogicalPath) -> Result<()> {
         self.validate_non_conflicting(&logical_path)?;
         if let Some(dirs) = self.logical_dirs.get_mut() {
             dirs.extend(create_logical_dirs(&logical_path));
@@ -771,7 +767,7 @@ impl Version {
     }
 
     /// Removes a logical path from the version's state
-    fn remove_file(&mut self, path: &InventoryPath) -> Option<(Rc<InventoryPath>, Rc<HexDigest>)> {
+    fn remove_file(&mut self, path: &LogicalPath) -> Option<(Rc<LogicalPath>, Rc<HexDigest>)> {
         // must invalidate the logical dirs
         if self.logical_dirs.get().is_some() {
             self.logical_dirs = OnceCell::default();
@@ -780,9 +776,9 @@ impl Version {
     }
 
     /// Initializes a HashSet containing all of the logical directories within a version.
-    fn get_logical_dirs(&self) -> &HashSet<InventoryPath> {
+    fn get_logical_dirs(&self) -> &HashSet<LogicalPath> {
         self.logical_dirs.get_or_init(|| {
-            let mut dirs: HashSet<InventoryPath> = HashSet::with_capacity(self.state.len());
+            let mut dirs: HashSet<LogicalPath> = HashSet::with_capacity(self.state.len());
             // Add the root path
             dirs.insert("/".try_into().unwrap());
 
@@ -804,7 +800,7 @@ impl User {
     }
 }
 
-fn create_logical_dirs(path: &InventoryPath) -> HashSet<InventoryPath> {
+fn create_logical_dirs(path: &LogicalPath) -> HashSet<LogicalPath> {
     let mut dirs = HashSet::new();
 
     let mut parent = path.parent();

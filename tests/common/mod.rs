@@ -6,7 +6,7 @@ use std::rc::Rc;
 use assert_fs::fixture::ChildPath;
 use assert_fs::prelude::*;
 use assert_fs::TempDir;
-use rocfl::ocfl::InventoryPath;
+use rocfl::ocfl::{ContentPath, LogicalPath};
 
 pub fn create_dirs(temp: &TempDir, path: &str) -> ChildPath {
     let child = resolve_child(temp, path);
@@ -31,10 +31,18 @@ pub fn resolve_child(temp: &TempDir, path: &str) -> ChildPath {
     child.unwrap()
 }
 
-pub fn path(path: &str) -> InventoryPath {
-    InventoryPath::try_from(path).unwrap()
+pub fn lpath(path: &str) -> LogicalPath {
+    LogicalPath::try_from(path).unwrap()
 }
 
-pub fn path_rc(path: &str) -> Rc<InventoryPath> {
-    Rc::new(InventoryPath::try_from(path).unwrap())
+pub fn lpath_rc(path: &str) -> Rc<LogicalPath> {
+    Rc::new(LogicalPath::try_from(path).unwrap())
+}
+
+pub fn cpath(path: &str) -> ContentPath {
+    ContentPath::try_from(path).unwrap()
+}
+
+pub fn cpath_rc(path: &str) -> Rc<ContentPath> {
+    Rc::new(ContentPath::try_from(path).unwrap())
 }

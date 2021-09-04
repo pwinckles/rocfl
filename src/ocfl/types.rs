@@ -31,10 +31,35 @@ pub struct VersionNum {
     pub width: u32,
 }
 
-// TODO model this as LogicalPath and ContentPath -- biggest impact will be on the PathBiMap
-/// Represents a logical or content path.
+pub trait InventoryPath {
+    /// Returns an iterable containing each segment of the path split on the `/` separator
+    fn parts(&self) -> Split<char>;
+
+    /// Returns the parent path of this path.
+    fn parent(&self) -> Self;
+
+    /// Returns the part of the logical path that's after the final `/` or the entire path if
+    /// there is no `/`
+    fn filename(&self) -> &str;
+
+    /// Creates a new path by joining this path with another
+    fn resolve(&self, other: &Self) -> Self;
+}
+
 #[derive(Deserialize, Serialize, Debug, Eq, Ord, PartialOrd, PartialEq, Hash, Clone)]
-pub struct InventoryPath(String);
+struct InventoryPathInner(String);
+
+#[derive(Deserialize, Serialize, Debug, Eq, Ord, PartialOrd, PartialEq, Hash, Clone)]
+#[serde(transparent)]
+pub struct LogicalPath {
+    inner: InventoryPathInner,
+}
+
+#[derive(Deserialize, Serialize, Debug, Eq, Ord, PartialOrd, PartialEq, Hash, Clone)]
+#[serde(transparent)]
+pub struct ContentPath {
+    inner: InventoryPathInner,
+}
 
 /// Represents a version of an OCFL object
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -48,7 +73,7 @@ pub struct ObjectVersion {
     /// Metadata about the version
     pub version_details: VersionDetails,
     /// A map of files (logical paths) in the version to details about the files.
-    pub state: HashMap<Rc<InventoryPath>, FileDetails>,
+    pub state: HashMap<Rc<LogicalPath>, FileDetails>,
 }
 
 /// Details about a file in an OCFL object
@@ -59,7 +84,7 @@ pub struct FileDetails {
     /// The digest algorithm
     pub digest_algorithm: DigestAlgorithm,
     /// The path to the file relative the object root
-    pub content_path: Rc<InventoryPath>,
+    pub content_path: Rc<ContentPath>,
     /// The path to the file relative the storage root
     pub storage_path: String,
     /// The version metadata for when the file was last updated
@@ -110,12 +135,12 @@ pub struct CommitMeta {
 /// Represents a change to a file
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Diff {
-    Added(Rc<InventoryPath>),
-    Modified(Rc<InventoryPath>),
-    Deleted(Rc<InventoryPath>),
+    Added(Rc<LogicalPath>),
+    Modified(Rc<LogicalPath>),
+    Deleted(Rc<LogicalPath>),
     Renamed {
-        original: Vec<Rc<InventoryPath>>,
-        renamed: Vec<Rc<InventoryPath>>,
+        original: Vec<Rc<LogicalPath>>,
+        renamed: Vec<Rc<LogicalPath>>,
     },
 }
 
@@ -282,23 +307,23 @@ impl Ord for VersionNum {
     }
 }
 
-impl InventoryPath {
+impl InventoryPath for InventoryPathInner {
     /// Returns an iterable containing each segment of the path split on the `/` separator
-    pub fn parts(&self) -> Split<char> {
+    fn parts(&self) -> Split<char> {
         self.0.split('/')
     }
 
     /// Returns the parent path of this path.
-    pub fn parent(&self) -> InventoryPath {
+    fn parent(&self) -> Self {
         match self.0.rfind('/') {
-            Some(last_slash) => InventoryPath(self.0.as_str()[0..last_slash].into()),
-            None => InventoryPath("".to_string()),
+            Some(last_slash) => Self(self.0.as_str()[0..last_slash].into()),
+            None => Self("".to_string()),
         }
     }
 
     /// Returns the part of the logical path that's after the final `/` or the entire path if
     /// there is no `/`
-    pub fn filename(&self) -> &str {
+    fn filename(&self) -> &str {
         match self.0.rfind('/') {
             Some(last_slash) => &self.0.as_str()[last_slash + 1..],
             None => self.0.as_str(),
@@ -306,11 +331,65 @@ impl InventoryPath {
     }
 
     /// Creates a new path by joining this path with another
-    pub fn resolve(&self, other: &InventoryPath) -> InventoryPath {
+    fn resolve(&self, other: &Self) -> Self {
         if self.0.is_empty() {
             other.clone()
         } else {
-            InventoryPath(format!("{}/{}", self.0, other.0))
+            Self(format!("{}/{}", self.0, other.0))
+        }
+    }
+}
+
+impl InventoryPath for LogicalPath {
+    /// Returns an iterable containing each segment of the path split on the `/` separator
+    fn parts(&self) -> Split<char> {
+        self.inner.parts()
+    }
+
+    /// Returns the parent path of this path.
+    fn parent(&self) -> Self {
+        Self {
+            inner: self.inner.parent(),
+        }
+    }
+
+    /// Returns the part of the logical path that's after the final `/` or the entire path if
+    /// there is no `/`
+    fn filename(&self) -> &str {
+        self.inner.filename()
+    }
+
+    /// Creates a new path by joining this path with another
+    fn resolve(&self, other: &Self) -> Self {
+        Self {
+            inner: self.inner.resolve(&other.inner),
+        }
+    }
+}
+
+impl InventoryPath for ContentPath {
+    /// Returns an iterable containing each segment of the path split on the `/` separator
+    fn parts(&self) -> Split<char> {
+        self.inner.parts()
+    }
+
+    /// Returns the parent path of this path.
+    fn parent(&self) -> Self {
+        Self {
+            inner: self.inner.parent(),
+        }
+    }
+
+    /// Returns the part of the logical path that's after the final `/` or the entire path if
+    /// there is no `/`
+    fn filename(&self) -> &str {
+        self.inner.filename()
+    }
+
+    /// Creates a new path by joining this path with another
+    fn resolve(&self, other: &Self) -> Self {
+        Self {
+            inner: self.inner.resolve(&other.inner),
         }
     }
 }
@@ -318,7 +397,7 @@ impl InventoryPath {
 // It looks like its not possible to implement `impl<T: AsRef<str> TryFrom<t>`
 // https://github.com/rust-lang/rust/issues/50133
 
-impl TryFrom<&str> for InventoryPath {
+impl TryFrom<&str> for InventoryPathInner {
     type Error = RocflError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -341,7 +420,27 @@ impl TryFrom<&str> for InventoryPath {
     }
 }
 
-impl TryFrom<String> for InventoryPath {
+impl TryFrom<&str> for LogicalPath {
+    type Error = RocflError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(Self {
+            inner: InventoryPathInner::try_from(value)?,
+        })
+    }
+}
+
+impl TryFrom<&str> for ContentPath {
+    type Error = RocflError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(Self {
+            inner: InventoryPathInner::try_from(value)?,
+        })
+    }
+}
+
+impl TryFrom<String> for InventoryPathInner {
     type Error = RocflError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
@@ -349,7 +448,27 @@ impl TryFrom<String> for InventoryPath {
     }
 }
 
-impl TryFrom<&String> for InventoryPath {
+impl TryFrom<String> for LogicalPath {
+    type Error = RocflError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Ok(Self {
+            inner: InventoryPathInner::try_from(value)?,
+        })
+    }
+}
+
+impl TryFrom<String> for ContentPath {
+    type Error = RocflError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Ok(Self {
+            inner: InventoryPathInner::try_from(value)?,
+        })
+    }
+}
+
+impl TryFrom<&String> for InventoryPathInner {
     type Error = RocflError;
 
     fn try_from(value: &String) -> Result<Self, Self::Error> {
@@ -357,7 +476,27 @@ impl TryFrom<&String> for InventoryPath {
     }
 }
 
-impl TryFrom<Cow<'_, str>> for InventoryPath {
+impl TryFrom<&String> for LogicalPath {
+    type Error = RocflError;
+
+    fn try_from(value: &String) -> Result<Self, Self::Error> {
+        Ok(Self {
+            inner: InventoryPathInner::try_from(value)?,
+        })
+    }
+}
+
+impl TryFrom<&String> for ContentPath {
+    type Error = RocflError;
+
+    fn try_from(value: &String) -> Result<Self, Self::Error> {
+        Ok(Self {
+            inner: InventoryPathInner::try_from(value)?,
+        })
+    }
+}
+
+impl TryFrom<Cow<'_, str>> for InventoryPathInner {
     type Error = RocflError;
 
     fn try_from(value: Cow<'_, str>) -> Result<Self, Self::Error> {
@@ -365,21 +504,77 @@ impl TryFrom<Cow<'_, str>> for InventoryPath {
     }
 }
 
-impl From<InventoryPath> for String {
-    fn from(path: InventoryPath) -> Self {
+impl TryFrom<Cow<'_, str>> for LogicalPath {
+    type Error = RocflError;
+
+    fn try_from(value: Cow<'_, str>) -> Result<Self, Self::Error> {
+        Ok(Self {
+            inner: InventoryPathInner::try_from(value)?,
+        })
+    }
+}
+
+impl TryFrom<Cow<'_, str>> for ContentPath {
+    type Error = RocflError;
+
+    fn try_from(value: Cow<'_, str>) -> Result<Self, Self::Error> {
+        Ok(Self {
+            inner: InventoryPathInner::try_from(value)?,
+        })
+    }
+}
+
+impl From<InventoryPathInner> for String {
+    fn from(path: InventoryPathInner) -> Self {
         path.0
     }
 }
 
-impl AsRef<str> for InventoryPath {
+impl From<LogicalPath> for String {
+    fn from(path: LogicalPath) -> Self {
+        path.inner.0
+    }
+}
+
+impl From<ContentPath> for String {
+    fn from(path: ContentPath) -> Self {
+        path.inner.0
+    }
+}
+
+impl AsRef<str> for InventoryPathInner {
     fn as_ref(&self) -> &str {
         &self.0
     }
 }
 
-impl Display for InventoryPath {
+impl AsRef<str> for LogicalPath {
+    fn as_ref(&self) -> &str {
+        &self.inner.0
+    }
+}
+
+impl AsRef<str> for ContentPath {
+    fn as_ref(&self) -> &str {
+        &self.inner.0
+    }
+}
+
+impl Display for InventoryPathInner {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl Display for LogicalPath {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+
+impl Display for ContentPath {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.inner.fmt(f)
     }
 }
 
@@ -423,7 +618,7 @@ impl ObjectVersion {
         object_storage_path: S,
         object_staging_path: Option<S>,
         use_backslashes: bool,
-    ) -> Result<HashMap<Rc<InventoryPath>, FileDetails>> {
+    ) -> Result<HashMap<Rc<LogicalPath>, FileDetails>> {
         let mut state = HashMap::new();
 
         let mut current_version_num = target;
@@ -553,7 +748,7 @@ impl ObjectVersion {
 
 impl FileDetails {
     pub fn new(
-        content_path: Rc<InventoryPath>,
+        content_path: Rc<ContentPath>,
         storage_path: String,
         digest: Rc<HexDigest>,
         digest_algorithm: DigestAlgorithm,
@@ -671,7 +866,7 @@ impl CommitMeta {
 impl Diff {
     /// This method returns the path associated with the diff. If there are multiple paths,
     /// it is the first path on the left hand side.
-    pub fn path(&self) -> &Rc<InventoryPath> {
+    pub fn path(&self) -> &Rc<LogicalPath> {
         match self {
             Diff::Added(path) => path,
             Diff::Modified(path) => path,
@@ -704,48 +899,48 @@ fn convert_path_separator(use_backslashes: bool, path: String) -> String {
 mod tests {
     use std::convert::{TryFrom, TryInto};
 
-    use crate::ocfl::InventoryPath;
+    use crate::ocfl::LogicalPath;
 
     #[test]
     fn create_logical_path_when_valid() {
         let value = "foo/.bar/baz.txt";
-        let path: InventoryPath = value.try_into().unwrap();
-        assert_eq!(value, path.0);
+        let path: LogicalPath = value.try_into().unwrap();
+        assert_eq!(value, path.inner.0);
     }
 
     #[test]
     fn create_logical_path_when_root() {
-        let path: InventoryPath = "/".try_into().unwrap();
-        assert_eq!("", path.0);
+        let path: LogicalPath = "/".try_into().unwrap();
+        assert_eq!("", path.inner.0);
     }
 
     #[test]
     fn remove_leading_and_trailing_slashes_from_logical_paths() {
-        let path: InventoryPath = "//foo/bar/baz//".try_into().unwrap();
-        assert_eq!("foo/bar/baz", path.0);
+        let path: LogicalPath = "//foo/bar/baz//".try_into().unwrap();
+        assert_eq!("foo/bar/baz", path.inner.0);
     }
 
     #[test]
     #[should_panic(expected = "Paths may not contain")]
     fn reject_logical_paths_with_empty_parts() {
-        InventoryPath::try_from("foo//bar/baz").unwrap();
+        LogicalPath::try_from("foo//bar/baz").unwrap();
     }
 
     #[test]
     #[should_panic(expected = "Paths may not contain")]
     fn reject_logical_paths_with_single_dot() {
-        InventoryPath::try_from("foo/bar/./baz").unwrap();
+        LogicalPath::try_from("foo/bar/./baz").unwrap();
     }
 
     #[test]
     #[should_panic(expected = "Paths may not contain")]
     fn reject_logical_paths_with_double_dot() {
-        InventoryPath::try_from("foo/bar/../baz").unwrap();
+        LogicalPath::try_from("foo/bar/../baz").unwrap();
     }
 
     #[test]
     #[should_panic(expected = "Paths may not contain")]
     fn reject_logical_paths_with_double_dot_leading() {
-        InventoryPath::try_from("../foo/bar/baz").unwrap();
+        LogicalPath::try_from("../foo/bar/baz").unwrap();
     }
 }

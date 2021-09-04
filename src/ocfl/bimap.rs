@@ -2,23 +2,30 @@ use std::collections::hash_map::{IntoIter, Iter};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::Formatter;
+use std::hash::Hash;
+use std::marker::PhantomData;
 use std::rc::Rc;
 
-use serde::de::{MapAccess, Visitor};
+use serde::de::{DeserializeOwned, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::ocfl::digest::HexDigest;
-use crate::ocfl::InventoryPath;
 
 /// A bidirectional map that maps a file id, `HexDigest` to a set of paths, `InventoryPath`,
 /// and a path to its file id. An id may have many paths, but a path may only have one id.
 #[derive(Debug, Clone)]
-pub struct PathBiMap {
-    id_to_paths: HashMap<Rc<HexDigest>, HashSet<Rc<InventoryPath>>>,
-    path_to_id: HashMap<Rc<InventoryPath>, Rc<HexDigest>>,
+pub struct PathBiMap<P>
+where
+    P: Eq + Hash + DeserializeOwned + Serialize,
+{
+    id_to_paths: HashMap<Rc<HexDigest>, HashSet<Rc<P>>>,
+    path_to_id: HashMap<Rc<P>, Rc<HexDigest>>,
 }
 
-impl PathBiMap {
+impl<P> PathBiMap<P>
+where
+    P: Eq + Hash + DeserializeOwned + Serialize,
+{
     pub fn new() -> Self {
         Self {
             id_to_paths: HashMap::new(),
@@ -35,7 +42,7 @@ impl PathBiMap {
 
     /// Inserts a new id to path mapping. If the path already has a mapping, then the existing
     /// mapping is removed.
-    pub fn insert(&mut self, id: HexDigest, path: InventoryPath) {
+    pub fn insert(&mut self, id: HexDigest, path: P) {
         let id_ref = Rc::new(id);
         let path_ref = Rc::new(path);
 
@@ -43,7 +50,7 @@ impl PathBiMap {
     }
 
     /// Same as `insert`, but it accepts Rc values
-    pub fn insert_rc(&mut self, id_ref: Rc<HexDigest>, path_ref: Rc<InventoryPath>) {
+    pub fn insert_rc(&mut self, id_ref: Rc<HexDigest>, path_ref: Rc<P>) {
         if self.path_to_id.contains_key(&path_ref) {
             self.remove_path(&path_ref);
         }
@@ -57,7 +64,7 @@ impl PathBiMap {
     }
 
     /// Inserts all of the path mappings for an id. This is used for deserialization.
-    fn insert_multiple(&mut self, id: HexDigest, paths: Vec<InventoryPath>) {
+    fn insert_multiple(&mut self, id: HexDigest, paths: Vec<P>) {
         if paths.is_empty() {
             return;
         }
@@ -77,12 +84,12 @@ impl PathBiMap {
     }
 
     /// Gets all of the paths associated with an id
-    pub fn get_paths(&self, id: &HexDigest) -> Option<&HashSet<Rc<InventoryPath>>> {
+    pub fn get_paths(&self, id: &HexDigest) -> Option<&HashSet<Rc<P>>> {
         self.id_to_paths.get(id)
     }
 
     /// Gets the id associated with a path
-    pub fn get_id(&self, path: &InventoryPath) -> Option<&Rc<HexDigest>> {
+    pub fn get_id(&self, path: &P) -> Option<&Rc<HexDigest>> {
         self.path_to_id.get(path)
     }
 
@@ -92,12 +99,12 @@ impl PathBiMap {
     }
 
     // Gets the underlying Rc value of the specified path if it exists
-    pub fn get_path_rc(&self, path: &InventoryPath) -> Option<&Rc<InventoryPath>> {
+    pub fn get_path_rc(&self, path: &P) -> Option<&Rc<P>> {
         self.path_to_id.get_key_value(path).map(|(path, _)| path)
     }
 
     /// True, if a mapping exists for the path
-    pub fn contains_path(&self, path: &InventoryPath) -> bool {
+    pub fn contains_path(&self, path: &P) -> bool {
         self.path_to_id.contains_key(path)
     }
 
@@ -111,10 +118,7 @@ impl PathBiMap {
     }
 
     /// Removes a path mapping
-    pub fn remove_path(
-        &mut self,
-        path: &InventoryPath,
-    ) -> Option<(Rc<InventoryPath>, Rc<HexDigest>)> {
+    pub fn remove_path(&mut self, path: &P) -> Option<(Rc<P>, Rc<HexDigest>)> {
         if let Some((path, id)) = self.path_to_id.remove_entry(path) {
             let mut remove = false;
             if let Some(paths) = self.id_to_paths.get_mut(&id) {
@@ -131,12 +135,12 @@ impl PathBiMap {
     }
 
     /// Returns an iterator that iterates over references to all path-id pairs
-    pub fn iter(&self) -> Iter<Rc<InventoryPath>, Rc<HexDigest>> {
+    pub fn iter(&self) -> Iter<Rc<P>, Rc<HexDigest>> {
         self.path_to_id.iter()
     }
 
     /// Returns an iterator that iterates over id-paths pairs
-    pub fn iter_id_paths(&self) -> Iter<Rc<HexDigest>, HashSet<Rc<InventoryPath>>> {
+    pub fn iter_id_paths(&self) -> Iter<Rc<HexDigest>, HashSet<Rc<P>>> {
         self.id_to_paths.iter()
     }
 
@@ -146,34 +150,51 @@ impl PathBiMap {
     }
 }
 
-impl Default for PathBiMap {
+impl<P> Default for PathBiMap<P>
+where
+    P: Eq + Hash + DeserializeOwned + Serialize,
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl IntoIterator for PathBiMap {
-    type Item = (Rc<InventoryPath>, Rc<HexDigest>);
-    type IntoIter = IntoIter<Rc<InventoryPath>, Rc<HexDigest>>;
+impl<P> IntoIterator for PathBiMap<P>
+where
+    P: Eq + Hash + DeserializeOwned + Serialize,
+{
+    type Item = (Rc<P>, Rc<HexDigest>);
+    type IntoIter = IntoIter<Rc<P>, Rc<HexDigest>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.path_to_id.into_iter()
     }
 }
 
-impl<'a> IntoIterator for &'a PathBiMap {
-    type Item = (&'a Rc<InventoryPath>, &'a Rc<HexDigest>);
-    type IntoIter = Iter<'a, Rc<InventoryPath>, Rc<HexDigest>>;
+impl<'a, P> IntoIterator for &'a PathBiMap<P>
+where
+    P: Eq + Hash + DeserializeOwned + Serialize,
+{
+    type Item = (&'a Rc<P>, &'a Rc<HexDigest>);
+    type IntoIter = Iter<'a, Rc<P>, Rc<HexDigest>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.path_to_id.iter()
     }
 }
 
-struct PathBiMapVisitor {}
+struct PathBiMapVisitor<P>
+where
+    P: Eq + Hash + DeserializeOwned + Serialize,
+{
+    brand: PhantomData<P>,
+}
 
-impl<'a> Visitor<'a> for PathBiMapVisitor {
-    type Value = PathBiMap;
+impl<'a, P> Visitor<'a> for PathBiMapVisitor<P>
+where
+    P: Eq + Hash + DeserializeOwned + Serialize,
+{
+    type Value = PathBiMap<P>;
 
     fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
         formatter.write_str("a map of digests to paths")
@@ -190,13 +211,21 @@ impl<'a> Visitor<'a> for PathBiMapVisitor {
     }
 }
 
-impl<'a> Deserialize<'a> for PathBiMap {
+impl<'a, P> Deserialize<'a> for PathBiMap<P>
+where
+    P: Eq + Hash + DeserializeOwned + Serialize,
+{
     fn deserialize<D: Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_map(PathBiMapVisitor {})
+        deserializer.deserialize_map(PathBiMapVisitor {
+            brand: Default::default(),
+        })
     }
 }
 
-impl Serialize for PathBiMap {
+impl<P> Serialize for PathBiMap<P>
+where
+    P: Eq + Hash + DeserializeOwned + Serialize,
+{
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_map(self.id_to_paths.iter())
     }
@@ -211,7 +240,7 @@ mod tests {
 
     use crate::ocfl::bimap::PathBiMap;
     use crate::ocfl::digest::HexDigest;
-    use crate::ocfl::InventoryPath;
+    use crate::ocfl::LogicalPath;
 
     #[test]
     fn insert_retrieve_remove() {
@@ -286,7 +315,7 @@ mod tests {
             panic!("Unexpected JSON: {}", json);
         }
 
-        let value: PathBiMap = serde_json::from_str(&json).unwrap();
+        let value: PathBiMap<LogicalPath> = serde_json::from_str(&json).unwrap();
 
         assert_eq!(map.path_to_id, value.path_to_id);
         assert_eq!(map.id_to_paths, value.id_to_paths);
@@ -300,7 +329,7 @@ mod tests {
 
         assert_eq!("{}", json);
 
-        let value: PathBiMap = serde_json::from_str(&json).unwrap();
+        let value: PathBiMap<LogicalPath> = serde_json::from_str(&json).unwrap();
 
         assert_eq!(map.path_to_id, value.path_to_id);
         assert_eq!(map.id_to_paths, value.id_to_paths);
@@ -310,11 +339,11 @@ mod tests {
         vec.into_iter().collect()
     }
 
-    fn path(p: &str) -> InventoryPath {
+    fn path(p: &str) -> LogicalPath {
         p.try_into().unwrap()
     }
 
-    fn path_rc(p: &str) -> Rc<InventoryPath> {
+    fn path_rc(p: &str) -> Rc<LogicalPath> {
         Rc::new(path(p))
     }
 

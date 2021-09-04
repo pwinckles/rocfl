@@ -8,7 +8,7 @@ use rusoto_core::region::ParseRegionError;
 use rusoto_core::RusotoError;
 use thiserror::Error;
 
-use crate::ocfl::{InventoryPath, VersionNum};
+use crate::ocfl::{LogicalPath, VersionNum};
 
 pub type Result<T, E = RocflError> = core::result::Result<T, E>;
 
@@ -79,7 +79,7 @@ pub fn not_found(object_id: &str, version_num: Option<VersionNum>) -> RocflError
 pub fn not_found_path(
     object_id: &str,
     version_num: VersionNum,
-    logical_path: &InventoryPath,
+    logical_path: &LogicalPath,
 ) -> RocflError {
     RocflError::NotFound(format!(
         "Object {} version {} path {}",

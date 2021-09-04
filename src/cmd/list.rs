@@ -10,7 +10,7 @@ use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, Separator, Tabl
 use crate::cmd::{style, Cmd, GlobalArgs, DATE_FORMAT};
 use crate::config::Config;
 use crate::ocfl::{
-    FileDetails, InventoryPath, ObjectVersion, ObjectVersionDetails, OcflRepo, Result,
+    FileDetails, InventoryPath, LogicalPath, ObjectVersion, ObjectVersionDetails, OcflRepo, Result,
 };
 
 impl Cmd for ListCmd {
@@ -312,7 +312,7 @@ fn cmp_listings(field: &Field, a: &Listing, b: &Listing) -> Ordering {
     }
 }
 
-fn create_logical_dirs(object: &ObjectVersion) -> HashSet<InventoryPath> {
+fn create_logical_dirs(object: &ObjectVersion) -> HashSet<LogicalPath> {
     let mut dirs = HashSet::with_capacity(object.state.len());
 
     dirs.insert("".try_into().unwrap());
