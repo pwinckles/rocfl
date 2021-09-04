@@ -11,9 +11,9 @@ use common::*;
 use fs_extra::dir::CopyOptions;
 use maplit::hashmap;
 use rocfl::ocfl::{
-    CommitMeta, ContentPath, Diff, DigestAlgorithm, FileDetails, LayoutExtensionName,
-    ObjectVersion, ObjectVersionDetails, OcflRepo, Result, RocflError, StorageLayout,
-    VersionDetails, VersionNum,
+    CommitMeta, ContentPath, Diff, DigestAlgorithm, FileDetails, InventoryPath,
+    LayoutExtensionName, ObjectVersion, ObjectVersionDetails, OcflRepo, Result, RocflError,
+    StorageLayout, VersionDetails, VersionNum,
 };
 
 mod common;
@@ -1383,8 +1383,7 @@ fn create_object_with_non_standard_config() {
         .get(&lpath("test.txt"))
         .unwrap()
         .content_path
-        .as_ref()
-        .as_ref()
+        .as_str()
         .contains("/content-dir/"));
 }
 
@@ -4455,7 +4454,7 @@ fn assert_deduped_path(
 
     let deduped = details.content_path.clone();
 
-    let storage_path = object_root.as_ref().join((*deduped).as_ref());
+    let storage_path = object_root.as_ref().join(deduped.as_path());
     assert!(
         storage_path.exists(),
         "Expected '{}' to exist",
@@ -4464,7 +4463,7 @@ fn assert_deduped_path(
 
     possible_paths
         .iter()
-        .filter(|p| (*deduped).as_ref() != **p)
+        .filter(|p| deduped.as_str() != **p)
         .for_each(|path| assert!(!object_root.as_ref().join(path).exists()));
 
     deduped

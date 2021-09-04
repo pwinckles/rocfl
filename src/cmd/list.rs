@@ -190,7 +190,7 @@ impl ListCmd {
         let mut not_matched = HashMap::new();
 
         for (path, details) in object.state {
-            if matcher.is_match((*path).as_ref()) {
+            if matcher.is_match(path.as_str()) {
                 listings.push(Listing::File(ContentListing {
                     logical_path: path.to_string(),
                     details,
@@ -206,7 +206,7 @@ impl ListCmd {
 
             for dir in logical_dirs.unwrap() {
                 if (glob_trailing_slash && matcher.is_match(format!("{}/", dir)))
-                    || (!glob_trailing_slash && matcher.is_match(dir.as_ref()))
+                    || (!glob_trailing_slash && matcher.is_match(dir.as_str()))
                 {
                     dir_matches.insert(dir);
                 } else {
@@ -229,7 +229,7 @@ impl ListCmd {
                     .compile_matcher();
 
                 for (path, details) in not_matched {
-                    if sub_matcher.is_match((*path).as_ref()) {
+                    if sub_matcher.is_match(path.as_str()) {
                         listings.push(Listing::File(ContentListing {
                             logical_path: path.to_string(),
                             details,
@@ -238,13 +238,13 @@ impl ListCmd {
                 }
 
                 for dir in not_matched_dirs {
-                    if sub_matcher.is_match(dir.as_ref()) {
+                    if sub_matcher.is_match(dir.as_str()) {
                         listings.push(Listing::Dir(format!("{}/", dir)));
                     }
                 }
             } else {
                 for dir in dir_matches {
-                    if !dir.as_ref().is_empty() {
+                    if !dir.as_str().is_empty() {
                         listings.push(Listing::Dir(format!("{}/", dir)));
                     }
                 }
@@ -319,7 +319,8 @@ fn create_logical_dirs(object: &ObjectVersion) -> HashSet<LogicalPath> {
 
     for path in object.state.keys() {
         let mut parent = path.parent();
-        while parent.as_ref() != "" {
+        // TODO equality ?
+        while parent.as_str() != "" {
             let next = parent.parent();
             dirs.insert(parent);
             parent = next;

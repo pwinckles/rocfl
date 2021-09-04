@@ -313,7 +313,7 @@ impl OcflRepo {
 
         let version_prefix = format!("{}/", inventory.head);
 
-        if (*content_path).as_ref().starts_with(&version_prefix) {
+        if content_path.starts_with(&version_prefix) {
             // The content exists in staging
             self.get_staging()?
                 .get_object_file(object_id, path, None, sink)
@@ -1280,13 +1280,13 @@ fn logical_path_in_dst_dir_internal(
         logical_path.push('/');
     }
 
-    let base_length = if base.as_ref().is_empty() {
+    let base_length = if base.as_str().is_empty() {
         0
     } else {
-        base.as_ref().len() + 1
+        base.as_str().len() + 1
     };
 
-    logical_path.push_str(&src.as_ref()[base_length..]);
+    logical_path.push_str(&src.as_str()[base_length..]);
     logical_path.try_into()
 }
 
@@ -1308,7 +1308,7 @@ fn lookup_staged_digest_and_content_path(
         Some(digest) => {
             let content_path = inventory.content_path_for_digest(digest, None, Some(src_path))?;
 
-            if (*content_path).as_ref().starts_with(&staging_prefix) {
+            if content_path.starts_with(&staging_prefix) {
                 Ok(Some((digest.as_ref().clone(), content_path)))
             } else {
                 Ok(None)

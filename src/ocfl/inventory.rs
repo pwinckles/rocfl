@@ -164,14 +164,12 @@ impl Inventory {
 
                 for path in paths {
                     // TODO move this to `ContentPath` after it's created
-                    if let Some(slash) = (**path).as_ref().find('/') {
+                    if let Some(slash) = path.as_str().find('/') {
                         // TODO add slice to InventoryPath
-                        let version_str = &(**path).as_ref()[0..slash];
+                        let version_str = &path.as_str()[0..slash];
 
                         // Unfortunately, mutable head extension paths do not contain a version num
-                        let version = if self.mutable_head
-                            // TODO add starts_with to inventory path?
-                            && (**path).as_ref().starts_with(MUTABLE_HEAD_EXT_DIR)
+                        let version = if self.mutable_head && path.starts_with(MUTABLE_HEAD_EXT_DIR)
                         {
                             self.head
                         } else {
@@ -196,7 +194,7 @@ impl Inventory {
                         logical_path.unwrap()
                     );
                     for path in &matches {
-                        if (**path).as_ref().ends_with(&suffix) {
+                        if path.ends_with(&suffix) {
                             return Ok(path.clone());
                         }
                     }
@@ -269,7 +267,7 @@ impl Inventory {
         for (digest, paths) in self.manifest.iter_id_paths() {
             if paths.len() > 1 {
                 for path in paths {
-                    if (**path).as_ref().starts_with(&prefix) {
+                    if path.starts_with(&prefix) {
                         matches
                             .entry(digest.clone())
                             .or_insert_with(HashSet::new)
@@ -430,7 +428,7 @@ impl Inventory {
             "{}/{}/{}",
             version_num.to_string(),
             self.defaulted_content_dir(),
-            logical_path.as_ref()
+            logical_path
         )
         .try_into()
     }
@@ -625,7 +623,7 @@ impl Version {
 
         for (path, _digest) in &self.state {
             // TODO implement AsRef<Path>?
-            if matcher.is_match((**path).as_ref()) {
+            if matcher.is_match(path.as_str()) {
                 matches.insert(path.clone());
             }
         }
@@ -633,9 +631,9 @@ impl Version {
         if recursive {
             for dir in self.get_logical_dirs() {
                 if (glob_trailing_slash && matcher.is_match(format!("{}/", dir)))
-                    || (!glob_trailing_slash && matcher.is_match(dir.as_ref()))
+                    || (!glob_trailing_slash && matcher.is_match(dir.as_str()))
                 {
-                    matches.extend(self.paths_with_prefix(dir.as_ref()));
+                    matches.extend(self.paths_with_prefix(dir.as_str()));
                 }
             }
         }
@@ -657,7 +655,7 @@ impl Version {
             .compile_matcher();
 
         for dir in self.get_logical_dirs() {
-            if matcher.is_match(dir.as_ref()) {
+            if matcher.is_match(dir.as_str()) {
                 matches.insert(dir);
             }
         }
@@ -676,7 +674,7 @@ impl Version {
         };
 
         for (path, _digest) in &self.state {
-            if (**path).as_ref().starts_with(prefix.as_ref()) {
+            if path.starts_with(prefix.as_ref()) {
                 matches.push(path.clone());
             }
         }
@@ -804,7 +802,8 @@ fn create_logical_dirs(path: &LogicalPath) -> HashSet<LogicalPath> {
     let mut dirs = HashSet::new();
 
     let mut parent = path.parent();
-    while parent.as_ref() != "" {
+    // TODO implement equality?
+    while parent.as_str() != "" {
         let next = parent.parent();
         dirs.insert(parent);
         parent = next;

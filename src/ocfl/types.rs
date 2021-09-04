@@ -6,6 +6,7 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path;
+use std::path::Path;
 use std::rc::Rc;
 use std::str::{FromStr, Split};
 
@@ -44,6 +45,18 @@ pub trait InventoryPath {
 
     /// Creates a new path by joining this path with another
     fn resolve(&self, other: &Self) -> Self;
+
+    /// Returns true if the path ends with the given suffix
+    fn ends_with(&self, suffix: &str) -> bool;
+
+    /// Returns true if the path starts with the given prefix
+    fn starts_with(&self, prefix: &str) -> bool;
+
+    /// Returns a reference to the path represented as a `Path`
+    fn as_path(&self) -> &Path;
+
+    /// Returns a reference to the path represented as a `str`
+    fn as_str(&self) -> &str;
 }
 
 #[derive(Deserialize, Serialize, Debug, Eq, Ord, PartialOrd, PartialEq, Hash, Clone)]
@@ -338,6 +351,26 @@ impl InventoryPath for InventoryPathInner {
             Self(format!("{}/{}", self.0, other.0))
         }
     }
+
+    /// Returns true if the path ends with the given suffix
+    fn ends_with(&self, suffix: &str) -> bool {
+        self.0.ends_with(suffix)
+    }
+
+    /// Returns true if the path starts with the given prefix
+    fn starts_with(&self, prefix: &str) -> bool {
+        self.0.starts_with(prefix)
+    }
+
+    /// Returns a reference to the path represented as a `Path`
+    fn as_path(&self) -> &Path {
+        self.as_ref()
+    }
+
+    /// Returns a reference to the path represented as a `str`
+    fn as_str(&self) -> &str {
+        self.as_ref()
+    }
 }
 
 impl InventoryPath for LogicalPath {
@@ -365,6 +398,26 @@ impl InventoryPath for LogicalPath {
             inner: self.inner.resolve(&other.inner),
         }
     }
+
+    /// Returns true if the path ends with the given suffix
+    fn ends_with(&self, suffix: &str) -> bool {
+        self.inner.ends_with(suffix)
+    }
+
+    /// Returns true if the path starts with the given prefix
+    fn starts_with(&self, prefix: &str) -> bool {
+        self.inner.starts_with(prefix)
+    }
+
+    /// Returns a reference to the path represented as a `Path`
+    fn as_path(&self) -> &Path {
+        self.as_ref()
+    }
+
+    /// Returns a reference to the path represented as a `str`
+    fn as_str(&self) -> &str {
+        self.as_ref()
+    }
 }
 
 impl InventoryPath for ContentPath {
@@ -391,6 +444,26 @@ impl InventoryPath for ContentPath {
         Self {
             inner: self.inner.resolve(&other.inner),
         }
+    }
+
+    /// Returns true if the path ends with the given suffix
+    fn ends_with(&self, suffix: &str) -> bool {
+        self.inner.ends_with(suffix)
+    }
+
+    /// Returns true if the path starts with the given prefix
+    fn starts_with(&self, prefix: &str) -> bool {
+        self.inner.starts_with(prefix)
+    }
+
+    /// Returns a reference to the path represented as a `Path`
+    fn as_path(&self) -> &Path {
+        self.as_ref()
+    }
+
+    /// Returns a reference to the path represented as a `str`
+    fn as_str(&self) -> &str {
+        self.as_ref()
     }
 }
 
@@ -550,13 +623,31 @@ impl AsRef<str> for InventoryPathInner {
 
 impl AsRef<str> for LogicalPath {
     fn as_ref(&self) -> &str {
-        &self.inner.0
+        self.inner.as_ref()
     }
 }
 
 impl AsRef<str> for ContentPath {
     fn as_ref(&self) -> &str {
-        &self.inner.0
+        self.inner.as_ref()
+    }
+}
+
+impl AsRef<Path> for InventoryPathInner {
+    fn as_ref(&self) -> &Path {
+        self.0.as_ref()
+    }
+}
+
+impl AsRef<Path> for LogicalPath {
+    fn as_ref(&self) -> &Path {
+        self.inner.as_ref()
+    }
+}
+
+impl AsRef<Path> for ContentPath {
+    fn as_ref(&self) -> &Path {
+        self.inner.as_ref()
     }
 }
 

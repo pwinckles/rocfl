@@ -9,7 +9,7 @@ use crate::cmd::opts::{DiffCmd, LogCmd, ShowCmd};
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, Separator, TableView, TextCell};
 use crate::cmd::{println, style, Cmd, GlobalArgs, DATE_FORMAT};
 use crate::config::Config;
-use crate::ocfl::{Diff, OcflRepo, Result, VersionDetails};
+use crate::ocfl::{Diff, InventoryPath, OcflRepo, Result, VersionDetails};
 
 const DEFAULT_USER: &str = "NA";
 
@@ -228,18 +228,18 @@ impl DiffLine {
                 "{} -> {}",
                 original
                     .iter()
-                    .map(|e| (**e).as_ref())
+                    .map(|e| e.as_str())
                     .collect::<Vec<&str>>()
                     .join(", "),
                 renamed
                     .iter()
-                    .map(|e| (**e).as_ref())
+                    .map(|e| e.as_str())
                     .collect::<Vec<&str>>()
                     .join(", ")
             )),
-            Diff::Added(path) => (**path).as_ref().into(),
-            Diff::Modified(path) => (**path).as_ref().into(),
-            Diff::Deleted(path) => (**path).as_ref().into(),
+            Diff::Added(path) => path.as_str().into(),
+            Diff::Modified(path) => path.as_str().into(),
+            Diff::Deleted(path) => path.as_str().into(),
         }
     }
 }

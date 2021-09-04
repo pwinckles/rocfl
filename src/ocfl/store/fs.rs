@@ -24,7 +24,7 @@ use super::{OcflLayout, OcflStore, StagingStore};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
-use crate::ocfl::{paths, specs, util, ContentPath, LogicalPath, VersionNum};
+use crate::ocfl::{paths, specs, util, ContentPath, InventoryPath, LogicalPath, VersionNum};
 
 static OBJECT_ID_MATCHER: Lazy<RegexMatcher> =
     Lazy::new(|| RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap());
@@ -263,7 +263,7 @@ impl OcflStore for FsOcflStore {
 
         let content_path = inventory.content_path_for_logical_path(path, version_num)?;
         let mut storage_path = PathBuf::from(&inventory.storage_path);
-        storage_path.push((*content_path).as_ref());
+        storage_path.push(content_path.as_path());
 
         let mut file = File::open(storage_path)?;
         io::copy(&mut file, sink)?;
@@ -493,7 +493,7 @@ impl StagingStore for FsOcflStore {
         let content_path = inventory.new_content_path_head(logical_path)?;
 
         let mut storage_path = PathBuf::from(&inventory.storage_path);
-        storage_path.push(&content_path.as_ref());
+        storage_path.push(content_path.as_path());
 
         fs::create_dir_all(storage_path.parent().unwrap())?;
         io::copy(source, &mut File::create(&storage_path)?)?;
@@ -512,8 +512,8 @@ impl StagingStore for FsOcflStore {
 
         let dst_content = inventory.new_content_path_head(dst_logical)?;
 
-        let src_storage = object_root.join(src_content.as_ref());
-        let dst_storage = object_root.join(dst_content.as_ref());
+        let src_storage = object_root.join(src_content.as_path());
+        let dst_storage = object_root.join(dst_content.as_path());
 
         fs::create_dir_all(dst_storage.parent().unwrap())?;
         fs::copy(&src_storage, &dst_storage)?;
@@ -531,7 +531,7 @@ impl StagingStore for FsOcflStore {
         let content_path = inventory.new_content_path_head(logical_path)?;
 
         let mut storage_path = PathBuf::from(&inventory.storage_path);
-        storage_path.push(&content_path.as_ref());
+        storage_path.push(content_path.as_path());
 
         fs::create_dir_all(storage_path.parent().unwrap())?;
         fs::rename(source, &storage_path)?;
@@ -550,8 +550,8 @@ impl StagingStore for FsOcflStore {
 
         let dst_content = inventory.new_content_path_head(dst_logical)?;
 
-        let src_storage = object_root.join(src_content.as_ref());
-        let dst_storage = object_root.join(dst_content.as_ref());
+        let src_storage = object_root.join(src_content.as_path());
+        let dst_storage = object_root.join(dst_content.as_path());
 
         fs::create_dir_all(dst_storage.parent().unwrap())?;
         fs::rename(&src_storage, &dst_storage)?;
@@ -565,7 +565,7 @@ impl StagingStore for FsOcflStore {
         let object_root = PathBuf::from(&inventory.storage_path);
 
         for path in paths.iter() {
-            let full_path = object_root.join(path.as_ref());
+            let full_path = object_root.join(path.as_path());
             info!("Deleting staged file: {}", full_path.to_string_lossy());
             util::remove_file_ignore_not_found(&full_path)?;
             util::clean_dirs_up(full_path.parent().unwrap())?;
