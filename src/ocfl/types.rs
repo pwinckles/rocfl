@@ -57,6 +57,9 @@ pub trait InventoryPath {
 
     /// Returns a reference to the path represented as a `str`
     fn as_str(&self) -> &str;
+
+    /// Returns true if the path is empty
+    fn is_empty(&self) -> bool;
 }
 
 #[derive(Deserialize, Serialize, Debug, Eq, Ord, PartialOrd, PartialEq, Hash, Clone)]
@@ -371,6 +374,11 @@ impl InventoryPath for InventoryPathInner {
     fn as_str(&self) -> &str {
         self.as_ref()
     }
+
+    /// Returns a reference to the path represented as a `Path`
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 impl InventoryPath for LogicalPath {
@@ -418,6 +426,11 @@ impl InventoryPath for LogicalPath {
     fn as_str(&self) -> &str {
         self.as_ref()
     }
+
+    /// Returns a reference to the path represented as a `Path`
+    fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
 }
 
 impl InventoryPath for ContentPath {
@@ -464,6 +477,11 @@ impl InventoryPath for ContentPath {
     /// Returns a reference to the path represented as a `str`
     fn as_str(&self) -> &str {
         self.as_ref()
+    }
+
+    /// Returns a reference to the path represented as a `Path`
+    fn is_empty(&self) -> bool {
+        self.inner.is_empty()
     }
 }
 

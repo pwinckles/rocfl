@@ -622,8 +622,7 @@ impl Version {
             .compile_matcher();
 
         for (path, _digest) in &self.state {
-            // TODO implement AsRef<Path>?
-            if matcher.is_match(path.as_str()) {
+            if matcher.is_match(path.as_path()) {
                 matches.insert(path.clone());
             }
         }
@@ -631,7 +630,7 @@ impl Version {
         if recursive {
             for dir in self.get_logical_dirs() {
                 if (glob_trailing_slash && matcher.is_match(format!("{}/", dir)))
-                    || (!glob_trailing_slash && matcher.is_match(dir.as_str()))
+                    || (!glob_trailing_slash && matcher.is_match(dir.as_path()))
                 {
                     matches.extend(self.paths_with_prefix(dir.as_str()));
                 }
@@ -802,8 +801,7 @@ fn create_logical_dirs(path: &LogicalPath) -> HashSet<LogicalPath> {
     let mut dirs = HashSet::new();
 
     let mut parent = path.parent();
-    // TODO implement equality?
-    while parent.as_str() != "" {
+    while !parent.is_empty() {
         let next = parent.parent();
         dirs.insert(parent);
         parent = next;

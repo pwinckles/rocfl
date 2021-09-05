@@ -319,8 +319,7 @@ fn create_logical_dirs(object: &ObjectVersion) -> HashSet<LogicalPath> {
 
     for path in object.state.keys() {
         let mut parent = path.parent();
-        // TODO equality ?
-        while parent.as_str() != "" {
+        while !parent.is_empty() {
             let next = parent.parent();
             dirs.insert(parent);
             parent = next;
