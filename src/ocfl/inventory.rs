@@ -12,10 +12,12 @@ use once_cell::unsync::OnceCell;
 use serde::{Deserialize, Serialize};
 
 use crate::ocfl::bimap::PathBiMap;
-use crate::ocfl::consts::{DEFAULT_CONTENT_DIR, INVENTORY_TYPE, MUTABLE_HEAD_EXT_DIR};
+use crate::ocfl::consts::{DEFAULT_CONTENT_DIR, INVENTORY_TYPE};
 use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
 use crate::ocfl::error::{not_found, not_found_path, Result, RocflError};
-use crate::ocfl::{CommitMeta, ContentPath, Diff, InventoryPath, LogicalPath, VersionNum};
+use crate::ocfl::{
+    CommitMeta, ContentPath, ContentPathVersion, Diff, InventoryPath, LogicalPath, VersionNum,
+};
 
 const STAGING_MESSAGE: &str = "Staging new version";
 const ROCFL_USER: &str = "rocfl";
@@ -163,22 +165,13 @@ impl Inventory {
                 let mut matches = Vec::new();
 
                 for path in paths {
-                    // TODO move this to `ContentPath` after it's created
-                    if let Some(slash) = path.as_str().find('/') {
-                        // TODO add slice to InventoryPath
-                        let version_str = &path.as_str()[0..slash];
+                    let current_version = match path.version {
+                        ContentPathVersion::VersionNum(current_version) => current_version,
+                        ContentPathVersion::MutableHead => self.head,
+                    };
 
-                        // Unfortunately, mutable head extension paths do not contain a version num
-                        let version = if self.mutable_head && path.starts_with(MUTABLE_HEAD_EXT_DIR)
-                        {
-                            self.head
-                        } else {
-                            version_str.try_into()?
-                        };
-
-                        if version <= version_num {
-                            matches.push(path.clone());
-                        }
+                    if current_version <= version_num {
+                        matches.push(path.clone());
                     }
                 }
 

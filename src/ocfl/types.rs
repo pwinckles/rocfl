@@ -13,9 +13,11 @@ use std::str::{FromStr, Split};
 use chrono::{DateTime, Local};
 use once_cell::sync::Lazy;
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+use serde::de::Visitor;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::ocfl::bimap::PathBiMap;
+use crate::ocfl::consts::MUTABLE_HEAD_EXT_DIR;
 use crate::ocfl::digest::HexDigest;
 use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::{Inventory, Version};
@@ -65,16 +67,27 @@ pub trait InventoryPath {
 #[derive(Deserialize, Serialize, Debug, Eq, Ord, PartialOrd, PartialEq, Hash, Clone)]
 struct InventoryPathInner(String);
 
+/// Represents the logical path to a file in an object.
 #[derive(Deserialize, Serialize, Debug, Eq, Ord, PartialOrd, PartialEq, Hash, Clone)]
 #[serde(transparent)]
 pub struct LogicalPath {
     inner: InventoryPathInner,
 }
 
-#[derive(Deserialize, Serialize, Debug, Eq, Ord, PartialOrd, PartialEq, Hash, Clone)]
-#[serde(transparent)]
+/// Represents a path within a version's content directory. This path must be relative the object
+/// root.
+#[derive(Debug, Eq, Ord, PartialOrd, PartialEq, Hash, Clone)]
 pub struct ContentPath {
     inner: InventoryPathInner,
+    /// The version the content path exists in. This will be a version number, except in the case
+    /// when the path is in the mutable head extension
+    pub version: ContentPathVersion,
+}
+
+#[derive(Debug, Eq, Ord, PartialOrd, PartialEq, Hash, Copy, Clone)]
+pub enum ContentPathVersion {
+    VersionNum(VersionNum),
+    MutableHead,
 }
 
 /// Represents a version of an OCFL object
@@ -443,6 +456,7 @@ impl InventoryPath for ContentPath {
     fn parent(&self) -> Self {
         Self {
             inner: self.inner.parent(),
+            version: self.version,
         }
     }
 
@@ -456,6 +470,7 @@ impl InventoryPath for ContentPath {
     fn resolve(&self, other: &Self) -> Self {
         Self {
             inner: self.inner.resolve(&other.inner),
+            version: self.version,
         }
     }
 
@@ -525,9 +540,24 @@ impl TryFrom<&str> for ContentPath {
     type Error = RocflError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Ok(Self {
-            inner: InventoryPathInner::try_from(value)?,
-        })
+        let inner = InventoryPathInner::try_from(value)?;
+
+        // Mutable head paths do not have a version
+        let version = if value.starts_with(MUTABLE_HEAD_EXT_DIR) {
+            ContentPathVersion::MutableHead
+        } else {
+            match value.find('/') {
+                Some(index) => ContentPathVersion::VersionNum(value[0..index].try_into()?),
+                None => {
+                    return Err(RocflError::IllegalArgument(format!(
+                        "Content paths must begin with a valid version number. Found: {} ",
+                        value
+                    )));
+                }
+            }
+        };
+
+        Ok(Self { inner, version })
     }
 }
 
@@ -553,9 +583,7 @@ impl TryFrom<String> for ContentPath {
     type Error = RocflError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        Ok(Self {
-            inner: InventoryPathInner::try_from(value)?,
-        })
+        Self::try_from(value.as_str())
     }
 }
 
@@ -581,9 +609,7 @@ impl TryFrom<&String> for ContentPath {
     type Error = RocflError;
 
     fn try_from(value: &String) -> Result<Self, Self::Error> {
-        Ok(Self {
-            inner: InventoryPathInner::try_from(value)?,
-        })
+        Self::try_from(value.as_str())
     }
 }
 
@@ -609,9 +635,7 @@ impl TryFrom<Cow<'_, str>> for ContentPath {
     type Error = RocflError;
 
     fn try_from(value: Cow<'_, str>) -> Result<Self, Self::Error> {
-        Ok(Self {
-            inner: InventoryPathInner::try_from(value)?,
-        })
+        Self::try_from(value.as_ref())
     }
 }
 
@@ -684,6 +708,42 @@ impl Display for LogicalPath {
 impl Display for ContentPath {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.inner.fmt(f)
+    }
+}
+
+impl Serialize for ContentPath {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ContentPath {
+    fn deserialize<D>(deserializer: D) -> Result<ContentPath, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_str(ContentPathVisitor)
+    }
+}
+
+struct ContentPathVisitor;
+
+impl<'de> Visitor<'de> for ContentPathVisitor {
+    type Value = ContentPath;
+
+    fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+        formatter.write_str("a path string that is a valid OCFL content path")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        v.try_into()
+            .map_err(|e: RocflError| E::custom(e.to_string()))
     }
 }
 

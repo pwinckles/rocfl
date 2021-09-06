@@ -95,6 +95,7 @@ impl OcflRepo {
         region: Region,
         bucket: &str,
         prefix: Option<&str>,
+        // TODO fix the AsRef<Path> stuff to call inner methods
         staging_root: impl AsRef<Path>,
         layout: Option<StorageLayout>,
         profile: Option<&str>,
@@ -187,6 +188,7 @@ impl OcflRepo {
     pub fn get_object(
         &self,
         object_id: &str,
+        // TODO What if this was a version enum with a HEAD and VersionNum variant?
         version_num: Option<VersionNum>,
     ) -> Result<ObjectVersion> {
         self.ensure_open()?;
