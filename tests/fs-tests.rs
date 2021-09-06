@@ -13,7 +13,7 @@ use maplit::hashmap;
 use rocfl::ocfl::{
     CommitMeta, ContentPath, Diff, DigestAlgorithm, FileDetails, InventoryPath,
     LayoutExtensionName, ObjectVersion, ObjectVersionDetails, OcflRepo, Result, RocflError,
-    StorageLayout, VersionDetails, VersionNum,
+    StorageLayout, VersionDetails, VersionNum, VersionRef,
 };
 
 mod common;
@@ -177,7 +177,7 @@ fn get_object_when_exists() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
-    let object = repo.get_object("o2", None)?;
+    let object = repo.get_object("o2", VersionRef::Head)?;
 
     let object_root = repo_root
         .join("925")
@@ -223,7 +223,7 @@ fn get_object_version_when_exists() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
-    let object = repo.get_object("o2", Some(VersionNum::new(2)))?;
+    let object = repo.get_object("o2", VersionNum::new(2).into())?;
 
     let object_root = repo_root
         .join("925")
@@ -278,7 +278,7 @@ fn get_object_with_mutable_head() -> Result<()> {
     let repo_root = create_repo_root("mutable");
     let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
-    let object = repo.get_object("o1", None)?;
+    let object = repo.get_object("o1", VersionRef::Head)?;
     let object_root = PathBuf::from(&object.object_root);
 
     assert_file_details(
@@ -318,7 +318,7 @@ fn get_object_with_mutable_head() -> Result<()> {
 fn error_when_object_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root, None).unwrap();
-    repo.get_object("o4", None).unwrap();
+    repo.get_object("o4", VersionRef::Head).unwrap();
 }
 
 #[test]
@@ -326,7 +326,7 @@ fn get_object_when_exists_using_layout() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects-with-layout");
     let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
-    let object = repo.get_object("o2", None)?;
+    let object = repo.get_object("o2", VersionRef::Head)?;
 
     let object_root = repo_root
         .join("925")
@@ -372,7 +372,7 @@ fn get_object_when_exists_using_layout() -> Result<()> {
 fn error_when_object_not_exists_with_layout() {
     let repo_root = create_repo_root("multiple-objects-with-layout");
     let repo = OcflRepo::fs_repo(&repo_root, None).unwrap();
-    repo.get_object("o4", None).unwrap();
+    repo.get_object("o4", VersionRef::Head).unwrap();
 }
 
 #[test]
@@ -380,7 +380,7 @@ fn error_when_object_not_exists_with_layout() {
 fn error_when_version_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root, None).unwrap();
-    repo.get_object("o2", Some(VersionNum::new(4))).unwrap();
+    repo.get_object("o2", VersionNum::new(4).into()).unwrap();
 }
 
 #[test]
@@ -388,7 +388,7 @@ fn error_when_version_not_exists() {
 fn error_when_get_invalid_object() {
     let repo_root = create_repo_root("invalid");
     let repo = OcflRepo::fs_repo(&repo_root, None).unwrap();
-    repo.get_object("o3", None).unwrap();
+    repo.get_object("o3", VersionRef::Head).unwrap();
 }
 
 #[test]
@@ -527,7 +527,7 @@ fn get_object_file_when_exists() -> Result<()> {
     let version = VersionNum::new(2);
     let mut out: Vec<u8> = Vec::new();
 
-    repo.get_object_file(id, &"dir1/file3".try_into()?, Some(version), &mut out)?;
+    repo.get_object_file(id, &"dir1/file3".try_into()?, version.into(), &mut out)?;
 
     assert_eq!("file 3", String::from_utf8(out).unwrap());
 
@@ -547,7 +547,7 @@ fn fail_get_object_file_when_does_not_exist() {
     repo.get_object_file(
         id,
         &"dir1/bogus".try_into().unwrap(),
-        Some(version),
+        version.into(),
         &mut out,
     )
     .unwrap();
@@ -803,7 +803,7 @@ fn copy_files_into_new_object() -> Result<()> {
     assert_staged_obj_count(&repo, 0);
     assert_obj_count(&repo, 1);
 
-    let obj = repo.get_object(object_id, None)?;
+    let obj = repo.get_object(object_id, VersionRef::Head)?;
 
     let obj_root = PathBuf::from(&obj.object_root);
 
@@ -892,7 +892,11 @@ fn copy_files_into_existing_object() -> Result<()> {
 
     let staged_obj = repo.get_staged_object(object_id)?;
     let staged_root = PathBuf::from(&staged_obj.object_root);
-    let object_root = PathBuf::from(&repo.get_object_details(object_id, None)?.object_root);
+    let object_root = PathBuf::from(
+        &repo
+            .get_object_details(object_id, VersionRef::Head)?
+            .object_root,
+    );
 
     assert_eq!(3, staged_obj.state.len());
 
@@ -920,7 +924,7 @@ fn copy_files_into_existing_object() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let obj = repo.get_object(object_id, None)?;
+    let obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(3, obj.state.len());
 
@@ -985,7 +989,7 @@ fn copied_files_should_dedup_on_commit() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let obj = repo.get_object(object_id, None)?;
+    let obj = repo.get_object(object_id, VersionRef::Head)?;
     let object_root = PathBuf::from(&obj.object_root);
 
     assert_eq!(3, obj.state.len());
@@ -1504,7 +1508,7 @@ fn object_commit_when_no_known_storage_layout_and_root_specified() {
     repo.commit(object_id, CommitMeta::new(), Some(object_root), false)
         .unwrap();
 
-    let committed_obj = repo.get_object(object_id, None).unwrap();
+    let committed_obj = repo.get_object(object_id, VersionRef::Head).unwrap();
 
     assert_eq!(1, committed_obj.state.len());
 
@@ -1540,7 +1544,7 @@ fn fail_object_commit_when_no_known_storage_layout_and_root_specified_and_obj_al
     repo.commit(object_id, CommitMeta::new(), Some(object_root), false)
         .unwrap();
 
-    let committed_obj = repo.get_object(object_id, None).unwrap();
+    let committed_obj = repo.get_object(object_id, VersionRef::Head).unwrap();
 
     assert_eq!(1, committed_obj.state.len());
 
@@ -1579,9 +1583,15 @@ fn internal_copy_single_existing_file() -> Result<()> {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.copy_files_internal(object_id, None, &vec!["a/file1.txt"], "new/blah.txt", false)?;
+    repo.copy_files_internal(
+        object_id,
+        VersionRef::Head,
+        &vec!["a/file1.txt"],
+        "new/blah.txt",
+        false,
+    )?;
 
-    let committed_obj = repo.get_object(object_id, None)?;
+    let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
     let staged_obj = repo.get_staged_object(object_id)?;
 
     assert_eq!(8, staged_obj.state.len());
@@ -1601,7 +1611,7 @@ fn internal_copy_single_existing_file() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let committed_obj = repo.get_object(object_id, None)?;
+    let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(8, committed_obj.state.len());
 
@@ -1628,13 +1638,13 @@ fn internal_copy_multiple_existing_file() -> Result<()> {
 
     repo.copy_files_internal(
         object_id,
-        Some(VersionNum::new(1)),
+        VersionNum::new(1).into(),
         &vec!["a/b/*", "a/d/e/file5.txt"],
         "new-dir",
         false,
     )?;
 
-    let committed_obj = repo.get_object(object_id, None)?;
+    let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
     let staged_obj = repo.get_staged_object(object_id)?;
 
     assert_eq!(10, staged_obj.state.len());
@@ -1660,7 +1670,7 @@ fn internal_copy_multiple_existing_file() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let committed_obj = repo.get_object(object_id, None)?;
+    let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(10, committed_obj.state.len());
 
@@ -1713,7 +1723,13 @@ fn internal_copy_files_added_in_staged_version() -> Result<()> {
         true,
     )?;
 
-    repo.copy_files_internal(object_id, None, &vec!["just in.txt"], "just-in.txt", false)?;
+    repo.copy_files_internal(
+        object_id,
+        VersionRef::Head,
+        &vec!["just in.txt"],
+        "just-in.txt",
+        false,
+    )?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -1734,7 +1750,7 @@ fn internal_copy_files_added_in_staged_version() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let committed_obj = repo.get_object(object_id, None)?;
+    let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(9, committed_obj.state.len());
 
@@ -1772,13 +1788,13 @@ fn internal_copy_files_with_recursive_glob() -> Result<()> {
 
     repo.copy_files_internal(
         object_id,
-        Some(VersionNum::new(3)),
+        VersionNum::new(3).into(),
         &vec!["a/*"],
         "copied",
         true,
     )?;
 
-    let committed_obj = repo.get_object(object_id, None)?;
+    let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
     let staged_obj = repo.get_staged_object(object_id)?;
 
     assert_eq!(11, staged_obj.state.len());
@@ -1813,7 +1829,7 @@ fn internal_copy_files_with_recursive_glob() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let committed_obj = repo.get_object(object_id, None)?;
+    let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(11, committed_obj.state.len());
 
@@ -1870,7 +1886,7 @@ fn internal_copy_should_reject_conflicting_files() {
 
     repo.copy_files_internal(
         object_id,
-        None,
+        VersionRef::Head,
         &vec!["a/file1.txt"],
         "file3.txt/file1.txt",
         false,
@@ -1900,7 +1916,7 @@ fn internal_copy_should_reject_conflicting_dirs() {
     )
     .unwrap();
 
-    repo.copy_files_internal(object_id, None, &vec!["b"], "a", false)
+    repo.copy_files_internal(object_id, VersionRef::Head, &vec!["b"], "a", false)
         .unwrap();
 }
 
@@ -1918,8 +1934,14 @@ fn internal_copy_should_reject_bad_dst() {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.copy_files_internal(object_id, None, &vec!["file3.txt"], "some/../../dir", false)
-        .unwrap();
+    repo.copy_files_internal(
+        object_id,
+        VersionRef::Head,
+        &vec!["file3.txt"],
+        "some/../../dir",
+        false,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1935,7 +1957,7 @@ fn internal_copy_should_continue_on_partial_success() -> Result<()> {
 
     let result = repo.copy_files_internal(
         object_id,
-        None,
+        VersionRef::Head,
         &vec!["a/file1.txt", "bogus.txt", "a/file5.txt"],
         "new-dir",
         false,
@@ -1953,7 +1975,7 @@ fn internal_copy_should_continue_on_partial_success() -> Result<()> {
         _ => panic!("Expected copy to return an error"),
     }
 
-    let committed_obj = repo.get_object(object_id, None)?;
+    let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
     let staged_obj = repo.get_staged_object(object_id)?;
 
     assert_eq!(9, staged_obj.state.len());
@@ -2047,7 +2069,7 @@ fn move_files_into_new_object() -> Result<()> {
     assert_staged_obj_count(&repo, 0);
     assert_obj_count(&repo, 1);
 
-    let obj = repo.get_object(object_id, None)?;
+    let obj = repo.get_object(object_id, VersionRef::Head)?;
     let obj_root = PathBuf::from(&obj.object_root);
 
     assert_eq!(4, obj.state.len());
@@ -2129,7 +2151,7 @@ fn move_files_into_existing_object() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let obj = repo.get_object(object_id, None)?;
+    let obj = repo.get_object(object_id, VersionRef::Head)?;
     let object_root = PathBuf::from(&obj.object_root);
 
     assert_eq!(9, obj.state.len());
@@ -2201,7 +2223,7 @@ fn move_files_should_dedup_on_commit() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let obj = repo.get_object(object_id, None)?;
+    let obj = repo.get_object(object_id, VersionRef::Head)?;
     let object_root = PathBuf::from(&obj.object_root);
 
     assert_eq!(3, obj.state.len());
@@ -2521,7 +2543,7 @@ fn internal_move_single_existing_file() -> Result<()> {
 
     repo.move_files_internal(object_id, &vec!["a/file1.txt"], "new/blah.txt")?;
 
-    let committed_obj = repo.get_object(object_id, None)?;
+    let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
     let staged_obj = repo.get_staged_object(object_id)?;
 
     assert_eq!(7, staged_obj.state.len());
@@ -2537,7 +2559,7 @@ fn internal_move_single_existing_file() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let committed_obj = repo.get_object(object_id, None)?;
+    let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(7, committed_obj.state.len());
 
@@ -2566,7 +2588,7 @@ fn internal_move_multiple_existing_file() -> Result<()> {
 
     repo.move_files_internal(object_id, &vec!["a/*.txt", "a/b"], "new-dir")?;
 
-    let committed_obj = repo.get_object(object_id, None)?;
+    let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
     let staged_obj = repo.get_staged_object(object_id)?;
 
     assert_eq!(7, staged_obj.state.len());
@@ -2596,7 +2618,7 @@ fn internal_move_multiple_existing_file() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let committed_obj = repo.get_object(object_id, None)?;
+    let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(7, committed_obj.state.len());
 
@@ -2664,7 +2686,7 @@ fn internal_move_should_continue_on_partial_success() -> Result<()> {
         _ => panic!("Expected copy to return an error"),
     }
 
-    let committed_obj = repo.get_object(object_id, None)?;
+    let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
     let staged_obj = repo.get_staged_object(object_id)?;
 
     assert_eq!(7, staged_obj.state.len());
@@ -2724,7 +2746,7 @@ fn internal_move_files_added_in_staged_version() {
 
     commit(object_id, &repo);
 
-    let committed_obj = repo.get_object(object_id, None).unwrap();
+    let committed_obj = repo.get_object(object_id, VersionRef::Head).unwrap();
 
     assert_eq!(8, committed_obj.state.len());
 
@@ -2815,12 +2837,12 @@ fn remove_existing_file() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let committed_obj = repo.get_object(object_id, None)?;
+    let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(6, committed_obj.state.len());
     assert!(committed_obj.state.get(&lpath("a/file5.txt")).is_none());
 
-    let previous_version = repo.get_object(object_id, Some(VersionNum::new(4)))?;
+    let previous_version = repo.get_object(object_id, VersionNum::new(4).into())?;
 
     assert!(previous_version.state.get(&lpath("a/file5.txt")).is_some());
 
@@ -2848,7 +2870,7 @@ fn remove_multiple_existing_files() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let committed_obj = repo.get_object(object_id, None)?;
+    let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(5, committed_obj.state.len());
     assert!(committed_obj.state.get(&lpath("a/file5.txt")).is_none());
@@ -2857,7 +2879,7 @@ fn remove_multiple_existing_files() -> Result<()> {
         .get(&lpath("something/new.txt"))
         .is_none());
 
-    let previous_version = repo.get_object(object_id, Some(VersionNum::new(4)))?;
+    let previous_version = repo.get_object(object_id, VersionNum::new(4).into())?;
 
     assert!(previous_version.state.get(&lpath("a/file5.txt")).is_some());
     assert!(previous_version
@@ -2890,13 +2912,13 @@ fn remove_globs() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let committed_obj = repo.get_object(object_id, None)?;
+    let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(5, committed_obj.state.len());
     assert!(committed_obj.state.get(&lpath("a/file5.txt")).is_none());
     assert!(committed_obj.state.get(&lpath("a/file1.txt")).is_none());
 
-    let previous_version = repo.get_object(object_id, Some(VersionNum::new(4)))?;
+    let previous_version = repo.get_object(object_id, VersionNum::new(4).into())?;
 
     assert!(previous_version.state.get(&lpath("a/file5.txt")).is_some());
     assert!(previous_version.state.get(&lpath("a/file1.txt")).is_some());
@@ -2924,7 +2946,7 @@ fn remove_recursive() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let committed_obj = repo.get_object(object_id, None)?;
+    let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(1, committed_obj.state.len());
     assert!(committed_obj.state.get(&lpath("file3.txt")).is_some());
@@ -3002,7 +3024,7 @@ fn reset_newly_added_files() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let obj = repo.get_object(object_id, None)?;
+    let obj = repo.get_object(object_id, VersionRef::Head)?;
     let object_root = PathBuf::from(&obj.object_root);
 
     assert_eq!(8, obj.state.len());
@@ -3041,7 +3063,13 @@ fn reset_copied_file() -> Result<()> {
         "/",
     )?;
 
-    repo.copy_files_internal(object_id, None, &vec!["new.txt"], "new (copy).txt", false)?;
+    repo.copy_files_internal(
+        object_id,
+        VersionRef::Head,
+        &vec!["new.txt"],
+        "new (copy).txt",
+        false,
+    )?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
     let staged_root = PathBuf::from(&staged_obj.object_root);
@@ -3072,7 +3100,7 @@ fn reset_copied_file() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let obj = repo.get_object(object_id, None)?;
+    let obj = repo.get_object(object_id, VersionRef::Head)?;
     let object_root = PathBuf::from(&obj.object_root);
 
     assert_eq!(8, obj.state.len());
@@ -3133,7 +3161,7 @@ fn reset_changes_to_existing_files() -> Result<()> {
 
     assert_eq!(7, staged_obj.state.len());
 
-    let object_root = repo.get_object(object_id, None)?.object_root;
+    let object_root = repo.get_object(object_id, VersionRef::Head)?.object_root;
 
     assert_file_details(
         staged_obj.state.get(&lpath("a/file1.txt")).unwrap(),
@@ -3150,7 +3178,7 @@ fn reset_changes_to_existing_files() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let obj = repo.get_object(object_id, None)?;
+    let obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(7, obj.state.len());
 
@@ -3201,7 +3229,7 @@ fn reset_removed_file() -> Result<()> {
     assert!(staged_obj.state.get(&lpath("a/file1.txt")).is_none());
     assert!(staged_obj.state.get(&lpath("a/file5.txt")).is_none());
 
-    let object_root = PathBuf::from(repo.get_object(object_id, None)?.object_root);
+    let object_root = PathBuf::from(repo.get_object(object_id, VersionRef::Head)?.object_root);
 
     assert_file_details(
         staged_obj.state.get(&lpath("a/f/file6.txt")).unwrap(),
@@ -3212,7 +3240,7 @@ fn reset_removed_file() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let obj = repo.get_object(object_id, None)?;
+    let obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(4, obj.state.len());
 
@@ -3484,7 +3512,7 @@ fn commit_should_use_custom_meta_when_provided() -> Result<()> {
 
     repo.commit(object_id, meta, None, false)?;
 
-    let obj = repo.get_object(object_id, None)?;
+    let obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(name, obj.version_details.user_name.unwrap());
     assert_eq!(address, obj.version_details.user_address.unwrap());
@@ -3520,7 +3548,7 @@ fn commit_should_use_custom_meta_when_mixture_provided() -> Result<()> {
 
     repo.commit(object_id, meta, None, false)?;
 
-    let obj = repo.get_object(object_id, None)?;
+    let obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert!(obj.version_details.user_name.is_none());
     assert!(obj.version_details.user_address.is_none());
@@ -3554,7 +3582,7 @@ fn commit_should_pretty_print_inventory() {
 
     repo.commit(object_id, meta, None, true).unwrap();
 
-    let obj = repo.get_object(object_id, None).unwrap();
+    let obj = repo.get_object(object_id, VersionRef::Head).unwrap();
 
     let inventory_path = Path::new(&obj.object_root).join("inventory.json");
 
@@ -3671,7 +3699,7 @@ fn commit_should_remove_staged_object() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let _obj = repo.get_object(object_id, None)?;
+    let _obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_staged_obj_not_exists(&repo, object_id);
 
@@ -3843,7 +3871,13 @@ fn diff_should_detect_multi_dest_rename() -> Result<()> {
     commit(object_id, &repo);
 
     repo.move_files_internal(object_id, &vec!["file-1.txt"], "moved.txt")?;
-    repo.copy_files_internal(object_id, None, &vec!["file-2.txt"], "moved-2.txt", false)?;
+    repo.copy_files_internal(
+        object_id,
+        VersionRef::Head,
+        &vec!["file-2.txt"],
+        "moved-2.txt",
+        false,
+    )?;
 
     commit(object_id, &repo);
 
@@ -3981,8 +4015,14 @@ fn internal_copy_of_new_file_should_copy_file_on_disk() {
         "/",
     )
     .unwrap();
-    repo.copy_files_internal(object_id, None, &vec!["a-file.txt"], "b-file.txt", false)
-        .unwrap();
+    repo.copy_files_internal(
+        object_id,
+        VersionRef::Head,
+        &vec!["a-file.txt"],
+        "b-file.txt",
+        false,
+    )
+    .unwrap();
     repo.move_files_external(
         object_id,
         &vec![create_file(&temp, "a-file.txt", "different!").path()],
@@ -4127,8 +4167,14 @@ fn internal_copy_of_duplicate_file_should_operate_on_staged_version() {
     )
     .unwrap();
 
-    repo.copy_files_internal(object_id, None, &vec!["a-file-2.txt"], "b-file.txt", false)
-        .unwrap();
+    repo.copy_files_internal(
+        object_id,
+        VersionRef::Head,
+        &vec!["a-file-2.txt"],
+        "b-file.txt",
+        false,
+    )
+    .unwrap();
     repo.move_files_external(
         object_id,
         &vec![create_file(&temp, "a-file.txt", "different!").path()],
@@ -4162,7 +4208,7 @@ fn internal_copy_of_duplicate_file_should_operate_on_staged_version() {
 
     commit(object_id, &repo);
 
-    let committed_obj = repo.get_object(object_id, None).unwrap();
+    let committed_obj = repo.get_object(object_id, VersionRef::Head).unwrap();
     let object_root = PathBuf::from(&committed_obj.object_root);
 
     assert_file_details(
@@ -4239,7 +4285,7 @@ fn fail_commit_when_staged_version_out_of_sync_with_main() {
         "ae448ac86c4e8e4dec645729708ef41873ae79c6dff84eff73360989487f08e5",
     );
 
-    let committed_obj = repo.get_object(object_id, None).unwrap();
+    let committed_obj = repo.get_object(object_id, VersionRef::Head).unwrap();
     assert_eq!(
         VersionNum::new(5),
         committed_obj.version_details.version_num
@@ -4288,7 +4334,7 @@ fn create_and_update_object_in_repo_with_no_layout() {
     repo.commit(object_id, CommitMeta::new(), Some(object_root), false)
         .unwrap();
 
-    let obj = repo.get_object(object_id, None).unwrap();
+    let obj = repo.get_object(object_id, VersionRef::Head).unwrap();
     let storage_path = PathBuf::from(&obj.object_root);
 
     assert_eq!(1, obj.state.len());
@@ -4319,7 +4365,7 @@ fn create_and_update_object_in_repo_with_no_layout() {
     repo.commit(object_id, CommitMeta::new(), Some(object_root), false)
         .unwrap();
 
-    let obj = repo.get_object(object_id, None).unwrap();
+    let obj = repo.get_object(object_id, VersionRef::Head).unwrap();
 
     assert_eq!(2, obj.state.len());
 
@@ -4370,7 +4416,7 @@ fn fail_when_incorrect_object_in_root() {
     )
     .unwrap();
 
-    repo.get_object(object_id_2, None).unwrap();
+    repo.get_object(object_id_2, VersionRef::Head).unwrap();
 }
 
 // TODO validate all test created inventories after adding validation API
@@ -4388,7 +4434,7 @@ fn assert_obj_count(repo: &OcflRepo, count: usize) {
 }
 
 fn assert_obj_not_exists(repo: &OcflRepo, object_id: &str) {
-    match repo.get_object(object_id, None) {
+    match repo.get_object(object_id, VersionRef::Head) {
         Err(RocflError::NotFound(_)) => (),
         _ => panic!("Expected object '{}' to not be found", object_id),
     }
@@ -4580,7 +4626,7 @@ fn create_example_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
 
     repo.copy_files_internal(
         object_id,
-        Some(VersionNum::new(1)),
+        VersionNum::new(1).into(),
         &vec!["a/b/file3.txt"],
         "/",
         false,
@@ -4588,7 +4634,7 @@ fn create_example_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
     .unwrap();
     repo.copy_files_internal(
         object_id,
-        Some(VersionNum::new(1)),
+        VersionNum::new(1).into(),
         &vec!["a/file1.txt"],
         "something/file1.txt",
         false,

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::ocfl::error::Result;
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::store::layout::LayoutExtensionName;
-use crate::ocfl::{ContentPath, LogicalPath, VersionNum};
+use crate::ocfl::{ContentPath, LogicalPath, VersionRef};
 
 pub mod fs;
 pub mod layout;
@@ -36,7 +36,7 @@ pub trait OcflStore {
         &self,
         object_id: &str,
         path: &LogicalPath,
-        version_num: Option<VersionNum>,
+        version_num: VersionRef,
         sink: &mut dyn Write,
     ) -> Result<()>;
 

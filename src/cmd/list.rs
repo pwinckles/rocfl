@@ -86,7 +86,7 @@ impl ListCmd {
         let object = if self.staged {
             repo.get_staged_object(object_id)?
         } else {
-            repo.get_object(object_id, self.version)?
+            repo.get_object(object_id, self.version.into())?
         };
 
         let mut listings = self.filter_paths_to_listings(object)?;

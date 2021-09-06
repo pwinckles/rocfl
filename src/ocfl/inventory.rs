@@ -17,6 +17,7 @@ use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
 use crate::ocfl::error::{not_found, not_found_path, Result, RocflError};
 use crate::ocfl::{
     CommitMeta, ContentPath, ContentPathVersion, Diff, InventoryPath, LogicalPath, VersionNum,
+    VersionRef,
 };
 
 const STAGING_MESSAGE: &str = "Staging new version";
@@ -155,10 +156,10 @@ impl Inventory {
     pub fn content_path_for_digest(
         &self,
         digest: &HexDigest,
-        version_num: Option<VersionNum>,
+        version_num: VersionRef,
         logical_path: Option<&LogicalPath>,
     ) -> Result<Rc<ContentPath>> {
-        let version_num = version_num.unwrap_or(self.head);
+        let version_num = version_num.resolve(self.head);
 
         match self.manifest.get_paths(digest) {
             Some(paths) => {
@@ -207,9 +208,9 @@ impl Inventory {
     pub fn content_path_for_logical_path(
         &self,
         logical_path: &LogicalPath,
-        version_num: Option<VersionNum>,
+        version_num: VersionRef,
     ) -> Result<Rc<ContentPath>> {
-        let version_num = version_num.unwrap_or(self.head);
+        let version_num = version_num.resolve(self.head);
         let version = self.get_version(version_num)?;
 
         let digest = match version.lookup_digest(logical_path) {
@@ -222,7 +223,7 @@ impl Inventory {
             }
         };
 
-        self.content_path_for_digest(digest, Some(version_num), Some(logical_path))
+        self.content_path_for_digest(digest, version_num.into(), Some(logical_path))
     }
 
     /// Returns the diffs of two versions. An error is returned if either of the specified versions

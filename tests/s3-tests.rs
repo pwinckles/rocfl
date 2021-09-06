@@ -15,7 +15,7 @@ use fs_extra::dir::CopyOptions;
 use rand::Rng;
 use rocfl::ocfl::{
     CommitMeta, DigestAlgorithm, FileDetails, LayoutExtensionName, OcflRepo, RocflError,
-    StorageLayout, VersionNum,
+    StorageLayout, VersionNum, VersionRef,
 };
 use rusoto_core::Region;
 use rusoto_s3::{
@@ -114,7 +114,7 @@ fn create_new_object() {
             repo.commit(object_id, CommitMeta::new(), None, false)
                 .unwrap();
 
-            let object = repo.get_object(object_id, None).unwrap();
+            let object = repo.get_object(object_id, VersionRef::Head).unwrap();
 
             assert_eq!(1, object.state.len());
 
@@ -193,7 +193,7 @@ fn create_and_update_object() {
 
             repo.copy_files_internal(
                 object_id,
-                Some(VersionNum::new(1)),
+                VersionNum::new(1).into(),
                 &vec!["a/b/file3.txt"],
                 "/",
                 false,
@@ -201,7 +201,7 @@ fn create_and_update_object() {
             .unwrap();
             repo.copy_files_internal(
                 object_id,
-                Some(VersionNum::new(1)),
+                VersionNum::new(1).into(),
                 &vec!["a/file1.txt"],
                 "something/file1.txt",
                 false,
@@ -235,7 +235,7 @@ fn create_and_update_object() {
             repo.commit(object_id, CommitMeta::new(), None, false)
                 .unwrap();
 
-            let object = repo.get_object(object_id, None).unwrap();
+            let object = repo.get_object(object_id, VersionRef::Head).unwrap();
 
             assert_eq!(7, object.state.len());
 
@@ -312,11 +312,11 @@ fn purge_object() {
             repo.commit(object_id, CommitMeta::new(), None, false)
                 .unwrap();
 
-            let _ = repo.get_object(object_id, None).unwrap();
+            let _ = repo.get_object(object_id, VersionRef::Head).unwrap();
 
             repo.purge_object(object_id).unwrap();
 
-            match repo.get_object(object_id, None) {
+            match repo.get_object(object_id, VersionRef::Head) {
                 Err(RocflError::NotFound(_)) => (),
                 _ => panic!("Expected {} to not be found.", object_id),
             }

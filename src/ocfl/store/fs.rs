@@ -24,7 +24,7 @@ use super::{OcflLayout, OcflStore, StagingStore};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
-use crate::ocfl::{paths, specs, util, ContentPath, InventoryPath, LogicalPath, VersionNum};
+use crate::ocfl::{paths, specs, util, ContentPath, InventoryPath, LogicalPath, VersionRef};
 
 static OBJECT_ID_MATCHER: Lazy<RegexMatcher> =
     Lazy::new(|| RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap());
@@ -254,7 +254,7 @@ impl OcflStore for FsOcflStore {
         &self,
         object_id: &str,
         path: &LogicalPath,
-        version_num: Option<VersionNum>,
+        version_num: VersionRef,
         sink: &mut dyn Write,
     ) -> Result<()> {
         self.ensure_open()?;

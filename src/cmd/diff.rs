@@ -98,7 +98,7 @@ impl Cmd for ShowCmd {
                 display_diffs(diffs, &args)
             }
         } else {
-            let object = repo.get_object_details(&self.object_id, self.version)?;
+            let object = repo.get_object_details(&self.object_id, self.version.into())?;
 
             if !self.minimal {
                 println(FormatVersion::new(&object.version_details, !args.no_styles))?;

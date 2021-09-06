@@ -15,12 +15,14 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::de::Visitor;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use VersionRef::Head;
 
 use crate::ocfl::bimap::PathBiMap;
 use crate::ocfl::consts::MUTABLE_HEAD_EXT_DIR;
 use crate::ocfl::digest::HexDigest;
 use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::{Inventory, Version};
+use crate::ocfl::VersionRef::Number;
 use crate::ocfl::{util, DigestAlgorithm};
 
 static VERSION_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^v\d+$"#).unwrap());
@@ -32,6 +34,12 @@ static VERSION_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^v\d+$"#).unwrap(
 pub struct VersionNum {
     pub number: u32,
     pub width: u32,
+}
+
+/// Represents either a specific version number or whatever the current head version is
+pub enum VersionRef {
+    Number(VersionNum),
+    Head,
 }
 
 pub trait InventoryPath {
@@ -333,6 +341,27 @@ impl PartialOrd for VersionNum {
 impl Ord for VersionNum {
     fn cmp(&self, other: &Self) -> Ordering {
         self.number.cmp(&other.number)
+    }
+}
+
+impl VersionRef {
+    pub fn resolve(&self, head_num: VersionNum) -> VersionNum {
+        match self {
+            Number(num) => *num,
+            Head => head_num,
+        }
+    }
+}
+
+impl From<VersionNum> for VersionRef {
+    fn from(num: VersionNum) -> Self {
+        Self::Number(num)
+    }
+}
+
+impl From<Option<VersionNum>> for VersionRef {
+    fn from(num: Option<VersionNum>) -> Self {
+        num.map_or(Head, Number)
     }
 }
 
@@ -751,15 +780,12 @@ impl ObjectVersion {
     /// Creates an `ObjectVersion` by consuming the supplied `Inventory`.
     pub fn from_inventory<S: AsRef<str> + Copy>(
         mut inventory: Inventory,
-        version_num: Option<VersionNum>,
+        version_num: VersionRef,
         object_storage_path: S,
         object_staging_path: Option<S>,
         use_backslashes: bool,
     ) -> Result<Self> {
-        let version_num = match version_num {
-            Some(version) => version,
-            None => inventory.head,
-        };
+        let version_num = version_num.resolve(inventory.head);
 
         let version = inventory.get_version(version_num)?;
         let version_details = VersionDetails::new(version_num, version);
@@ -813,12 +839,12 @@ impl ObjectVersion {
                 for (target_path, target_digest) in target_path_map {
                     let content_path = inventory.content_path_for_digest(
                         &target_digest,
-                        Some(current_version_num),
+                        current_version_num.into(),
                         Some(&target_path),
                     )?;
 
                     let storage_path = ObjectVersion::storage_path(
-                        (*content_path).as_ref(),
+                        content_path.as_str(),
                         object_storage_path,
                         use_backslashes,
                         &staging_version_prefix,
@@ -850,12 +876,12 @@ impl ObjectVersion {
                 if entry.is_none() || entry.unwrap().1 != target_digest {
                     let content_path = inventory.content_path_for_digest(
                         &target_digest,
-                        Some(current_version_num),
+                        current_version_num.into(),
                         Some(&target_path),
                     )?;
 
                     let storage_path = ObjectVersion::storage_path(
-                        (*content_path).as_ref(),
+                        content_path.as_str(),
                         object_storage_path,
                         use_backslashes,
                         &staging_version_prefix,
@@ -969,14 +995,8 @@ impl VersionDetails {
 
 impl ObjectVersionDetails {
     /// Creates `ObjectVersionDetails` by consuming the `Inventory`.
-    pub fn from_inventory(
-        mut inventory: Inventory,
-        version_num: Option<VersionNum>,
-    ) -> Result<Self> {
-        let version_num = match version_num {
-            Some(version) => version,
-            None => inventory.head,
-        };
+    pub fn from_inventory(mut inventory: Inventory, version_num: VersionRef) -> Result<Self> {
+        let version_num = version_num.resolve(inventory.head);
 
         let version = inventory.remove_version(version_num)?;
         let version_details = VersionDetails::from_version(version_num, version);

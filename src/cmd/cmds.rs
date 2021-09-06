@@ -30,7 +30,7 @@ impl Cmd for CatCmd {
             repo.get_object_file(
                 &self.object_id,
                 &self.path.as_str().try_into()?,
-                self.version,
+                self.version.into(),
                 &mut io::stdout(),
             )
         }
@@ -95,7 +95,7 @@ impl Cmd for CopyCmd {
         if self.internal {
             repo.copy_files_internal(
                 &self.object_id,
-                self.version,
+                self.version.into(),
                 &self.source,
                 &self.destination,
                 self.recursive,

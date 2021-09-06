@@ -27,7 +27,7 @@ use crate::ocfl::store::s3::S3OcflStore;
 use crate::ocfl::store::{OcflStore, StagingStore};
 use crate::ocfl::{
     paths, util, CommitMeta, ContentPath, Diff, DigestAlgorithm, InventoryPath, LogicalPath,
-    ObjectVersion, ObjectVersionDetails, VersionDetails, VersionNum,
+    ObjectVersion, ObjectVersionDetails, VersionDetails, VersionNum, VersionRef,
 };
 
 /// Interface for interacting with an OCFL repository
@@ -153,7 +153,7 @@ impl OcflRepo {
         let inv_iter = self.store.iter_inventories(filter_glob)?;
 
         Ok(Box::new(InventoryAdapterIter::new(inv_iter, |inventory| {
-            ObjectVersionDetails::from_inventory(inventory, None)
+            ObjectVersionDetails::from_inventory(inventory, VersionRef::Head)
         })))
     }
 
@@ -176,7 +176,7 @@ impl OcflRepo {
         let inv_iter = self.get_staging()?.iter_inventories(filter_glob)?;
 
         Ok(Box::new(InventoryAdapterIter::new(inv_iter, |inventory| {
-            ObjectVersionDetails::from_inventory(inventory, None)
+            ObjectVersionDetails::from_inventory(inventory, VersionRef::Head)
         })))
     }
 
@@ -185,12 +185,7 @@ impl OcflRepo {
     ///
     /// If the object or version of the object cannot be found, then a `RocflError::NotFound`
     /// error is returned.
-    pub fn get_object(
-        &self,
-        object_id: &str,
-        // TODO What if this was a version enum with a HEAD and VersionNum variant?
-        version_num: Option<VersionNum>,
-    ) -> Result<ObjectVersion> {
+    pub fn get_object(&self, object_id: &str, version_num: VersionRef) -> Result<ObjectVersion> {
         self.ensure_open()?;
 
         let inventory = self.store.get_inventory(object_id)?;
@@ -230,7 +225,7 @@ impl OcflRepo {
 
         ObjectVersion::from_inventory(
             staging_inventory,
-            Some(version),
+            version.into(),
             &root,
             staging.as_ref(),
             util::BACKSLASH_SEPARATOR,
@@ -246,7 +241,7 @@ impl OcflRepo {
     pub fn get_object_details(
         &self,
         object_id: &str,
-        version_num: Option<VersionNum>,
+        version_num: VersionRef,
     ) -> Result<ObjectVersionDetails> {
         self.ensure_open()?;
 
@@ -263,7 +258,7 @@ impl OcflRepo {
 
         let inventory = self.get_staged_inventory(object_id)?;
         let version = inventory.head;
-        ObjectVersionDetails::from_inventory(inventory, Some(version))
+        ObjectVersionDetails::from_inventory(inventory, version.into())
     }
 
     /// Returns a vector containing the version metadata for ever version of an object. The vector
@@ -290,7 +285,7 @@ impl OcflRepo {
         &self,
         object_id: &str,
         path: &LogicalPath,
-        version_num: Option<VersionNum>,
+        version_num: VersionRef,
         sink: &mut dyn Write,
     ) -> Result<()> {
         self.ensure_open()?;
@@ -311,18 +306,18 @@ impl OcflRepo {
         self.ensure_open()?;
 
         let inventory = self.get_staged_inventory(object_id)?;
-        let content_path = inventory.content_path_for_logical_path(path, None)?;
+        let content_path = inventory.content_path_for_logical_path(path, VersionRef::Head)?;
 
         let version_prefix = format!("{}/", inventory.head);
 
         if content_path.starts_with(&version_prefix) {
             // The content exists in staging
             self.get_staging()?
-                .get_object_file(object_id, path, None, sink)
+                .get_object_file(object_id, path, VersionRef::Head, sink)
         } else {
             // The content exists in the main repo
             self.store
-                .get_object_file(object_id, path, Some(inventory.head.previous()?), sink)
+                .get_object_file(object_id, path, inventory.head.previous()?.into(), sink)
         }
     }
 
@@ -503,7 +498,7 @@ impl OcflRepo {
     pub fn copy_files_internal(
         &self,
         object_id: &str,
-        version_num: Option<VersionNum>,
+        version_num: VersionRef,
         src: &[impl AsRef<str>],
         dst: &str,
         recursive: bool,
@@ -517,7 +512,7 @@ impl OcflRepo {
         let _lock = self.get_lock_manager()?.acquire(object_id)?;
 
         let mut inventory = self.get_or_created_staged_inventory(object_id)?;
-        let src_version_num = version_num.unwrap_or(inventory.head);
+        let src_version_num = version_num.resolve(inventory.head);
         let staging = self.get_staging()?;
 
         let (to_copy, mut errors) =
@@ -1308,7 +1303,8 @@ fn lookup_staged_digest_and_content_path(
         .lookup_digest(src_path)
     {
         Some(digest) => {
-            let content_path = inventory.content_path_for_digest(digest, None, Some(src_path))?;
+            let content_path =
+                inventory.content_path_for_digest(digest, VersionRef::Head, Some(src_path))?;
 
             if content_path.starts_with(&staging_prefix) {
                 Ok(Some((digest.as_ref().clone(), content_path)))
