@@ -64,7 +64,7 @@ where
     }
 
     /// Inserts all of the path mappings for an id. This is used for deserialization.
-    fn insert_multiple(&mut self, id: HexDigest, paths: Vec<P>) {
+    pub fn insert_multiple(&mut self, id: HexDigest, paths: Vec<P>) {
         if paths.is_empty() {
             return;
         }
@@ -80,6 +80,23 @@ where
             let path_ref = Rc::new(path);
             set.insert(path_ref.clone());
             self.path_to_id.insert(path_ref, id_ref.clone());
+        }
+    }
+
+    /// Inserts all of the path mappings for an id. This is used for deserialization.
+    pub fn insert_multiple_rc(&mut self, id: Rc<HexDigest>, paths: Vec<Rc<P>>) {
+        if paths.is_empty() {
+            return;
+        }
+
+        let set = self
+            .id_to_paths
+            .entry(id.clone())
+            .or_insert_with(HashSet::new);
+
+        for path in paths {
+            set.insert(path.clone());
+            self.path_to_id.insert(path, id.clone());
         }
     }
 

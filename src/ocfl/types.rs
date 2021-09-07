@@ -268,6 +268,7 @@ impl TryFrom<&str> for VersionNum {
     }
 }
 
+// TODO there's a discrepancy here with VersionNum::new
 impl TryFrom<u32> for VersionNum {
     type Error = RocflError;
 
@@ -536,6 +537,7 @@ impl TryFrom<&str> for InventoryPathInner {
     type Error = RocflError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
+        // TODO this behavior is nice when dealing with user input, but I do not think it's desirable when reading inventories
         let trimmed = value.trim_start_matches('/').trim_end_matches('/');
 
         if !trimmed.is_empty() {
