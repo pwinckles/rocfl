@@ -31,7 +31,9 @@ use super::{OcflLayout, OcflStore};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
-use crate::ocfl::{paths, specs, util, LayoutExtensionName, LogicalPath, VersionRef};
+use crate::ocfl::{
+    paths, specs, util, InventoryPath, LayoutExtensionName, LogicalPath, VersionRef,
+};
 
 const TYPE_PLAIN: &str = "text/plain; charset=UTF-8";
 const TYPE_MARKDOWN: &str = "text/markdown; charset=UTF-8";
@@ -361,7 +363,7 @@ impl OcflStore for S3OcflStore {
         let inventory = self.get_inventory(object_id)?;
 
         let content_path = inventory.content_path_for_logical_path(path, version_num)?;
-        let storage_path = join(&inventory.object_root, (*content_path).as_ref());
+        let storage_path = join(&inventory.object_root, content_path.as_str());
 
         self.s3_client.stream_object(&storage_path, sink)
     }

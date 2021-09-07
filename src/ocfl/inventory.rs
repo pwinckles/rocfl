@@ -24,10 +24,8 @@ const STAGING_MESSAGE: &str = "Staging new version";
 const ROCFL_USER: &str = "rocfl";
 const ROCFL_ADDRESS: &str = "https://github.com/pwinckles/rocfl";
 
-// TODO need to lock down all of these public members
-
 /// OCFL inventory serialization object
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Inventory {
     pub id: String,
@@ -36,11 +34,10 @@ pub struct Inventory {
     pub digest_algorithm: DigestAlgorithm,
     pub head: VersionNum,
     pub content_directory: Option<String>,
-    // TODO look into deduping all HexDigests and InventoryPaths using a deserialize seed
     manifest: PathBiMap<ContentPath>,
     pub versions: BTreeMap<VersionNum, Version>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
+    fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
 
     #[serde(skip)]
     /// Path to the object's root relative the storage root. This path should use `/` as
@@ -70,7 +67,7 @@ pub struct InventoryBuilder {
 }
 
 /// OCFL version serialization object
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct Version {
     pub created: DateTime<Local>,
     state: PathBiMap<LogicalPath>,
@@ -92,6 +89,33 @@ pub struct User {
 }
 
 impl Inventory {
+    /// Creates a new inventory, this is intended for deserialization
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        id: String,
+        type_declaration: String,
+        digest_algorithm: DigestAlgorithm,
+        head: VersionNum,
+        content_directory: Option<String>,
+        manifest: PathBiMap<ContentPath>,
+        versions: BTreeMap<VersionNum, Version>,
+        fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
+    ) -> Self {
+        Self {
+            id,
+            type_declaration,
+            digest_algorithm,
+            head,
+            content_directory,
+            manifest,
+            versions,
+            fixity,
+            object_root: Default::default(),
+            storage_path: Default::default(),
+            mutable_head: false,
+        }
+    }
+
     /// Returns a new inventory builder
     pub fn builder(object_id: &str) -> InventoryBuilder {
         InventoryBuilder::new(object_id)
@@ -152,13 +176,13 @@ impl Inventory {
     /// or earlier.
     ///
     /// If `logical_path` is specified and multiple content paths for the digest are found, then
-    /// then the path that maps directly to the logical path is selected or the first if none match.
+    /// the path that maps directly to the logical path is selected or the first if none match.
     pub fn content_path_for_digest(
         &self,
         digest: &HexDigest,
         version_num: VersionRef,
         logical_path: Option<&LogicalPath>,
-    ) -> Result<Rc<ContentPath>> {
+    ) -> Result<&Rc<ContentPath>> {
         let version_num = version_num.resolve(self.head);
 
         match self.manifest.get_paths(digest) {
@@ -172,7 +196,7 @@ impl Inventory {
                     };
 
                     if current_version <= version_num {
-                        matches.push(path.clone());
+                        matches.push(path);
                     }
                 }
 
@@ -189,12 +213,12 @@ impl Inventory {
                     );
                     for path in &matches {
                         if path.ends_with(&suffix) {
-                            return Ok(path.clone());
+                            return Ok(path);
                         }
                     }
                 }
 
-                Ok(matches.first().unwrap().clone())
+                Ok(matches.first().unwrap())
             }
             None => Err(RocflError::CorruptObject {
                 object_id: self.id.clone(),
@@ -209,7 +233,7 @@ impl Inventory {
         &self,
         logical_path: &LogicalPath,
         version_num: VersionRef,
-    ) -> Result<Rc<ContentPath>> {
+    ) -> Result<&Rc<ContentPath>> {
         let version_num = version_num.resolve(self.head);
         let version = self.get_version(version_num)?;
 
@@ -405,6 +429,7 @@ impl Inventory {
         None
     }
 
+    // TODO content path construction could perhaps be moved into ContentPath
     /// Returns a new content path for the specified logical path, assuming a direct one-to-one
     /// mapping of logical path to content path.
     pub fn new_content_path_head(&self, logical_path: &LogicalPath) -> Result<ContentPath> {
@@ -434,6 +459,7 @@ impl Inventory {
         }
     }
 
+    // TODO this can be moved into the deserialization
     /// Performs a spot check on the inventory to see if it appears valid. This is not an
     /// exhaustive check, and does not guarantee that the inventory is valid.
     pub fn validate(&self) -> Result<()> {
@@ -501,6 +527,22 @@ impl InventoryBuilder {
 }
 
 impl Version {
+    /// Creates a new version, intended to be used for deserialization
+    pub fn new(
+        created: DateTime<Local>,
+        state: PathBiMap<LogicalPath>,
+        message: Option<String>,
+        user: Option<User>,
+    ) -> Self {
+        Self {
+            created,
+            state,
+            message,
+            user,
+            logical_dirs: Default::default(),
+        }
+    }
+
     /// Create a new Version initialized with values for staging
     pub fn new_staged() -> Self {
         Self::staged_version(PathBiMap::new())

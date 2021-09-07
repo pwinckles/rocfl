@@ -22,6 +22,7 @@ mod inventory;
 mod lock;
 mod paths;
 mod repo;
+mod serde;
 mod specs;
 mod store;
 mod types;

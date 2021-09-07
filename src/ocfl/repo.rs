@@ -95,7 +95,7 @@ impl OcflRepo {
         region: Region,
         bucket: &str,
         prefix: Option<&str>,
-        // TODO fix the AsRef<Path> stuff to call inner methods
+        // TODO fix the AsRef<Path> stuff to call inner methods -- I might just wait for https://github.com/rust-lang/rust/issues/77960
         staging_root: impl AsRef<Path>,
         layout: Option<StorageLayout>,
         profile: Option<&str>,
@@ -1307,7 +1307,7 @@ fn lookup_staged_digest_and_content_path(
                 inventory.content_path_for_digest(digest, VersionRef::Head, Some(src_path))?;
 
             if content_path.starts_with(&staging_prefix) {
-                Ok(Some((digest.as_ref().clone(), content_path)))
+                Ok(Some((digest.as_ref().clone(), content_path.clone())))
             } else {
                 Ok(None)
             }
