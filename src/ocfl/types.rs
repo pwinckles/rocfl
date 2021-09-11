@@ -238,7 +238,7 @@ impl TryFrom<&str> for VersionNum {
     /// the version string is invalid.
     fn try_from(version: &str) -> Result<Self, Self::Error> {
         if !VERSION_REGEX.is_match(version) {
-            return Err(RocflError::IllegalArgument(format!(
+            return Err(RocflError::InvalidValue(format!(
                 "Invalid version {}",
                 version
             )));
@@ -247,7 +247,7 @@ impl TryFrom<&str> for VersionNum {
         match version[1..].parse::<u32>() {
             Ok(num) => {
                 if num < 1 {
-                    return Err(RocflError::IllegalArgument(format!(
+                    return Err(RocflError::InvalidValue(format!(
                         "Invalid version {}",
                         version
                     )));
@@ -263,7 +263,7 @@ impl TryFrom<&str> for VersionNum {
                     width: width as u32,
                 })
             }
-            Err(_) => Err(RocflError::IllegalArgument(format!(
+            Err(_) => Err(RocflError::InvalidValue(format!(
                 "Invalid version {}",
                 version
             ))),
@@ -277,7 +277,7 @@ impl TryFrom<u32> for VersionNum {
     /// Parses a positive integer into a `VersionNum`. An error is returned if it is invalid.
     fn try_from(version: u32) -> Result<Self, Self::Error> {
         if version < 1 {
-            return Err(RocflError::IllegalArgument(format!(
+            return Err(RocflError::InvalidValue(format!(
                 "Invalid version number {}",
                 version
             )));
@@ -300,7 +300,7 @@ impl FromStr for VersionNum {
             Ok(v) => Ok(v),
             Err(_) => match u32::from_str(s) {
                 Ok(parsed) => Ok(VersionNum::try_from(parsed)?),
-                Err(_) => Err(RocflError::IllegalArgument(format!(
+                Err(_) => Err(RocflError::InvalidValue(format!(
                     "Invalid version number {}",
                     s
                 ))),
@@ -564,7 +564,7 @@ impl TryFrom<&str> for InventoryPathInner {
                 .any(|part| part == "." || part == ".." || part.is_empty());
 
             if has_illegal_part {
-                return Err(RocflError::IllegalArgument(format!(
+                return Err(RocflError::InvalidValue(format!(
                     "Paths may not contain '.', '..', or '' parts. Found: {} ",
                     value
                 )));
@@ -598,7 +598,7 @@ impl TryFrom<&str> for ContentPath {
             match value.find('/') {
                 Some(index) => ContentPathVersion::VersionNum(value[0..index].try_into()?),
                 None => {
-                    return Err(RocflError::IllegalArgument(format!(
+                    return Err(RocflError::InvalidValue(format!(
                         "Content paths must begin with a valid version number. Found: {} ",
                         value
                     )));
@@ -1050,7 +1050,7 @@ impl CommitMeta {
     /// Sets the commit user. `name` must be provided if `address` is provided.
     pub fn with_user(mut self, name: Option<String>, address: Option<String>) -> Result<Self> {
         if address.is_some() && name.is_none() {
-            return Err(RocflError::IllegalArgument(
+            return Err(RocflError::InvalidValue(
                 "User name must be set when user address is set.".to_string(),
             ));
         }

@@ -862,7 +862,6 @@ where
 fn parse_inventory_file<P: AsRef<Path>>(inventory_file: P) -> Result<Inventory> {
     let bytes = file_to_bytes(inventory_file)?;
     let inventory: Inventory = serde_json::from_slice(&bytes)?;
-    inventory.validate()?;
     Ok(inventory)
 }
 

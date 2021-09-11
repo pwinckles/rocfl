@@ -1214,7 +1214,7 @@ fn fail_copy_when_src_dir_and_recursion_not_enabled() {
 
 #[test]
 #[should_panic(
-    expected = "Illegal argument: Paths may not contain '.', '..', or '' parts. Found: some/../../dir"
+    expected = "Invalid value: Paths may not contain '.', '..', or '' parts. Found: some/../../dir"
 )]
 fn copy_should_reject_bad_dst() {
     let root = TempDir::new().unwrap();
@@ -1911,7 +1911,7 @@ fn internal_copy_should_reject_conflicting_dirs() {
 
 #[test]
 #[should_panic(
-    expected = "Illegal argument: Paths may not contain '.', '..', or '' parts. Found: some/../../dir"
+    expected = "Invalid value: Paths may not contain '.', '..', or '' parts. Found: some/../../dir"
 )]
 fn internal_copy_should_reject_bad_dst() {
     let root = TempDir::new().unwrap();
@@ -2303,7 +2303,7 @@ fn move_should_reject_conflicting_dirs() {
 
 #[test]
 #[should_panic(
-    expected = "Illegal argument: Paths may not contain '.', '..', or '' parts. Found: some/../../dir"
+    expected = "Invalid value: Paths may not contain '.', '..', or '' parts. Found: some/../../dir"
 )]
 fn move_should_reject_bad_dst() {
     let root = TempDir::new().unwrap();
@@ -2790,7 +2790,7 @@ fn internal_move_should_reject_conflicting_dirs() {
 
 #[test]
 #[should_panic(
-    expected = "Illegal argument: Paths may not contain '.', '..', or '' parts. Found: some/../../dir"
+    expected = "Invalid value: Paths may not contain '.', '..', or '' parts. Found: some/../../dir"
 )]
 fn internal_move_should_reject_bad_dst() {
     let root = TempDir::new().unwrap();

@@ -208,7 +208,6 @@ impl S3OcflStore {
 
     fn parse_inventory_bytes(&self, bytes: &[u8]) -> Result<Inventory> {
         let inventory: Inventory = serde_json::from_slice(bytes)?;
-        inventory.validate()?;
         Ok(inventory)
     }
 

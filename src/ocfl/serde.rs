@@ -190,19 +190,17 @@ impl<'de> Deserialize<'de> for Inventory {
                     return Err(SerdeError::missing_field(VERSIONS_FIELD));
                 }
 
-                Ok(Inventory::new(
+                Inventory::new(
                     id.unwrap(),
                     type_declaration.unwrap(),
-                    // TODO validate sha512/sha256
                     digest_algorithm.unwrap(),
-                    // TODO validate head version exists
                     head.unwrap(),
-                    // TODO validate content
                     content_directory,
                     manifest.unwrap(),
                     versions.unwrap(),
                     fixity,
-                ))
+                )
+                .map_err(|e| SerdeError::custom(e.to_string()))
             }
         }
 

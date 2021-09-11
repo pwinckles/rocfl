@@ -21,8 +21,8 @@ pub enum RocflError {
     #[error("Not found: {0}")]
     NotFound(String),
 
-    #[error("Illegal argument: {0}")]
-    IllegalArgument(String),
+    #[error("Invalid value: {0}")]
+    InvalidValue(String),
 
     #[error("Invalid configuration: {0}")]
     InvalidConfiguration(String),

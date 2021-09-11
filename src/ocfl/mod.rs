@@ -27,3 +27,4 @@ mod specs;
 mod store;
 mod types;
 mod util;
+mod validate;

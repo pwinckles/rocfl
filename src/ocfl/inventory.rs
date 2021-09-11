@@ -16,8 +16,8 @@ use crate::ocfl::consts::{DEFAULT_CONTENT_DIR, INVENTORY_TYPE};
 use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
 use crate::ocfl::error::{not_found, not_found_path, Result, RocflError};
 use crate::ocfl::{
-    CommitMeta, ContentPath, ContentPathVersion, Diff, InventoryPath, LogicalPath, VersionNum,
-    VersionRef,
+    validate, CommitMeta, ContentPath, ContentPathVersion, Diff, InventoryPath, LogicalPath,
+    VersionNum, VersionRef,
 };
 
 const STAGING_MESSAGE: &str = "Staging new version";
@@ -31,6 +31,7 @@ pub struct Inventory {
     pub id: String,
     #[serde(rename = "type")]
     pub type_declaration: String,
+    // TODO this would be better as a specific type that only allows sha256/sha512 -- but is a bit of a pain to change
     pub digest_algorithm: DigestAlgorithm,
     pub head: VersionNum,
     pub content_directory: Option<String>,
@@ -100,8 +101,21 @@ impl Inventory {
         manifest: PathBiMap<ContentPath>,
         versions: BTreeMap<VersionNum, Version>,
         fixity: Option<HashMap<String, HashMap<String, Vec<String>>>>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        validate::validate_object_id(&id)?;
+        validate::validate_digest_algorithm(digest_algorithm)?;
+        if let Some(dir) = &content_directory {
+            validate::validate_content_dir(dir)?
+        }
+
+        if !versions.contains_key(&head) {
+            return Err(RocflError::CorruptObject {
+                object_id: id,
+                message: format!("HEAD version {} was not found", head),
+            });
+        }
+
+        Ok(Self {
             id,
             type_declaration,
             digest_algorithm,
@@ -113,7 +127,7 @@ impl Inventory {
             object_root: Default::default(),
             storage_path: Default::default(),
             mutable_head: false,
-        }
+        })
     }
 
     /// Returns a new inventory builder
@@ -458,19 +472,6 @@ impl Inventory {
             None => DEFAULT_CONTENT_DIR,
         }
     }
-
-    // TODO this can be moved into the deserialization
-    /// Performs a spot check on the inventory to see if it appears valid. This is not an
-    /// exhaustive check, and does not guarantee that the inventory is valid.
-    pub fn validate(&self) -> Result<()> {
-        if !self.versions.contains_key(&self.head) {
-            return Err(RocflError::CorruptObject {
-                object_id: self.id.clone(),
-                message: format!("HEAD version {} was not found", self.head),
-            });
-        }
-        Ok(())
-    }
 }
 
 impl InventoryBuilder {
@@ -519,8 +520,6 @@ impl InventoryBuilder {
             storage_path: self.storage_path,
             mutable_head: false,
         };
-
-        inventory.validate()?;
 
         Ok(inventory)
     }

@@ -172,7 +172,7 @@ fn create_layout(layout_name: Layout, config_file: Option<&Path>) -> Result<Opti
     let config_bytes = match read_layout_config(config_file) {
         Ok(bytes) => bytes,
         Err(e) => {
-            return Err(RocflError::IllegalArgument(format!(
+            return Err(RocflError::InvalidValue(format!(
                 "Failed to read layout config file: {}",
                 e
             )));

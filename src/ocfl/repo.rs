@@ -26,8 +26,8 @@ use crate::ocfl::store::layout::{LayoutExtensionName, StorageLayout};
 use crate::ocfl::store::s3::S3OcflStore;
 use crate::ocfl::store::{OcflStore, StagingStore};
 use crate::ocfl::{
-    paths, util, CommitMeta, ContentPath, Diff, DigestAlgorithm, InventoryPath, LogicalPath,
-    ObjectVersion, ObjectVersionDetails, VersionDetails, VersionNum, VersionRef,
+    paths, util, validate, CommitMeta, ContentPath, Diff, DigestAlgorithm, InventoryPath,
+    LogicalPath, ObjectVersion, ObjectVersionDetails, VersionDetails, VersionNum, VersionRef,
 };
 
 /// Interface for interacting with an OCFL repository
@@ -429,26 +429,9 @@ impl OcflRepo {
 
         let object_id = object_id.trim();
 
-        if object_id.is_empty() {
-            return Err(RocflError::IllegalArgument(
-                "Object IDs may not be blank".to_string(),
-            ));
-        }
-
-        if digest_algorithm != DigestAlgorithm::Sha512
-            && digest_algorithm != DigestAlgorithm::Sha256
-        {
-            return Err(RocflError::IllegalArgument(format!(
-                "The inventory digest algorithm must be sha512 or sha256. Found: {}",
-                digest_algorithm.to_string()
-            )));
-        }
-
-        if content_dir.eq(".") || content_dir.eq("..") || content_dir.contains('/') {
-            return Err(RocflError::IllegalArgument(
-                format!("The content directory cannot equal '.' or '..' and cannot contain a '/'. Found: {}",
-                        content_dir)));
-        }
+        validate::validate_object_id(object_id)?;
+        validate::validate_digest_algorithm(digest_algorithm)?;
+        validate::validate_content_dir(content_dir)?;
 
         let _lock = self.get_lock_manager()?.acquire(object_id)?;
 
