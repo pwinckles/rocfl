@@ -490,7 +490,7 @@ impl StagingStore for FsOcflStore {
         source: &mut impl Read,
         logical_path: &LogicalPath,
     ) -> Result<()> {
-        let content_path = inventory.new_content_path_head(logical_path)?;
+        let content_path = inventory.new_content_path(logical_path);
 
         let mut storage_path = PathBuf::from(&inventory.storage_path);
         storage_path.push(content_path.as_path());
@@ -510,7 +510,7 @@ impl StagingStore for FsOcflStore {
     ) -> Result<()> {
         let object_root = PathBuf::from(&inventory.storage_path);
 
-        let dst_content = inventory.new_content_path_head(dst_logical)?;
+        let dst_content = inventory.new_content_path(dst_logical);
 
         let src_storage = object_root.join(src_content.as_path());
         let dst_storage = object_root.join(dst_content.as_path());
@@ -528,7 +528,7 @@ impl StagingStore for FsOcflStore {
         source: &impl AsRef<Path>,
         logical_path: &LogicalPath,
     ) -> Result<()> {
-        let content_path = inventory.new_content_path_head(logical_path)?;
+        let content_path = inventory.new_content_path(logical_path);
 
         let mut storage_path = PathBuf::from(&inventory.storage_path);
         storage_path.push(content_path.as_path());
@@ -548,7 +548,7 @@ impl StagingStore for FsOcflStore {
     ) -> Result<()> {
         let object_root = PathBuf::from(&inventory.storage_path);
 
-        let dst_content = inventory.new_content_path_head(dst_logical)?;
+        let dst_content = inventory.new_content_path(dst_logical);
 
         let src_storage = object_root.join(src_content.as_path());
         let dst_storage = object_root.join(dst_content.as_path());

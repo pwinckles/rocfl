@@ -7,7 +7,6 @@ use std::rc::Rc;
 
 use chrono::{DateTime, Local};
 use globset::GlobBuilder;
-use log::error;
 use once_cell::unsync::OnceCell;
 use serde::{Deserialize, Serialize};
 
@@ -343,7 +342,7 @@ impl Inventory {
             None => Rc::new(digest),
         };
 
-        let content_path = self.new_content_path_head(&logical_path)?;
+        let content_path = self.new_content_path(&logical_path);
         self.manifest
             .insert_rc(digest_rc.clone(), Rc::new(content_path));
 
@@ -403,10 +402,10 @@ impl Inventory {
             None => Rc::new(digest),
         };
 
-        let src_content_path = self.new_content_path_head(src_path)?;
+        let src_content_path = self.new_content_path(src_path);
         self.manifest.remove_path(&src_content_path);
 
-        let content_path = self.new_content_path_head(&dst_path)?;
+        let content_path = self.new_content_path(&dst_path);
         self.manifest
             .insert_rc(digest_rc.clone(), Rc::new(content_path));
 
@@ -428,40 +427,19 @@ impl Inventory {
 
         if head.remove_file(logical_path).is_some() {
             // Remove the path from the manifest if it was added in the HEAD version
-            match self.new_content_path_head(logical_path) {
-                Ok(content_path) => {
-                    if self.manifest.remove_path(&content_path).is_some() {
-                        return Some(content_path);
-                    }
-                }
-                Err(e) => error!("Failed to create content path for {}: {}", logical_path, e),
+            let content_path = self.new_content_path(logical_path);
+            if self.manifest.remove_path(&content_path).is_some() {
+                return Some(content_path);
             }
         }
 
         None
     }
 
-    // TODO content path construction could perhaps be moved into ContentPath
     /// Returns a new content path for the specified logical path, assuming a direct one-to-one
     /// mapping of logical path to content path.
-    pub fn new_content_path_head(&self, logical_path: &LogicalPath) -> Result<ContentPath> {
-        self.new_content_path(self.head, logical_path)
-    }
-
-    /// Returns a new content path for the specified logical path, assuming a direct one-to-one
-    /// mapping of logical path to content path.
-    pub fn new_content_path(
-        &self,
-        version_num: VersionNum,
-        logical_path: &LogicalPath,
-    ) -> Result<ContentPath> {
-        format!(
-            "{}/{}/{}",
-            version_num.to_string(),
-            self.defaulted_content_dir(),
-            logical_path
-        )
-        .try_into()
+    pub fn new_content_path(&self, logical_path: &LogicalPath) -> ContentPath {
+        logical_path.to_content_path(self.head, self.defaulted_content_dir())
     }
 
     pub fn defaulted_content_dir(&self) -> &str {

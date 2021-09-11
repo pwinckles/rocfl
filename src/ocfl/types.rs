@@ -548,6 +548,27 @@ impl InventoryPath for ContentPath {
     }
 }
 
+impl LogicalPath {
+    /// Creates a new content path by directly mapping the logical path to a content path
+    pub fn to_content_path(&self, version_num: VersionNum, content_dir: &str) -> ContentPath {
+        ContentPath::for_logical_path(version_num, content_dir, self)
+    }
+}
+
+impl ContentPath {
+    /// Creates a new content path by directly mapping the logical path to a content path
+    pub fn for_logical_path(
+        version_num: VersionNum,
+        content_dir: &str,
+        logical_path: &LogicalPath,
+    ) -> Self {
+        Self {
+            inner: InventoryPathInner(format!("{}/{}/{}", version_num, content_dir, logical_path)),
+            version: ContentPathVersion::VersionNum(version_num),
+        }
+    }
+}
+
 // It looks like its not possible to implement `impl<T: AsRef<str> TryFrom<t>`
 // https://github.com/rust-lang/rust/issues/50133
 
