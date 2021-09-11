@@ -1,4 +1,4 @@
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::fs;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -42,7 +42,7 @@ fn list_all_objects() -> Result<()> {
                 .to_string(),
             digest_algorithm: DigestAlgorithm::Sha512,
             version_details: VersionDetails {
-                version_num: VersionNum::new(1),
+                version_num: 1.try_into()?,
                 created: DateTime::parse_from_rfc3339("2019-08-05T15:57:53Z")
                     .unwrap()
                     .into(),
@@ -82,7 +82,7 @@ fn list_all_objects() -> Result<()> {
                 .to_string(),
             digest_algorithm: DigestAlgorithm::Sha512,
             version_details: VersionDetails {
-                version_num: VersionNum::new(2),
+                version_num: 2.try_into()?,
                 created: DateTime::parse_from_rfc3339("2019-08-05T15:57:53Z")
                     .unwrap()
                     .into(),
@@ -118,7 +118,7 @@ fn list_single_object_from_glob() -> Result<()> {
                 .to_string(),
             digest_algorithm: DigestAlgorithm::Sha512,
             version_details: VersionDetails {
-                version_num: VersionNum::new(1),
+                version_num: 1.try_into()?,
                 created: DateTime::parse_from_rfc3339("2019-08-05T15:57:53Z")
                     .unwrap()
                     .into(),
@@ -223,7 +223,7 @@ fn get_object_version_when_exists() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
-    let object = repo.get_object("o2", VersionNum::new(2).into())?;
+    let object = repo.get_object("o2", 2.try_into()?)?;
 
     let object_root = repo_root
         .join("925")
@@ -380,7 +380,7 @@ fn error_when_object_not_exists_with_layout() {
 fn error_when_version_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root, None).unwrap();
-    repo.get_object("o2", VersionNum::new(4).into()).unwrap();
+    repo.get_object("o2", 4.try_into().unwrap()).unwrap();
 }
 
 #[test]
@@ -444,7 +444,7 @@ fn diff_when_left_and_right_specified() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
-    let mut diff = repo.diff("o2", Some(VersionNum::new(1)), VersionNum::new(3))?;
+    let mut diff = repo.diff("o2", Some(1.try_into()?), 3.try_into()?)?;
 
     sort_diffs(&mut diff);
 
@@ -461,7 +461,7 @@ fn diff_with_previous_when_left_not_specified() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
-    let mut diff = repo.diff("o2", None, VersionNum::new(3))?;
+    let mut diff = repo.diff("o2", None, 3.try_into()?)?;
 
     sort_diffs(&mut diff);
 
@@ -478,7 +478,7 @@ fn diff_first_version_all_adds() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
-    let mut diff = repo.diff("o2", None, VersionNum::new(1))?;
+    let mut diff = repo.diff("o2", None, 1.try_into()?)?;
 
     sort_diffs(&mut diff);
 
@@ -495,7 +495,7 @@ fn diff_same_version_no_diff() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
-    let diff = repo.diff("o2", Some(VersionNum::new(2)), VersionNum::new(2))?;
+    let diff = repo.diff("o2", Some(2.try_into()?), 2.try_into()?)?;
 
     assert_eq!(0, diff.len());
 
@@ -507,7 +507,7 @@ fn diff_same_version_no_diff() -> Result<()> {
 fn diff_object_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root, None).unwrap();
-    repo.diff("o6", None, VersionNum::new(2)).unwrap();
+    repo.diff("o6", None, 2.try_into().unwrap()).unwrap();
 }
 
 #[test]
@@ -515,7 +515,7 @@ fn diff_object_not_exists() {
 fn diff_version_not_exists() {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root, None).unwrap();
-    repo.diff("o1", None, VersionNum::new(2)).unwrap();
+    repo.diff("o1", None, 2.try_into().unwrap()).unwrap();
 }
 
 #[test]
@@ -524,10 +524,10 @@ fn get_object_file_when_exists() -> Result<()> {
     let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
     let id = "o2";
-    let version = VersionNum::new(2);
+    let version = 2.try_into()?;
     let mut out: Vec<u8> = Vec::new();
 
-    repo.get_object_file(id, &"dir1/file3".try_into()?, version.into(), &mut out)?;
+    repo.get_object_file(id, &"dir1/file3".try_into()?, version, &mut out)?;
 
     assert_eq!("file 3", String::from_utf8(out).unwrap());
 
@@ -541,16 +541,11 @@ fn fail_get_object_file_when_does_not_exist() {
     let repo = OcflRepo::fs_repo(&repo_root, None).unwrap();
 
     let id = "o2";
-    let version = VersionNum::new(2);
+    let version = 2.try_into().unwrap();
     let mut out: Vec<u8> = Vec::new();
 
-    repo.get_object_file(
-        id,
-        &"dir1/bogus".try_into().unwrap(),
-        version.into(),
-        &mut out,
-    )
-    .unwrap();
+    repo.get_object_file(id, &"dir1/bogus".try_into().unwrap(), version, &mut out)
+        .unwrap();
 }
 
 #[test]
@@ -1638,7 +1633,7 @@ fn internal_copy_multiple_existing_file() -> Result<()> {
 
     repo.copy_files_internal(
         object_id,
-        VersionNum::new(1).into(),
+        1.try_into()?,
         &vec!["a/b/*", "a/d/e/file5.txt"],
         "new-dir",
         false,
@@ -1786,13 +1781,7 @@ fn internal_copy_files_with_recursive_glob() -> Result<()> {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.copy_files_internal(
-        object_id,
-        VersionNum::new(3).into(),
-        &vec!["a/*"],
-        "copied",
-        true,
-    )?;
+    repo.copy_files_internal(object_id, 3.try_into()?, &vec!["a/*"], "copied", true)?;
 
     let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
     let staged_obj = repo.get_staged_object(object_id)?;
@@ -2842,7 +2831,7 @@ fn remove_existing_file() -> Result<()> {
     assert_eq!(6, committed_obj.state.len());
     assert!(committed_obj.state.get(&lpath("a/file5.txt")).is_none());
 
-    let previous_version = repo.get_object(object_id, VersionNum::new(4).into())?;
+    let previous_version = repo.get_object(object_id, 4.try_into()?)?;
 
     assert!(previous_version.state.get(&lpath("a/file5.txt")).is_some());
 
@@ -2879,7 +2868,7 @@ fn remove_multiple_existing_files() -> Result<()> {
         .get(&lpath("something/new.txt"))
         .is_none());
 
-    let previous_version = repo.get_object(object_id, VersionNum::new(4).into())?;
+    let previous_version = repo.get_object(object_id, 4.try_into()?)?;
 
     assert!(previous_version.state.get(&lpath("a/file5.txt")).is_some());
     assert!(previous_version
@@ -2918,7 +2907,7 @@ fn remove_globs() -> Result<()> {
     assert!(committed_obj.state.get(&lpath("a/file5.txt")).is_none());
     assert!(committed_obj.state.get(&lpath("a/file1.txt")).is_none());
 
-    let previous_version = repo.get_object(object_id, VersionNum::new(4).into())?;
+    let previous_version = repo.get_object(object_id, 4.try_into()?)?;
 
     assert!(previous_version.state.get(&lpath("a/file5.txt")).is_some());
     assert!(previous_version.state.get(&lpath("a/file1.txt")).is_some());
@@ -3794,7 +3783,7 @@ fn diff_should_detect_simple_rename() -> Result<()> {
 
     create_example_object(object_id, &repo, &temp);
 
-    let mut diff = repo.diff(object_id, None, VersionNum::new(4))?;
+    let mut diff = repo.diff(object_id, None, 4.try_into()?)?;
 
     assert_eq!(2, diff.len());
 
@@ -3836,7 +3825,7 @@ fn diff_should_detect_multi_origin_rename() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let mut diff = repo.diff(object_id, None, VersionNum::new(2))?;
+    let mut diff = repo.diff(object_id, None, 2.try_into()?)?;
 
     assert_eq!(1, diff.len());
 
@@ -3881,7 +3870,7 @@ fn diff_should_detect_multi_dest_rename() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let mut diff = repo.diff(object_id, None, VersionNum::new(2))?;
+    let mut diff = repo.diff(object_id, None, 2.try_into()?)?;
 
     assert_eq!(1, diff.len());
 
@@ -3920,7 +3909,7 @@ fn diff_should_detect_multi_src_multi_dest_rename() -> Result<()> {
 
     commit(object_id, &repo);
 
-    let mut diff = repo.diff(object_id, None, VersionNum::new(2))?;
+    let mut diff = repo.diff(object_id, None, 2.try_into()?)?;
 
     assert_eq!(1, diff.len());
 
@@ -4287,7 +4276,7 @@ fn fail_commit_when_staged_version_out_of_sync_with_main() {
 
     let committed_obj = repo.get_object(object_id, VersionRef::Head).unwrap();
     assert_eq!(
-        VersionNum::new(5),
+        VersionNum::try_from(5).unwrap(),
         committed_obj.version_details.version_num
     );
 }
@@ -4626,7 +4615,7 @@ fn create_example_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
 
     repo.copy_files_internal(
         object_id,
-        VersionNum::new(1).into(),
+        1.try_into().unwrap(),
         &vec!["a/b/file3.txt"],
         "/",
         false,
@@ -4634,7 +4623,7 @@ fn create_example_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
     .unwrap();
     repo.copy_files_internal(
         object_id,
-        VersionNum::new(1).into(),
+        1.try_into().unwrap(),
         &vec!["a/file1.txt"],
         "something/file1.txt",
         false,
@@ -4683,7 +4672,7 @@ fn read_spec(name: &str) -> String {
 
 fn o2_v1_details() -> VersionDetails {
     VersionDetails {
-        version_num: VersionNum::new(1),
+        version_num: 1.try_into().unwrap(),
         created: DateTime::parse_from_rfc3339("2019-08-05T15:57:53Z")
             .unwrap()
             .into(),
@@ -4695,7 +4684,7 @@ fn o2_v1_details() -> VersionDetails {
 
 fn o2_v2_details() -> VersionDetails {
     VersionDetails {
-        version_num: VersionNum::new(2),
+        version_num: 2.try_into().unwrap(),
         created: DateTime::parse_from_rfc3339("2019-08-05T16:59:56Z")
             .unwrap()
             .into(),
@@ -4707,7 +4696,7 @@ fn o2_v2_details() -> VersionDetails {
 
 fn o2_v3_details() -> VersionDetails {
     VersionDetails {
-        version_num: VersionNum::new(3),
+        version_num: 3.try_into().unwrap(),
         created: DateTime::parse_from_rfc3339("2019-08-07T12:37:43Z")
             .unwrap()
             .into(),

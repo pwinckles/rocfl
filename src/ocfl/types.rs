@@ -182,14 +182,17 @@ pub enum Diff {
 }
 
 impl VersionNum {
-    /// Creates a new VersionNum with width 0
-    pub fn new(number: u32) -> Self {
-        Self { number, width: 0 }
+    /// Creates a new VersionNum at version 1 with no zero-padding
+    pub fn v1() -> Self {
+        Self {
+            number: 1,
+            width: 0,
+        }
     }
 
-    /// Creates a new VersionNum
-    pub fn with_width(number: u32, width: u32) -> Self {
-        Self { number, width }
+    /// Creates a new VersionNum at version 1 with the specified zero-padding width
+    pub fn v1_with_width(width: u32) -> Self {
+        Self { number: 1, width }
     }
 
     /// Returns the previous version, or an Error if the previous version is invalid (less than 1).
@@ -268,7 +271,6 @@ impl TryFrom<&str> for VersionNum {
     }
 }
 
-// TODO there's a discrepancy here with VersionNum::new
 impl TryFrom<u32> for VersionNum {
     type Error = RocflError;
 
@@ -363,6 +365,22 @@ impl From<VersionNum> for VersionRef {
 impl From<Option<VersionNum>> for VersionRef {
     fn from(num: Option<VersionNum>) -> Self {
         num.map_or(Head, Number)
+    }
+}
+
+impl TryFrom<u32> for VersionRef {
+    type Error = RocflError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Ok(VersionNum::try_from(value)?.into())
+    }
+}
+
+impl TryFrom<&str> for VersionRef {
+    type Error = RocflError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(VersionNum::try_from(value)?.into())
     }
 }
 

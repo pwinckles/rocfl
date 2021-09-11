@@ -463,7 +463,7 @@ impl OcflRepo {
             }
         }
 
-        let version_num = VersionNum::with_width(1, padding_width);
+        let version_num = VersionNum::v1_with_width(padding_width);
 
         let mut inventory = Inventory::builder(object_id)
             .with_digest_algorithm(digest_algorithm)

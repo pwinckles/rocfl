@@ -193,7 +193,7 @@ fn create_and_update_object() {
 
             repo.copy_files_internal(
                 object_id,
-                VersionNum::new(1).into(),
+                VersionNum::v1().into(),
                 &vec!["a/b/file3.txt"],
                 "/",
                 false,
@@ -201,7 +201,7 @@ fn create_and_update_object() {
             .unwrap();
             repo.copy_files_internal(
                 object_id,
-                VersionNum::new(1).into(),
+                VersionNum::v1().into(),
                 &vec!["a/file1.txt"],
                 "something/file1.txt",
                 false,

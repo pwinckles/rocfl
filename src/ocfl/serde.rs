@@ -627,12 +627,12 @@ mod tests {
         assert_eq!("test", inv.id);
         assert_eq!("https://ocfl.io/1.0/spec/#inventory", inv.type_declaration);
         assert_eq!(DigestAlgorithm::Sha512, inv.digest_algorithm);
-        assert_eq!(VersionNum::new(1), inv.head);
+        assert_eq!(VersionNum::v1(), inv.head);
         assert_eq!("content", inv.content_directory.as_ref().unwrap());
         assert!(inv.contains_content_path(&ContentPath::try_from("v1/content/file1.txt")?));
-        assert!(inv.versions.contains_key(&VersionNum::new(1)));
+        assert!(inv.versions.contains_key(&VersionNum::v1()));
 
-        let version = inv.versions.get(&VersionNum::new(1)).unwrap();
+        let version = inv.versions.get(&VersionNum::v1()).unwrap();
 
         assert_eq!(
             DateTime::parse_from_rfc3339("2021-09-05T20:36:50.923505656-05:00").unwrap(),
@@ -682,11 +682,11 @@ mod tests {
         assert_eq!("test", inv.id);
         assert_eq!("https://ocfl.io/1.0/spec/#inventory", inv.type_declaration);
         assert_eq!(DigestAlgorithm::Sha512, inv.digest_algorithm);
-        assert_eq!(VersionNum::new(1), inv.head);
+        assert_eq!(VersionNum::v1(), inv.head);
         assert!(inv.contains_content_path(&ContentPath::try_from("v1/content/file1.txt")?));
-        assert!(inv.versions.contains_key(&VersionNum::new(1)));
+        assert!(inv.versions.contains_key(&VersionNum::v1()));
 
-        let version = inv.versions.get(&VersionNum::new(1)).unwrap();
+        let version = inv.versions.get(&VersionNum::v1()).unwrap();
 
         assert_eq!(
             DateTime::parse_from_rfc3339("2021-09-05T20:36:50.923505656-05:00").unwrap(),

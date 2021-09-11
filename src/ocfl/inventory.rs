@@ -479,7 +479,7 @@ impl InventoryBuilder {
             id: object_id.to_string(),
             type_declaration: INVENTORY_TYPE.to_string(),
             digest_algorithm: DigestAlgorithm::Sha512,
-            head: VersionNum::with_width(1, 0),
+            head: VersionNum::v1(),
             content_directory: DEFAULT_CONTENT_DIR.to_string(),
             manifest: PathBiMap::new(),
             versions: BTreeMap::new(),
