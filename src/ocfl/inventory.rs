@@ -63,8 +63,6 @@ pub struct InventoryBuilder {
     content_directory: String,
     manifest: PathBiMap<ContentPath>,
     versions: BTreeMap<VersionNum, Version>,
-    object_root: String,
-    storage_path: String,
 }
 
 /// OCFL version serialization object
@@ -484,8 +482,6 @@ impl InventoryBuilder {
             content_directory: DEFAULT_CONTENT_DIR.to_string(),
             manifest: PathBiMap::new(),
             versions: BTreeMap::new(),
-            object_root: "".to_string(),
-            storage_path: "".to_string(),
         }
     }
 
@@ -507,21 +503,16 @@ impl InventoryBuilder {
     pub fn build(mut self) -> Result<Inventory> {
         self.versions.insert(self.head, Version::new_staged());
 
-        let inventory = Inventory {
-            id: self.id,
-            type_declaration: self.type_declaration,
-            digest_algorithm: self.digest_algorithm,
-            head: self.head,
-            content_directory: Some(self.content_directory),
-            manifest: self.manifest,
-            versions: self.versions,
-            fixity: None,
-            object_root: self.object_root,
-            storage_path: self.storage_path,
-            mutable_head: false,
-        };
-
-        Ok(inventory)
+        Inventory::new(
+            self.id,
+            self.type_declaration,
+            self.digest_algorithm,
+            self.head,
+            Some(self.content_directory),
+            self.manifest,
+            self.versions,
+            None,
+        )
     }
 }
 
