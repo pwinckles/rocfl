@@ -76,7 +76,7 @@ pub trait InventoryPath {
 struct InventoryPathInner(String);
 
 /// Represents the logical path to a file in an object.
-#[derive(Deserialize, Serialize, Debug, Eq, Ord, PartialOrd, PartialEq, Hash, Clone)]
+#[derive(Serialize, Debug, Eq, Ord, PartialOrd, PartialEq, Hash, Clone)]
 #[serde(transparent)]
 pub struct LogicalPath {
     inner: InventoryPathInner,
@@ -555,7 +555,8 @@ impl TryFrom<&str> for InventoryPathInner {
     type Error = RocflError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        // TODO this behavior is nice when dealing with user input, but I do not think it's desirable when reading inventories
+        // Paths with leading or trailing slashes are technically illegal, but stripping here makes
+        // the code easier to deal with.
         let trimmed = value.trim_start_matches('/').trim_end_matches('/');
 
         if !trimmed.is_empty() {
@@ -774,25 +775,66 @@ impl<'de> Deserialize<'de> for ContentPath {
     where
         D: Deserializer<'de>,
     {
+        struct ContentPathVisitor;
+
+        impl<'de> Visitor<'de> for ContentPathVisitor {
+            type Value = ContentPath;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("a path string that is a valid OCFL content path")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                if v.starts_with('/') || v.ends_with('/') {
+                    return Err(E::custom(format!(
+                        "Invalid value: content paths may not begin or end with a '/'. Found: {}",
+                        v
+                    )));
+                }
+
+                v.try_into()
+                    .map_err(|e: RocflError| E::custom(e.to_string()))
+            }
+        }
+
         deserializer.deserialize_str(ContentPathVisitor)
     }
 }
 
-struct ContentPathVisitor;
-
-impl<'de> Visitor<'de> for ContentPathVisitor {
-    type Value = ContentPath;
-
-    fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-        formatter.write_str("a path string that is a valid OCFL content path")
-    }
-
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+impl<'de> Deserialize<'de> for LogicalPath {
+    fn deserialize<D>(deserializer: D) -> Result<LogicalPath, D::Error>
     where
-        E: serde::de::Error,
+        D: Deserializer<'de>,
     {
-        v.try_into()
-            .map_err(|e: RocflError| E::custom(e.to_string()))
+        struct LogicalPathVisitor;
+
+        impl<'de> Visitor<'de> for LogicalPathVisitor {
+            type Value = LogicalPath;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("a path string that is a valid OCFL logical path")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                if v.starts_with('/') || v.ends_with('/') {
+                    return Err(E::custom(format!(
+                        "Invalid value: logical paths may not begin or end with a '/'. Found: {}",
+                        v
+                    )));
+                }
+
+                v.try_into()
+                    .map_err(|e: RocflError| E::custom(e.to_string()))
+            }
+        }
+
+        deserializer.deserialize_str(LogicalPathVisitor)
     }
 }
 
