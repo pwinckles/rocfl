@@ -127,8 +127,15 @@ impl<'de> Deserialize<'de> for ParseResult {
                     let key = match map.next_key_seed(FieldSeed(&result)) {
                         Ok(None) => break,
                         Ok(Some(key)) => key,
-                        Err(_) => {
-                            // TODO
+                        Err(e) => {
+                            result.error(
+                                ErrorCode::E033,
+                                format!(
+                                    "Inventory contains invalid field: {}",
+                                    // TODO verify what this produces
+                                    e.to_string()
+                                ),
+                            );
                             continue;
                         }
                     };
@@ -140,11 +147,14 @@ impl<'de> Deserialize<'de> for ParseResult {
                             } else {
                                 match map.next_value() {
                                     Ok(value) => {
-                                        // TODO
+                                        // TODO test if URI
                                         id = Some(value);
                                     }
                                     Err(_) => {
-                                        // TODO
+                                        result.error(
+                                            ErrorCode::E037,
+                                            "Inventory field 'id' must be a string".to_string(),
+                                        );
                                         id_failed = true;
                                     }
                                 }
@@ -157,7 +167,10 @@ impl<'de> Deserialize<'de> for ParseResult {
                                 match map.next_value() {
                                     Ok(value) => type_declaration = Some(value),
                                     Err(_) => {
-                                        // TODO
+                                        result.error(
+                                            ErrorCode::E038,
+                                            "Inventory field 'type' must be a URI".to_string(),
+                                        );
                                         type_failed = true;
                                     }
                                 }
@@ -168,20 +181,40 @@ impl<'de> Deserialize<'de> for ParseResult {
                                 duplicate_field(DIGEST_ALGORITHM_FIELD, &result);
                             } else {
                                 match map.next_value::<&str>() {
-                                    Ok(value) => {
-                                        match DigestAlgorithm::from_str(value) {
-                                            Ok(algorithm) => {
-                                                // TODO
+                                    Ok(value) => match DigestAlgorithm::from_str(value) {
+                                        Ok(algorithm) => {
+                                            if algorithm != DigestAlgorithm::Sha512
+                                                && algorithm != DigestAlgorithm::Sha256
+                                            {
+                                                result.error(
+                                                        ErrorCode::E025,
+                                                        format!("Inventory field 'digestAlgorithm' must be 'sha512' or 'sha256. Found: {}", value),
+                                                    );
+                                                digest_failed = true;
+                                            } else {
+                                                if algorithm == DigestAlgorithm::Sha256 {
+                                                    result.warn(
+                                                            WarnCode::W004,
+                                                            format!("Inventory field 'digestAlgorithm' should be 'sha512'. Found: {}", value),
+                                                        );
+                                                }
                                                 digest_algorithm = Some(algorithm);
                                             }
-                                            Err(_) => {
-                                                // TODO
-                                                digest_failed = true;
-                                            }
                                         }
-                                    }
+                                        Err(_) => {
+                                            result.error(
+                                                    ErrorCode::E025,
+                                                    format!("Inventory field 'digestAlgorithm' must be 'sha512' or 'sha256. Found: {}", value),
+                                                );
+                                            digest_failed = true;
+                                        }
+                                    },
                                     Err(_) => {
-                                        // TODO
+                                        result.error(
+                                            ErrorCode::E033,
+                                            "Inventory field 'digestAlgorithm' must be a string"
+                                                .to_string(),
+                                        );
                                         digest_failed = true;
                                     }
                                 }
@@ -194,18 +227,22 @@ impl<'de> Deserialize<'de> for ParseResult {
                                 match map.next_value::<&str>() {
                                     Ok(value) => {
                                         match VersionNum::try_from(value) {
-                                            Ok(num) => {
-                                                // TODO
-                                                head = Some(num);
-                                            }
+                                            Ok(num) => head = Some(num),
                                             Err(_) => {
-                                                // TODO
+                                                // TODO this is not the right code https://github.com/OCFL/spec/issues/532
+                                                result.error(
+                                                    ErrorCode::E011,
+                                                    format!("Inventory field 'head' must be a valid version number. Found: {}", value),
+                                                );
                                                 head_failed = true;
                                             }
                                         }
                                     }
                                     Err(_) => {
-                                        // TODO
+                                        result.error(
+                                            ErrorCode::E040,
+                                            "Inventory field 'head' must be a string".to_string(),
+                                        );
                                         head_failed = true;
                                     }
                                 }
@@ -215,9 +252,18 @@ impl<'de> Deserialize<'de> for ParseResult {
                             if content_directory.is_some() {
                                 duplicate_field(CONTENT_DIRECTORY_FIELD, &result);
                             } else {
-                                if let Ok(value) = map.next_value() {
-                                    // TODO
-                                    content_directory = Some(value);
+                                match map.next_value() {
+                                    Ok(value) => {
+                                        // TODO validate path
+                                        content_directory = Some(value);
+                                    }
+                                    Err(_) => {
+                                        result.error(
+                                            ErrorCode::E033,
+                                            "Inventory field 'contentDirectory' must be a string"
+                                                .to_string(),
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -231,7 +277,11 @@ impl<'de> Deserialize<'de> for ParseResult {
                                 }) {
                                     Ok(value) => manifest = Some(value),
                                     Err(_) => {
-                                        // TODO
+                                        result.error(
+                                            ErrorCode::E033,
+                                            "Inventory field 'manifest' must be an object"
+                                                .to_string(),
+                                        );
                                         manifest_failed = true;
                                     }
                                 }
@@ -247,7 +297,11 @@ impl<'de> Deserialize<'de> for ParseResult {
                                 }) {
                                     Ok(value) => versions = Some(value),
                                     Err(_) => {
-                                        // TODO
+                                        result.error(
+                                            ErrorCode::E044,
+                                            "Inventory field 'versions' must be an object"
+                                                .to_string(),
+                                        );
                                         versions_failed = true;
                                     }
                                 }
@@ -742,68 +796,6 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
             result: self.result,
             version: self.version,
         })
-    }
-}
-
-struct DigestAlgorithmSeed<'a>(&'a ValidationResult);
-
-impl<'de, 'a> DeserializeSeed<'de> for DigestAlgorithmSeed<'a> {
-    type Value = DigestAlgorithm;
-
-    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct DigestAlgorithmVisitor<'a>(&'a ValidationResult);
-
-        impl<'de, 'a> Visitor<'de> for DigestAlgorithmVisitor<'a> {
-            type Value = DigestAlgorithm;
-
-            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("a digest algorithm string")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-            where
-                E: SerdeError,
-            {
-                // TODO
-                Ok(DigestAlgorithm::from_str(value).unwrap())
-            }
-        }
-
-        deserializer.deserialize_str(DigestAlgorithmVisitor(self.0))
-    }
-}
-
-struct VersionNumSeed<'a>(&'a ValidationResult);
-
-impl<'de, 'a> DeserializeSeed<'de> for VersionNumSeed<'a> {
-    type Value = VersionNum;
-
-    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct VersionNumVisitor<'a>(&'a ValidationResult);
-
-        impl<'de, 'a> Visitor<'de> for VersionNumVisitor<'a> {
-            type Value = VersionNum;
-
-            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("a version number string")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-            where
-                E: SerdeError,
-            {
-                // TODO
-                Ok(VersionNum::try_from(value).unwrap())
-            }
-        }
-
-        deserializer.deserialize_str(VersionNumVisitor(self.0))
     }
 }
 
