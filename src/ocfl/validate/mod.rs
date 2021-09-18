@@ -46,6 +46,7 @@ impl ValidationWarning {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, EnumDisplay, Copy, Clone, PartialEq)]
 pub enum ErrorCode {
     E001,
@@ -151,6 +152,7 @@ pub enum ErrorCode {
     E102,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, EnumDisplay, Copy, Clone, PartialEq)]
 pub enum WarnCode {
     W001,

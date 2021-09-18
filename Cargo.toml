@@ -33,6 +33,7 @@ natord = "1"
 percent-encoding="2"
 regex = "1"
 unicode-width = "0.1"
+uriparse = "0.6"
 
 # Enum features
 enum_dispatch = "0.3"
@@ -95,3 +96,4 @@ predicates = "2"
 rand = "0.8"
 tempfile = "3"
 tokio-test = "0.4"
+# TODO experiment with https://crates.io/crates/criterion/0.2.11

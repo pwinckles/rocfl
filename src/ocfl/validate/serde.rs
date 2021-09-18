@@ -10,6 +10,7 @@ use std::str::FromStr;
 use chrono::{DateTime, Local};
 use serde::de::{DeserializeSeed, Error as SerdeError, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
+use uriparse::URI;
 
 use crate::ocfl::bimap::PathBiMap;
 use crate::ocfl::digest::HexDigest;
@@ -145,10 +146,14 @@ impl<'de> Deserialize<'de> for ParseResult {
                             if id.is_some() {
                                 duplicate_field(ID_FIELD, &result);
                             } else {
-                                match map.next_value() {
+                                match map.next_value::<&str>() {
                                     Ok(value) => {
-                                        // TODO test if URI
-                                        id = Some(value);
+                                        if URI::try_from(value).is_err() {
+                                            result.warn(
+                                                WarnCode::W005,
+                                                format!("Inventory field 'id' should be a URI. Found: {}", value));
+                                        }
+                                        id = Some(value.to_string());
                                     }
                                     Err(_) => {
                                         result.error(
@@ -252,10 +257,17 @@ impl<'de> Deserialize<'de> for ParseResult {
                             if content_directory.is_some() {
                                 duplicate_field(CONTENT_DIRECTORY_FIELD, &result);
                             } else {
-                                match map.next_value() {
+                                match map.next_value::<&str>() {
                                     Ok(value) => {
-                                        // TODO validate path
-                                        content_directory = Some(value);
+                                        if value.eq(".") || value.eq("..") {
+                                            result.error(ErrorCode::E018,
+                                                         format!("Inventory field 'contentDirectory' cannot equal '.' or '..'. Found: {}", value))
+                                        } else if value.contains('/') {
+                                            result.error(ErrorCode::E017,
+                                                         format!("Inventory field 'contentDirectory' cannot contain '/'. Found: {}", value))
+                                        } else {
+                                            content_directory = Some(value.to_string());
+                                        }
                                     }
                                     Err(_) => {
                                         result.error(
@@ -403,23 +415,32 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for VersionsSeed<'a, 'b> {
                                 result: self.result,
                                 version: version_num,
                             }) {
-                                Ok(version) => {
-                                    match VersionNum::try_from(version_num) {
-                                        Ok(version_num) => {
-                                            versions.insert(version_num, version);
-                                        }
-                                        Err(_) => {
-                                            // TODO
-                                        }
+                                Ok(version) => match VersionNum::try_from(version_num) {
+                                    Ok(version_num) => {
+                                        versions.insert(version_num, version);
                                     }
-                                }
+                                    Err(_) => {
+                                        self.result.error(
+                                                ErrorCode::E046,
+                                                format!("Inventory field 'versions' contains an invalid version number. Found: {}", version_num),
+                                            );
+                                    }
+                                },
                                 Err(_) => {
-                                    // TODO
+                                    self.result.error(
+                                        ErrorCode::E047,
+                                        "Inventory field 'versions' contains a version that is not an object"
+                                            .to_string(),
+                                    );
                                 }
                             }
                         }
                         Err(_) => {
-                            // TODO case when not a string
+                            self.result.error(
+                                ErrorCode::E046,
+                                "Inventory field 'versions' contains a key that is not a string"
+                                    .to_string(),
+                            );
                         }
                     }
                 }
@@ -539,7 +560,13 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
                         Ok(None) => break,
                         Ok(Some(key)) => key,
                         Err(_) => {
-                            // TODO
+                            self.result.error(
+                                ErrorCode::E033,
+                                format!(
+                                    "Inventory version {} contains an invalid field",
+                                    self.version
+                                ),
+                            );
                             continue;
                         }
                     };
@@ -550,19 +577,18 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
                                 duplicate_version_field(CREATED_FIELD, self.version, self.result);
                             } else {
                                 match map.next_value::<&str>() {
-                                    Ok(value) => {
-                                        match DateTime::parse_from_rfc3339(value) {
-                                            Ok(value) => {
-                                                created = Some(value.with_timezone(&Local))
-                                            }
-                                            Err(_) => {
-                                                // TODO
-                                                created_failed = true;
-                                            }
+                                    Ok(value) => match DateTime::parse_from_rfc3339(value) {
+                                        Ok(value) => created = Some(value.with_timezone(&Local)),
+                                        Err(_) => {
+                                            self.result.error(ErrorCode::E049,
+                                                              format!("Inventory version {} field 'created' must be an RFC3339 formatted date. Found: {}",
+                                                                      self.version, value));
+                                            created_failed = true;
                                         }
-                                    }
+                                    },
                                     Err(_) => {
-                                        // TODO
+                                        self.result.error(ErrorCode::E049,
+                                                          format!("Inventory version {} field 'created' must be a string", self.version));
                                         created_failed = true;
                                     }
                                 }
@@ -579,7 +605,8 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
                                 }) {
                                     Ok(value) => state = Some(value),
                                     Err(_) => {
-                                        // TODO
+                                        self.result.error(ErrorCode::E050,
+                                                          format!("Inventory version {} field 'state' must be an object", self.version));
                                         state_failed = true;
                                     }
                                 }
@@ -592,7 +619,8 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
                                 match map.next_value() {
                                     Ok(value) => user = Some(value),
                                     Err(_) => {
-                                        // TODO
+                                        self.result.error(ErrorCode::E054,
+                                                          format!("Inventory version {} field 'user' must be an object", self.version));
                                         user_failed = true;
                                     }
                                 }
@@ -605,7 +633,8 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
                                 match map.next_value() {
                                     Ok(value) => message = Some(value),
                                     Err(_) => {
-                                        // TODO
+                                        self.result.error(ErrorCode::E094,
+                                                          format!("Inventory version {} field 'message' must be a string", self.version));
                                         message_failed = true;
                                     }
                                 }
@@ -682,33 +711,41 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
                 loop {
                     match map.next_key() {
                         Ok(None) => break,
-                        Ok(Some(digest)) => {
-                            match map.next_value::<Vec<&str>>() {
-                                Ok(paths) => {
-                                    let mut content_paths = Vec::with_capacity(paths.len());
-                                    for path in paths {
+                        Ok(Some(digest)) => match map.next_value::<Vec<&str>>() {
+                            Ok(paths) => {
+                                let mut content_paths = Vec::with_capacity(paths.len());
+                                for path in paths {
+                                    if path.starts_with('/') || path.ends_with('/') {
+                                        self.result.error(ErrorCode::E100,
+                                                              format!("Inventory manifest key '{}' contains a content path with a leading/trailing '/'. Found: {}",
+                                                                      digest, path));
+                                    } else {
                                         match ContentPath::try_from(path) {
                                             Ok(content_path) => content_paths.push(content_path),
                                             Err(_) => {
-                                                // TODO
+                                                self.result.error(ErrorCode::E099,
+                                                                      format!("Inventory manifest key '{}' contains a content path containing an illegal path part. Found: {}",
+                                                                              digest, path));
                                             }
                                         }
                                     }
+                                }
 
-                                    let path_refs =
-                                        content_paths.into_iter().map(Rc::new).collect();
-                                    manifest.insert_multiple_rc(
-                                        self.data.insert_digest(digest),
-                                        path_refs,
-                                    );
-                                }
-                                Err(_) => {
-                                    // TODO
-                                }
+                                let path_refs = content_paths.into_iter().map(Rc::new).collect();
+                                manifest
+                                    .insert_multiple_rc(self.data.insert_digest(digest), path_refs);
                             }
-                        }
+                            Err(_) => {
+                                self.result.error(ErrorCode::E092,
+                                                      format!("Inventory manifest key '{}' must reference an array of strings", digest));
+                            }
+                        },
                         Err(_) => {
-                            // TODO
+                            self.result.error(
+                                ErrorCode::E096,
+                                "Inventory manifest contains a key that is not a string"
+                                    .to_string(),
+                            );
                         }
                     }
                 }
@@ -759,30 +796,40 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
                 loop {
                     match map.next_key() {
                         Ok(None) => break,
-                        Ok(Some(digest)) => {
-                            match map.next_value::<Vec<&str>>() {
-                                Ok(paths) => {
-                                    let digest_ref = self.data.insert_digest(digest);
-                                    let mut path_refs = Vec::with_capacity(paths.len());
+                        Ok(Some(digest)) => match map.next_value::<Vec<&str>>() {
+                            Ok(paths) => {
+                                let digest_ref = self.data.insert_digest(digest);
+                                let mut path_refs = Vec::with_capacity(paths.len());
 
-                                    for path in paths {
+                                for path in paths {
+                                    if path.starts_with('/') || path.ends_with('/') {
+                                        self.result.error(ErrorCode::E053,
+                                                              format!("Inventory version {} state key '{}' contains a logical path with a leading/trailing '/'. Found: {}",
+                                                                      self.version, digest, path));
+                                    } else {
                                         match self.data.insert_path::<A::Error>(path) {
                                             Ok(logical_path) => path_refs.push(logical_path),
                                             Err(_) => {
-                                                // TODO
+                                                self.result.error(ErrorCode::E052,
+                                                                      format!("Inventory version {} state key '{}' contains a logical path containing an illegal path part. Found: {}",
+                                                                              self.version, digest, path));
                                             }
                                         }
                                     }
+                                }
 
-                                    state.insert_multiple_rc(digest_ref, path_refs);
-                                }
-                                Err(_) => {
-                                    // TODO
-                                }
+                                state.insert_multiple_rc(digest_ref, path_refs);
                             }
-                        }
+                            Err(_) => {
+                                self.result.error(ErrorCode::E051,
+                                                      format!("Inventory version {} state key '{}' must reference an array of strings",
+                                                              self.version, digest));
+                            }
+                        },
                         Err(_) => {
-                            // TODO
+                            self.result.error(
+                                ErrorCode::E050,
+                                format!("Inventory version {} state contains a key that is not a string", self.version));
                         }
                     }
                 }
@@ -893,7 +940,13 @@ impl<'de, 'a, 'b> DeserializeSeed<'de> for UserSeed<'a, 'b> {
                         Ok(None) => break,
                         Ok(Some(key)) => key,
                         Err(_) => {
-                            // TODO
+                            self.result.error(
+                                ErrorCode::E033,
+                                format!(
+                                    "Inventory version {} user contains an invalid field",
+                                    self.version
+                                ),
+                            );
                             continue;
                         }
                     };
@@ -906,7 +959,8 @@ impl<'de, 'a, 'b> DeserializeSeed<'de> for UserSeed<'a, 'b> {
                                 match map.next_value() {
                                     Ok(value) => name = Some(value),
                                     Err(_) => {
-                                        // TODO
+                                        self.result.error(ErrorCode::E033,
+                                                          format!("Inventory version {} user field 'name' must be a string", self.version));
                                         name_failed = true;
                                     }
                                 }
@@ -916,10 +970,18 @@ impl<'de, 'a, 'b> DeserializeSeed<'de> for UserSeed<'a, 'b> {
                             if address.is_some() {
                                 duplicate_version_field(ADDRESS_FIELD, self.version, self.result);
                             } else {
-                                match map.next_value() {
-                                    Ok(value) => address = Some(value),
+                                match map.next_value::<&str>() {
+                                    Ok(value) => {
+                                        if URI::try_from(value).is_err() {
+                                            self.result.warn(WarnCode::W008,
+                                                              format!("Inventory version {} user field 'address' should be a URI. Found: {}",
+                                                                      self.version, value));
+                                        }
+                                        address = Some(value.to_string());
+                                    }
                                     Err(_) => {
-                                        // TODO
+                                        self.result.error(ErrorCode::E033,
+                                                          format!("Inventory version {} user field 'address' must be a string", self.version));
                                         address_failed = true;
                                     }
                                 }
