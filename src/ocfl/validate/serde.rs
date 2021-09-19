@@ -1,5 +1,3 @@
-// TODO rename file?
-
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryFrom;
@@ -811,21 +809,19 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
                                             }
                                         }
                                     }
+
+                                    if all_paths.contains(path) {
+                                        self.result.error(ErrorCode::E101,
+                                                          format!("Inventory manifest contains a duplicate content path. Found: {}",
+                                                                  path));
+                                    } else {
+                                        all_paths.insert(path);
+                                    }
                                 }
 
                                 let path_refs: Vec<Rc<ContentPath>> =
                                     content_paths.into_iter().map(Rc::new).collect();
                                 let digest_ref = self.data.insert_digest(digest);
-
-                                for path_ref in &path_refs {
-                                    if all_paths.contains(path_ref) {
-                                        self.result.error(ErrorCode::E101,
-                                                          format!("Inventory manifest contains a duplicate content path. Found: {}",
-                                                                  path_ref));
-                                    } else {
-                                        all_paths.insert(path_ref.clone());
-                                    }
-                                }
 
                                 if manifest.contains_id(&digest_ref) {
                                     self.result.error(
@@ -854,7 +850,12 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
                     }
                 }
 
-                // TODO E101 manifest content paths non-conflicting
+                validate_non_conflicting(&all_paths, |path, part| {
+                    self.result.error(
+                        ErrorCode::E101,
+                        format!("Inventory manifest contains a path, '{}', that conflicts with another path '{}'",
+                                path, part));
+                });
 
                 Ok(manifest)
             }
@@ -923,15 +924,13 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
                                             }
                                         }
                                     }
-                                }
 
-                                for path_ref in &path_refs {
-                                    if all_paths.contains(path_ref) {
+                                    if all_paths.contains(path) {
                                         self.result.error(ErrorCode::E095,
                                                           format!("Inventory version {} state contains a duplicate logical path. Found: {}",
-                                                                  self.version, path_ref));
+                                                                  self.version, path));
                                     } else {
-                                        all_paths.insert(path_ref.clone());
+                                        all_paths.insert(path);
                                     }
                                 }
 
@@ -951,7 +950,12 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
                     }
                 }
 
-                // TODO E095 state paths are non-conflicting
+                validate_non_conflicting(&all_paths, |path, part| {
+                    self.result.error(
+                        ErrorCode::E095,
+                        format!("Inventory version {} state contains a path, '{}', that conflicts with another path '{}'",
+                                self.version, path, part));
+                });
 
                 Ok(state)
             }
@@ -1290,6 +1294,22 @@ fn validate_fixity(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+fn validate_non_conflicting<F>(paths: &HashSet<&str>, error: F)
+where
+    F: Fn(&str, &str),
+{
+    for path in paths {
+        let mut part = *path;
+        while let Some(index) = part.rfind('/') {
+            part = &part[0..index];
+            if paths.contains(part) {
+                error(path, part);
+                break;
             }
         }
     }
