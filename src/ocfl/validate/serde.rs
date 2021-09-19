@@ -1,13 +1,15 @@
 // TODO rename file?
 
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt::Formatter;
 use std::rc::Rc;
 use std::str::FromStr;
 
 use chrono::{DateTime, Local};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::de::{DeserializeSeed, Error as SerdeError, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use uriparse::URI;
@@ -28,8 +30,19 @@ use crate::ocfl::{ContentPath, DigestAlgorithm, LogicalPath, VersionNum};
 //      2. type
 //      3. head
 //      4. content dir
+//      5. correct version
 
 // TODO remove all `?`-- need to handle errors inline
+
+static MD5_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{32}$"#).unwrap());
+static SHA1_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{40}$"#).unwrap());
+static SHA256_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{64}$"#).unwrap());
+static SHA512_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{128}$"#).unwrap());
+static BLAKE2B_160_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{40}$"#).unwrap());
+static BLAKE2B_256_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{64}$"#).unwrap());
+static BLAKE2B_384_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{96}$"#).unwrap());
+static BLAKE2B_512_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{128}$"#).unwrap());
+static SHA512_256_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{64}$"#).unwrap());
 
 impl<'de> Deserialize<'de> for ParseResult {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -113,7 +126,7 @@ impl<'de> Deserialize<'de> for ParseResult {
                 let mut content_directory = None;
                 let mut manifest = None;
                 let mut versions = None;
-                let mut fixity = None;
+                let mut fixity: Option<HashMap<String, HashMap<String, Vec<String>>>> = None;
 
                 let mut id_failed = false;
                 let mut type_failed = false;
@@ -261,10 +274,10 @@ impl<'de> Deserialize<'de> for ParseResult {
                                     Ok(value) => {
                                         if value.eq(".") || value.eq("..") {
                                             result.error(ErrorCode::E018,
-                                                         format!("Inventory field 'contentDirectory' cannot equal '.' or '..'. Found: {}", value))
+                                                         format!("Inventory field 'contentDirectory' cannot equal '.' or '..'. Found: {}", value));
                                         } else if value.contains('/') {
                                             result.error(ErrorCode::E017,
-                                                         format!("Inventory field 'contentDirectory' cannot contain '/'. Found: {}", value))
+                                                         format!("Inventory field 'contentDirectory' cannot contain '/'. Found: {}", value));
                                         } else {
                                             content_directory = Some(value.to_string());
                                         }
@@ -320,7 +333,8 @@ impl<'de> Deserialize<'de> for ParseResult {
                             }
                         }
                         Field::Fixity => {
-                            // TODO I might need to model this...
+                            // TODO
+                            // TODO E097 fixity digests no duplicates
                             if fixity.is_some() {
                                 duplicate_field(FIXITY_FIELD, &result);
                             } else {
@@ -349,6 +363,63 @@ impl<'de> Deserialize<'de> for ParseResult {
                 }
                 if versions.is_none() && !versions_failed {
                     missing_inv_field_2(VERSIONS_FIELD, &result);
+                }
+
+                if let (Some(head), Some(versions)) = (&head, &versions) {
+                    if !versions.contains_key(head) {
+                        result.error(
+                            ErrorCode::E010,
+                            format!("Inventory field 'versions' is missing version '{}'", head),
+                        )
+                    }
+
+                    if let Some(highest_version) = versions.keys().rev().next() {
+                        if head != highest_version {
+                            result.error(
+                                ErrorCode::E040,
+                                format!(
+                                    "Inventory field 'head' references '{}' but '{}' was expected",
+                                    head, highest_version
+                                ),
+                            );
+                        }
+                    }
+                }
+
+                if let (Some(algorithm), Some(manifest)) = (digest_algorithm, &manifest) {
+                    for (digest, _) in manifest.iter_id_paths() {
+                        if !validate_digest(algorithm, (**digest).as_ref()) {
+                            result.error(
+                                ErrorCode::E096,
+                                format!("Inventory manifest contains invalid digest: {}", digest),
+                            );
+                        }
+                    }
+                }
+
+                // TODO E050 state has digest not in manifest
+
+                if let Some(fixity) = &fixity {
+                    for (algorithm, fixity_manifest) in fixity {
+                        if let Ok(algorithm) = DigestAlgorithm::from_str(algorithm) {
+                            for digest in fixity_manifest.keys() {
+                                if !validate_digest(algorithm, digest) {
+                                    result.error(
+                                        ErrorCode::E057,
+                                        format!("Inventory fixity block '{}' contains invalid digest: {}",
+                                                algorithm.to_string(), digest),
+                                    );
+                                }
+                            }
+                        }
+
+                        // TODO iter here to ensure paths in manifest?
+                        // TODO what if, instead of the following, we just verify that the paths exist in the manifest?
+                        // TODO E100 fixity path begin/end with /
+                        // TODO E101 fixity content paths unique
+                        // TODO E099 fixity content paths legal parts
+                        // TODO E101 fixity content paths non-conflicting
+                    }
                 }
 
                 if result.has_errors() {
@@ -405,28 +476,37 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for VersionsSeed<'a, 'b> {
                 A: MapAccess<'de>,
             {
                 let mut versions = BTreeMap::new();
+                let mut invalid_versions = HashSet::new();
 
                 loop {
                     match map.next_key() {
                         Ok(None) => break,
                         Ok(Some(version_num)) => {
+                            let num = match VersionNum::try_from(version_num) {
+                                Ok(num) => Some(num),
+                                Err(_) => {
+                                    self.result.error(
+                                        ErrorCode::E046,
+                                        format!("Inventory field 'versions' contains an invalid version number. Found: {}", version_num),
+                                    );
+                                    None
+                                }
+                            };
+
                             match map.next_value_seed(VersionSeed {
                                 data: self.data,
                                 result: self.result,
                                 version: version_num,
                             }) {
-                                Ok(version) => match VersionNum::try_from(version_num) {
-                                    Ok(version_num) => {
-                                        versions.insert(version_num, version);
+                                Ok(version) => {
+                                    if let Some(num) = num {
+                                        versions.insert(num, version);
                                     }
-                                    Err(_) => {
-                                        self.result.error(
-                                                ErrorCode::E046,
-                                                format!("Inventory field 'versions' contains an invalid version number. Found: {}", version_num),
-                                            );
-                                    }
-                                },
+                                }
                                 Err(_) => {
+                                    if let Some(num) = num {
+                                        invalid_versions.insert(num);
+                                    }
                                     self.result.error(
                                         ErrorCode::E047,
                                         "Inventory field 'versions' contains a version that is not an object"
@@ -444,6 +524,8 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for VersionsSeed<'a, 'b> {
                         }
                     }
                 }
+
+                validate_version_nums(&versions, &invalid_versions, self.result);
 
                 Ok(versions)
             }
@@ -707,6 +789,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
                 A: MapAccess<'de>,
             {
                 let mut manifest = PathBiMap::with_capacity(map.size_hint().unwrap_or(0));
+                let mut all_paths = HashSet::with_capacity(map.size_hint().unwrap_or(0));
 
                 loop {
                     match map.next_key() {
@@ -714,6 +797,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
                         Ok(Some(digest)) => match map.next_value::<Vec<&str>>() {
                             Ok(paths) => {
                                 let mut content_paths = Vec::with_capacity(paths.len());
+
                                 for path in paths {
                                     if path.starts_with('/') || path.ends_with('/') {
                                         self.result.error(ErrorCode::E100,
@@ -731,9 +815,31 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
                                     }
                                 }
 
-                                let path_refs = content_paths.into_iter().map(Rc::new).collect();
-                                manifest
-                                    .insert_multiple_rc(self.data.insert_digest(digest), path_refs);
+                                let path_refs: Vec<Rc<ContentPath>> =
+                                    content_paths.into_iter().map(Rc::new).collect();
+                                let digest_ref = self.data.insert_digest(digest);
+
+                                for path_ref in &path_refs {
+                                    if all_paths.contains(path_ref) {
+                                        self.result.error(ErrorCode::E101,
+                                                          format!("Inventory manifest contains a duplicate content path: {}",
+                                                                  path_ref));
+                                    } else {
+                                        all_paths.insert(path_ref.clone());
+                                    }
+                                }
+
+                                if manifest.contains_id(&digest_ref) {
+                                    self.result.error(
+                                        ErrorCode::E096,
+                                        format!(
+                                            "Inventory manifest contains a duplicate key '{}'",
+                                            digest
+                                        ),
+                                    );
+                                }
+
+                                manifest.insert_multiple_rc(digest_ref, path_refs);
                             }
                             Err(_) => {
                                 self.result.error(ErrorCode::E092,
@@ -749,6 +855,8 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
                         }
                     }
                 }
+
+                // TODO E101 manifest content paths non-conflicting
 
                 Ok(manifest)
             }
@@ -792,6 +900,7 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
                 A: MapAccess<'de>,
             {
                 let mut state = PathBiMap::with_capacity(map.size_hint().unwrap_or(0));
+                let mut all_paths = HashSet::with_capacity(map.size_hint().unwrap_or(0));
 
                 loop {
                     match map.next_key() {
@@ -818,6 +927,16 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
                                     }
                                 }
 
+                                for path_ref in &path_refs {
+                                    if all_paths.contains(path_ref) {
+                                        self.result.error(ErrorCode::E095,
+                                                          format!("Inventory version {} state contains a duplicate logical path: {}",
+                                                                  self.version, path_ref));
+                                    } else {
+                                        all_paths.insert(path_ref.clone());
+                                    }
+                                }
+
                                 state.insert_multiple_rc(digest_ref, path_refs);
                             }
                             Err(_) => {
@@ -833,6 +952,8 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
                         }
                     }
                 }
+
+                // TODO E095 state paths are non-conflicting
 
                 Ok(state)
             }
@@ -1061,6 +1182,60 @@ impl<'a> DigestsAndPaths<'a> {
                 Ok(clone)
             }
         }
+    }
+}
+
+fn validate_version_nums(
+    versions: &BTreeMap<VersionNum, Version>,
+    invalid_versions: &HashSet<VersionNum>,
+    result: &ValidationResult,
+) {
+    let mut padding = None;
+    let mut consistent_padding = true;
+    let mut next_version = VersionNum::v1();
+
+    for version in versions.keys() {
+        match padding {
+            None => padding = Some(version.width),
+            Some(padding) => {
+                if consistent_padding && padding != version.width {
+                    consistent_padding = false;
+                }
+            }
+        }
+
+        if *version != next_version && !invalid_versions.contains(version) {
+            result.error(
+                ErrorCode::E010,
+                format!(
+                    "Inventory field 'versions' is missing version '{}'",
+                    next_version
+                ),
+            );
+        }
+
+        next_version = next_version.next().unwrap();
+    }
+
+    if !consistent_padding {
+        result.error(
+            ErrorCode::E013,
+            "Inventory field 'versions' contains inconsistently padded version numbers".to_string(),
+        );
+    }
+}
+
+fn validate_digest(algorithm: DigestAlgorithm, digest: &str) -> bool {
+    match algorithm {
+        DigestAlgorithm::Md5 => MD5_REGEX.is_match(digest),
+        DigestAlgorithm::Sha1 => SHA1_REGEX.is_match(digest),
+        DigestAlgorithm::Sha256 => SHA256_REGEX.is_match(digest),
+        DigestAlgorithm::Sha512 => SHA512_REGEX.is_match(digest),
+        DigestAlgorithm::Sha512_256 => SHA512_256_REGEX.is_match(digest),
+        DigestAlgorithm::Blake2b512 => BLAKE2B_512_REGEX.is_match(digest),
+        DigestAlgorithm::Blake2b160 => BLAKE2B_160_REGEX.is_match(digest),
+        DigestAlgorithm::Blake2b256 => BLAKE2B_256_REGEX.is_match(digest),
+        DigestAlgorithm::Blake2b384 => BLAKE2B_384_REGEX.is_match(digest),
     }
 }
 
