@@ -32,8 +32,6 @@ use crate::ocfl::{ContentPath, DigestAlgorithm, LogicalPath, VersionNum};
 //      4. content dir
 //      5. correct version
 
-// TODO remove all `?`-- need to handle errors inline
-
 static MD5_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{32}$"#).unwrap());
 static SHA1_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{40}$"#).unwrap());
 static SHA256_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{64}$"#).unwrap());
@@ -333,12 +331,19 @@ impl<'de> Deserialize<'de> for ParseResult {
                             }
                         }
                         Field::Fixity => {
-                            // TODO
-                            // TODO E097 fixity digests no duplicates
                             if fixity.is_some() {
                                 duplicate_field(FIXITY_FIELD, &result);
                             } else {
-                                fixity = map.next_value().ok();
+                                match map.next_value() {
+                                    Ok(value) => fixity = Some(value),
+                                    Err(_) => {
+                                        result.error(
+                                            ErrorCode::E057,
+                                            "Inventory field 'fixity' is not structured correctly"
+                                                .to_string(),
+                                        );
+                                    }
+                                }
                             }
                         }
                         // TODO do I need to explicitly skip the value when unknown?
@@ -397,30 +402,23 @@ impl<'de> Deserialize<'de> for ParseResult {
                     }
                 }
 
-                // TODO E050 state has digest not in manifest
+                // TODO validate that every manifest entry is in a version state: https://github.com/OCFL/spec/issues/537
 
-                if let Some(fixity) = &fixity {
-                    for (algorithm, fixity_manifest) in fixity {
-                        if let Ok(algorithm) = DigestAlgorithm::from_str(algorithm) {
-                            for digest in fixity_manifest.keys() {
-                                if !validate_digest(algorithm, digest) {
-                                    result.error(
-                                        ErrorCode::E057,
-                                        format!("Inventory fixity block '{}' contains invalid digest: {}",
-                                                algorithm.to_string(), digest),
-                                    );
-                                }
+                if let (Some(manifest), Some(versions)) = (&manifest, &versions) {
+                    for (num, version) in versions {
+                        for (_, digest) in version.state_iter() {
+                            if !manifest.contains_id(digest) {
+                                result.error(
+                                    ErrorCode::E050,
+                                    format!("Inventory version {} state contains a digest not present in the manifest. Found: {}",
+                                            num, digest),
+                                );
                             }
                         }
-
-                        // TODO iter here to ensure paths in manifest?
-                        // TODO what if, instead of the following, we just verify that the paths exist in the manifest?
-                        // TODO E100 fixity path begin/end with /
-                        // TODO E101 fixity content paths unique
-                        // TODO E099 fixity content paths legal parts
-                        // TODO E101 fixity content paths non-conflicting
                     }
                 }
+
+                validate_fixity(&fixity, &manifest, &result);
 
                 if result.has_errors() {
                     Ok(ParseResult::Error(result))
@@ -822,7 +820,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
                                 for path_ref in &path_refs {
                                     if all_paths.contains(path_ref) {
                                         self.result.error(ErrorCode::E101,
-                                                          format!("Inventory manifest contains a duplicate content path: {}",
+                                                          format!("Inventory manifest contains a duplicate content path. Found: {}",
                                                                   path_ref));
                                     } else {
                                         all_paths.insert(path_ref.clone());
@@ -930,7 +928,7 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
                                 for path_ref in &path_refs {
                                     if all_paths.contains(path_ref) {
                                         self.result.error(ErrorCode::E095,
-                                                          format!("Inventory version {} state contains a duplicate logical path: {}",
+                                                          format!("Inventory version {} state contains a duplicate logical path. Found: {}",
                                                                   self.version, path_ref));
                                     } else {
                                         all_paths.insert(path_ref.clone());
@@ -1222,6 +1220,78 @@ fn validate_version_nums(
             ErrorCode::E013,
             "Inventory field 'versions' contains inconsistently padded version numbers".to_string(),
         );
+    }
+}
+
+fn validate_fixity(
+    fixity: &Option<HashMap<String, HashMap<String, Vec<String>>>>,
+    manifest: &Option<PathBiMap<ContentPath>>,
+    result: &ValidationResult,
+) {
+    if let Some(fixity) = fixity {
+        for (algorithm, fixity_manifest) in fixity {
+            if let Ok(algorithm) = DigestAlgorithm::from_str(algorithm) {
+                for digest in fixity_manifest.keys() {
+                    if !validate_digest(algorithm, digest) {
+                        result.error(
+                            ErrorCode::E057,
+                            format!(
+                                "Inventory fixity block '{}' contains invalid digest. Found: {}",
+                                algorithm.to_string(),
+                                digest
+                            ),
+                        );
+                    }
+                }
+            }
+
+            let mut all_paths = Vec::with_capacity(fixity_manifest.len());
+            let mut all_digests = Vec::with_capacity(fixity_manifest.len());
+
+            if let Some(manifest) = manifest {
+                for (digest, paths) in fixity_manifest {
+                    if all_digests.contains(&digest) {
+                        result.error(
+                            ErrorCode::E097,
+                            format!("Inventory fixity block '{}' contains a duplicate digest. Found: {}",
+                                    algorithm.to_string(), digest),
+                        );
+                    } else {
+                        all_digests.push(digest);
+                    }
+
+                    for path in paths {
+                        if all_paths.contains(&path) {
+                            result.error(
+                                ErrorCode::E101,
+                                format!("Inventory fixity block '{}' contains a duplicate content path. Found: {}",
+                                        algorithm.to_string(), path),
+                            );
+
+                            continue;
+                        }
+
+                        all_paths.push(path);
+
+                        if let Ok(content_path) = ContentPath::try_from(path) {
+                            if !manifest.contains_path(&content_path) {
+                                result.error(
+                                    ErrorCode::E057,
+                                    format!("Inventory fixity block '{}' contains a content path not present in the manifest. Found: {}",
+                                            algorithm.to_string(), path),
+                                );
+                            }
+                        } else {
+                            result.error(
+                                ErrorCode::E099,
+                                format!("Inventory fixity block '{}' contains a content path containing an illegal path part. Found: {}",
+                                        algorithm.to_string(), path),
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
