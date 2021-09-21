@@ -20,15 +20,8 @@ use crate::ocfl::serde::{
     HEAD_FIELD, ID_FIELD, INVENTORY_FIELDS, MANIFEST_FIELD, MESSAGE_FIELD, NAME_FIELD, STATE_FIELD,
     TYPE_FIELD, USER_FIELD, USER_FIELDS, VERSIONS_FIELD, VERSION_FIELDS,
 };
-use crate::ocfl::validate::{ErrorCode, ParseResult, ValidationResult, WarnCode};
+use crate::ocfl::validate::{ErrorCode, ParseResult, ParseValidationResult, WarnCode};
 use crate::ocfl::{ContentPath, DigestAlgorithm, LogicalPath, VersionNum};
-
-// TODO things to validate externally:
-//      1. object id
-//      2. type
-//      3. head
-//      4. content dir
-//      5. correct version
 
 static MD5_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{32}$"#).unwrap());
 static SHA1_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{40}$"#).unwrap());
@@ -57,7 +50,7 @@ impl<'de> Deserialize<'de> for ParseResult {
             Unknown,
         }
 
-        struct FieldSeed<'a>(&'a ValidationResult);
+        struct FieldSeed<'a>(&'a ParseValidationResult);
 
         impl<'de, 'a> DeserializeSeed<'de> for FieldSeed<'a> {
             type Value = Field;
@@ -66,7 +59,7 @@ impl<'de> Deserialize<'de> for ParseResult {
             where
                 D: Deserializer<'de>,
             {
-                struct FieldVisitor<'a>(&'a ValidationResult);
+                struct FieldVisitor<'a>(&'a ParseValidationResult);
 
                 impl<'de, 'a> Visitor<'de> for FieldVisitor<'a> {
                     type Value = Field;
@@ -113,7 +106,7 @@ impl<'de> Deserialize<'de> for ParseResult {
             where
                 A: MapAccess<'de>,
             {
-                let result = ValidationResult::new();
+                let result = ParseValidationResult::new();
 
                 let mut id = None;
                 let mut type_declaration = None;
@@ -445,7 +438,7 @@ impl<'de> Deserialize<'de> for ParseResult {
 
 struct VersionsSeed<'a, 'b> {
     data: &'a mut DigestsAndPaths<'b>,
-    result: &'a ValidationResult,
+    result: &'a ParseValidationResult,
 }
 
 impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for VersionsSeed<'a, 'b> {
@@ -457,7 +450,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for VersionsSeed<'a, 'b> {
     {
         struct VersionsVisitor<'a, 'b> {
             data: &'a mut DigestsAndPaths<'b>,
-            result: &'a ValidationResult,
+            result: &'a ParseValidationResult,
         }
 
         impl<'de: 'b, 'a, 'b> Visitor<'de> for VersionsVisitor<'a, 'b> {
@@ -536,7 +529,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for VersionsSeed<'a, 'b> {
 
 struct VersionSeed<'a, 'b, 'c> {
     data: &'a mut DigestsAndPaths<'b>,
-    result: &'a ValidationResult,
+    result: &'a ParseValidationResult,
     version: &'c str,
 }
 
@@ -556,7 +549,7 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
         }
 
         struct FieldSeed<'a, 'b> {
-            result: &'a ValidationResult,
+            result: &'a ParseValidationResult,
             version: &'b str,
         }
 
@@ -568,7 +561,7 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
                 D: Deserializer<'de>,
             {
                 struct FieldVisitor<'a, 'b> {
-                    result: &'a ValidationResult,
+                    result: &'a ParseValidationResult,
                     version: &'b str,
                 }
 
@@ -605,7 +598,7 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
 
         struct VersionVisitor<'a, 'b, 'c> {
             data: &'a mut DigestsAndPaths<'b>,
-            result: &'a ValidationResult,
+            result: &'a ParseValidationResult,
             version: &'c str,
         }
 
@@ -758,7 +751,7 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
 
 struct ManifestSeed<'a, 'b> {
     data: &'a mut DigestsAndPaths<'b>,
-    result: &'a ValidationResult,
+    result: &'a ParseValidationResult,
 }
 
 impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
@@ -770,7 +763,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
     {
         struct ManifestVisitor<'a, 'b> {
             data: &'a mut DigestsAndPaths<'b>,
-            result: &'a ValidationResult,
+            result: &'a ParseValidationResult,
         }
 
         impl<'de: 'b, 'a, 'b> Visitor<'de> for ManifestVisitor<'a, 'b> {
@@ -870,7 +863,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
 
 struct StateSeed<'a, 'b, 'c> {
     data: &'a mut DigestsAndPaths<'b>,
-    result: &'a ValidationResult,
+    result: &'a ParseValidationResult,
     version: &'c str,
 }
 
@@ -883,7 +876,7 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
     {
         struct StateVisitor<'a, 'b, 'c> {
             data: &'a mut DigestsAndPaths<'b>,
-            result: &'a ValidationResult,
+            result: &'a ParseValidationResult,
             version: &'c str,
         }
 
@@ -970,7 +963,7 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
 }
 
 struct UserSeed<'a, 'b> {
-    result: &'a ValidationResult,
+    result: &'a ParseValidationResult,
     version: &'b str,
 }
 
@@ -988,7 +981,7 @@ impl<'de, 'a, 'b> DeserializeSeed<'de> for UserSeed<'a, 'b> {
         }
 
         struct FieldSeed<'a, 'b> {
-            result: &'a ValidationResult,
+            result: &'a ParseValidationResult,
             version: &'b str,
         }
 
@@ -1000,7 +993,7 @@ impl<'de, 'a, 'b> DeserializeSeed<'de> for UserSeed<'a, 'b> {
                 D: Deserializer<'de>,
             {
                 struct FieldVisitor<'a, 'b> {
-                    result: &'a ValidationResult,
+                    result: &'a ParseValidationResult,
                     version: &'b str,
                 }
 
@@ -1034,7 +1027,7 @@ impl<'de, 'a, 'b> DeserializeSeed<'de> for UserSeed<'a, 'b> {
         }
 
         struct UserVisitor<'a, 'b> {
-            result: &'a ValidationResult,
+            result: &'a ParseValidationResult,
             version: &'b str,
         }
 
@@ -1190,7 +1183,7 @@ impl<'a> DigestsAndPaths<'a> {
 fn validate_version_nums(
     versions: &BTreeMap<VersionNum, Version>,
     invalid_versions: &HashSet<VersionNum>,
-    result: &ValidationResult,
+    result: &ParseValidationResult,
 ) {
     let mut padding = None;
     let mut consistent_padding = true;
@@ -1230,7 +1223,7 @@ fn validate_version_nums(
 fn validate_fixity(
     fixity: &Option<HashMap<String, HashMap<String, Vec<String>>>>,
     manifest: &Option<PathBiMap<ContentPath>>,
-    result: &ValidationResult,
+    result: &ParseValidationResult,
 ) {
     if let Some(fixity) = fixity {
         for (algorithm, fixity_manifest) in fixity {
@@ -1329,14 +1322,14 @@ fn validate_digest(algorithm: DigestAlgorithm, digest: &str) -> bool {
     }
 }
 
-fn duplicate_field(field: &str, result: &ValidationResult) {
+fn duplicate_field(field: &str, result: &ParseValidationResult) {
     result.error(
         ErrorCode::E033,
         format!("Inventory contains duplicate field '{}'", field),
     );
 }
 
-fn duplicate_version_field(field: &str, version: &str, result: &ValidationResult) {
+fn duplicate_version_field(field: &str, version: &str, result: &ParseValidationResult) {
     result.error(
         ErrorCode::E033,
         format!(
@@ -1346,14 +1339,14 @@ fn duplicate_version_field(field: &str, version: &str, result: &ValidationResult
     );
 }
 
-fn unknown_field(field: &str, result: &ValidationResult) {
+fn unknown_field(field: &str, result: &ParseValidationResult) {
     result.error(
         ErrorCode::E102,
         format!("Inventory contains unknown field '{}'", field),
     );
 }
 
-fn unknown_version_field(field: &str, version: &str, result: &ValidationResult) {
+fn unknown_version_field(field: &str, version: &str, result: &ParseValidationResult) {
     result.error(
         ErrorCode::E102,
         format!(
@@ -1363,21 +1356,21 @@ fn unknown_version_field(field: &str, version: &str, result: &ValidationResult) 
     );
 }
 
-fn missing_inv_field(field: &str, result: &ValidationResult) {
+fn missing_inv_field(field: &str, result: &ParseValidationResult) {
     result.error(
         ErrorCode::E036,
         format!("Inventory is missing required field '{}'", field),
     );
 }
 
-fn missing_inv_field_2(field: &str, result: &ValidationResult) {
+fn missing_inv_field_2(field: &str, result: &ParseValidationResult) {
     result.error(
         ErrorCode::E041,
         format!("Inventory is missing required field '{}'", field),
     );
 }
 
-fn missing_version_field(field: &str, version: &str, result: &ValidationResult) {
+fn missing_version_field(field: &str, version: &str, result: &ParseValidationResult) {
     result.error(
         ErrorCode::E048,
         format!(
@@ -1387,7 +1380,7 @@ fn missing_version_field(field: &str, version: &str, result: &ValidationResult) 
     );
 }
 
-fn missing_version_field_warn(field: &str, version: &str, result: &ValidationResult) {
+fn missing_version_field_warn(field: &str, version: &str, result: &ParseValidationResult) {
     result.warn(
         WarnCode::W007,
         format!(

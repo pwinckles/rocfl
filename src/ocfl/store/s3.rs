@@ -31,6 +31,7 @@ use super::{OcflLayout, OcflStore};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
+use crate::ocfl::paths::{join, join_with_trailing_slash};
 use crate::ocfl::{
     paths, specs, util, InventoryPath, LayoutExtensionName, LogicalPath, VersionRef,
 };
@@ -1168,32 +1169,6 @@ fn is_object_dir(objects: &[String]) -> bool {
         }
     }
     false
-}
-
-fn join(part1: &str, part2: &str) -> String {
-    let mut joined = match part1.ends_with('/') {
-        true => part1[..part1.len() - 1].to_string(),
-        false => part1.to_string(),
-    };
-
-    if !part2.is_empty() {
-        if (!joined.is_empty() || part1 == "/") && !part2.starts_with('/') {
-            joined.push('/');
-        }
-        joined.push_str(part2);
-    }
-
-    joined
-}
-
-fn join_with_trailing_slash(part1: &str, part2: &str) -> String {
-    let mut joined = join(part1, part2);
-
-    if !joined.is_empty() && !joined.ends_with('/') {
-        joined.push('/');
-    }
-
-    joined
 }
 
 #[cfg(test)]

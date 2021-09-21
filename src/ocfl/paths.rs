@@ -109,3 +109,32 @@ where
 {
     storage_root.as_ref().join(OCFL_SPEC_FILE)
 }
+
+/// Joins two string path parts, inserting at `/` if needed
+pub fn join(part1: &str, part2: &str) -> String {
+    let mut joined = match part1.ends_with('/') {
+        true => part1[..part1.len() - 1].to_string(),
+        false => part1.to_string(),
+    };
+
+    if !part2.is_empty() {
+        if (!joined.is_empty() || part1 == "/") && !part2.starts_with('/') {
+            joined.push('/');
+        }
+        joined.push_str(part2);
+    }
+
+    joined
+}
+
+/// Joins two string path parts, inserting at `/` if needed, and appends a `/` to the end,
+/// if there is not already one
+pub fn join_with_trailing_slash(part1: &str, part2: &str) -> String {
+    let mut joined = join(part1, part2);
+
+    if !joined.is_empty() && !joined.ends_with('/') {
+        joined.push('/');
+    }
+
+    joined
+}

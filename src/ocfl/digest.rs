@@ -1,5 +1,6 @@
 use core::{cmp, fmt};
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io;
@@ -16,7 +17,9 @@ use strum_macros::{Display as EnumDisplay, EnumString};
 use crate::ocfl::error::{Result, RocflError};
 
 /// Enum of all valid digest algorithms
-#[derive(Deserialize, Serialize, Debug, Eq, PartialEq, Copy, Clone, EnumString, EnumDisplay)]
+#[derive(
+    Deserialize, Serialize, Debug, Hash, Eq, PartialEq, Copy, Clone, EnumString, EnumDisplay,
+)]
 pub enum DigestAlgorithm {
     #[serde(rename = "md5")]
     #[strum(serialize = "md5")]
@@ -56,6 +59,12 @@ pub struct DigestReader<R: Read> {
 /// Writer wrapper that calculates a digest while writing
 pub struct DigestWriter<W: Write> {
     digest: Box<dyn DynDigest>,
+    inner: W,
+}
+
+/// Writer wrapper that calculates multiple digests while writing
+pub struct MultiDigestWriter<W: Write> {
+    digests: HashMap<DigestAlgorithm, Box<dyn DynDigest>>,
     inner: W,
 }
 
@@ -190,6 +199,53 @@ impl<W: Write> Write for DigestWriter<W> {
 
         if result > 0 {
             self.digest.update(&buf[0..result]);
+        }
+
+        Ok(result)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+impl<W: Write> MultiDigestWriter<W> {
+    pub fn new(algorithms: &[DigestAlgorithm], writer: W) -> Self {
+        let mut digests = HashMap::with_capacity(algorithms.len());
+        for algorithm in algorithms {
+            // TODO unwrap
+            digests.insert(*algorithm, algorithm.new_digest().unwrap());
+        }
+
+        Self {
+            digests,
+            inner: writer,
+        }
+    }
+
+    pub fn inner(&self) -> &W {
+        &self.inner
+    }
+
+    pub fn finalize_hex(self) -> HashMap<DigestAlgorithm, HexDigest> {
+        let mut results = HashMap::with_capacity(self.digests.len());
+        for (algorithm, digest) in self.digests {
+            results.insert(algorithm, digest.finalize().to_vec().into());
+        }
+        results
+    }
+}
+
+// TODO test
+impl<W: Write> Write for MultiDigestWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let result = self.inner.write(buf)?;
+
+        if result > 0 {
+            let part = &buf[0..result];
+            self.digests
+                .values_mut()
+                .for_each(|digest| digest.update(part));
         }
 
         Ok(result)
