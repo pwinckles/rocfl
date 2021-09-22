@@ -122,6 +122,8 @@ pub enum Command {
     Status(StatusCmd),
     #[structopt(name = "purge")]
     Purge(PurgeCmd),
+    #[structopt(name = "validate")]
+    Validate(ValidateCmd),
 }
 
 /// Edit rocfl configuration
@@ -540,6 +542,24 @@ pub struct PurgeCmd {
     /// ID of the object to purge
     #[structopt(name = "OBJ_ID")]
     pub object_id: String,
+}
+
+/// Validate an object or the entire repository
+///
+/// When run on a specific object, the object is validated against the OCFL spec, and any issues
+/// are reported. When run against the entire repository, the repository structure is validated,
+/// in addition to validating all of the objects in the repository.
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+pub struct ValidateCmd {
+    /// Disable fixity check on stored files
+    #[structopt(short, long)]
+    pub no_fixity_check: bool,
+
+    // TODO allow multiple?
+    /// ID of the object to validate
+    #[structopt(name = "OBJ_ID")]
+    pub object_id: Option<String>,
 }
 
 // TODO a command for rebasing staging if an object is updated after the staged version was created?

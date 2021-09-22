@@ -24,6 +24,8 @@ use super::{OcflLayout, OcflStore, StagingStore};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
+use crate::ocfl::validate::store::fs::FsStorage;
+use crate::ocfl::validate::{ValidationResult, Validator};
 use crate::ocfl::{paths, specs, util, ContentPath, InventoryPath, LogicalPath, VersionRef};
 
 static OBJECT_ID_MATCHER: Lazy<RegexMatcher> =
@@ -38,6 +40,7 @@ pub struct FsOcflStore {
     // TODO this never expires entries and is only intended to be useful within the scope of the cli
     /// Caches object ID to path mappings
     id_path_cache: RwLock<HashMap<String, String>>,
+    validator: Validator<FsStorage>,
     closed: Arc<AtomicBool>,
 }
 
@@ -63,6 +66,7 @@ impl FsOcflStore {
         let storage_layout = load_storage_layout(&storage_root);
 
         Ok(Self {
+            validator: Validator::new(FsStorage::new(storage_root.clone())),
             storage_root,
             storage_layout,
             id_path_cache: RwLock::new(HashMap::new()),
@@ -77,6 +81,7 @@ impl FsOcflStore {
         init_new_repo(&root, layout.as_ref())?;
 
         Ok(Self {
+            validator: Validator::new(FsStorage::new(root.clone())),
             storage_root: root,
             storage_layout: layout,
             id_path_cache: RwLock::new(HashMap::new()),
@@ -437,6 +442,15 @@ impl OcflStore for FsOcflStore {
         }
 
         Ok(extensions)
+    }
+
+    /// Validates the specified object and returns any problems found. Err will only be returned
+    /// if a non-validation problem was encountered.
+    fn validate_object(&self, object_id: &str, fixity_check: bool) -> Result<ValidationResult> {
+        let object_root = self.lookup_or_find_object_root_path(object_id)?;
+
+        self.validator
+            .validate_object(object_id, &object_root, fixity_check)
     }
 
     /// Instructs the store to gracefully stop any in-flight work and not accept any additional

@@ -18,18 +18,27 @@ pub enum Listing<'a> {
     Directory(Cow<'a, str>),
 }
 
-mod fs {
+// TODO move to store/fs
+pub mod fs {
     use std::borrow::Cow;
     use std::fs;
     use std::fs::File;
     use std::io::{self, Write};
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use crate::ocfl::error::Result;
     use crate::ocfl::validate::store::{Listing, Storage};
 
     pub struct FsStorage {
         storage_root: PathBuf,
+    }
+
+    impl FsStorage {
+        pub fn new(storage_root: impl AsRef<Path>) -> Self {
+            Self {
+                storage_root: storage_root.as_ref().to_path_buf(),
+            }
+        }
     }
 
     impl Storage for FsStorage {

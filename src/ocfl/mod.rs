@@ -13,6 +13,9 @@ pub use self::error::{Result, RocflError};
 pub use self::repo::OcflRepo;
 pub use self::store::layout::{LayoutExtensionName, StorageLayout};
 pub use self::types::*;
+pub use self::validate::{
+    ErrorCode, ValidationError, ValidationResult, ValidationWarning, WarnCode,
+};
 
 mod bimap;
 mod consts;

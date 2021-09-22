@@ -1234,8 +1234,7 @@ fn validate_fixity(
                             ErrorCode::E057,
                             format!(
                                 "Inventory fixity block '{}' contains invalid digest. Found: {}",
-                                algorithm.to_string(),
-                                digest
+                                algorithm, digest
                             ),
                         );
                     }
@@ -1251,7 +1250,7 @@ fn validate_fixity(
                         result.error(
                             ErrorCode::E097,
                             format!("Inventory fixity block '{}' contains a duplicate digest. Found: {}",
-                                    algorithm.to_string(), digest),
+                                    algorithm, digest),
                         );
                     } else {
                         all_digests.push(digest);
@@ -1262,7 +1261,7 @@ fn validate_fixity(
                             result.error(
                                 ErrorCode::E101,
                                 format!("Inventory fixity block '{}' contains a duplicate content path. Found: {}",
-                                        algorithm.to_string(), path),
+                                        algorithm, path),
                             );
 
                             continue;
@@ -1275,14 +1274,14 @@ fn validate_fixity(
                                 result.error(
                                     ErrorCode::E057,
                                     format!("Inventory fixity block '{}' contains a content path not present in the manifest. Found: {}",
-                                            algorithm.to_string(), path),
+                                            algorithm, path),
                                 );
                             }
                         } else {
                             result.error(
                                 ErrorCode::E099,
                                 format!("Inventory fixity block '{}' contains a content path containing an illegal path part. Found: {}",
-                                        algorithm.to_string(), path),
+                                        algorithm, path),
                             );
                         }
                     }

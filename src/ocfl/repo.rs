@@ -25,6 +25,7 @@ use crate::ocfl::store::layout::{LayoutExtensionName, StorageLayout};
 #[cfg(feature = "s3")]
 use crate::ocfl::store::s3::S3OcflStore;
 use crate::ocfl::store::{OcflStore, StagingStore};
+use crate::ocfl::validate::ValidationResult;
 use crate::ocfl::{
     paths, util, validate, CommitMeta, ContentPath, Diff, DigestAlgorithm, InventoryPath,
     LogicalPath, ObjectVersion, ObjectVersionDetails, VersionDetails, VersionNum, VersionRef,
@@ -136,6 +137,13 @@ impl OcflRepo {
         info!("Closing OCFL repository");
         self.closed.store(true, Ordering::Release);
         self.store.close();
+    }
+
+    /// Validates the specified object and returns any problems found. Err will only be returned
+    /// if a non-validation problem was encountered.
+    pub fn validate_object(&self, object_id: &str, fixity_check: bool) -> Result<ValidationResult> {
+        self.ensure_open()?;
+        self.store.validate_object(object_id, fixity_check)
     }
 
     /// Returns an iterator that iterate through all of the objects in an OCFL repository.

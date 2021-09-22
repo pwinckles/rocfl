@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::ocfl::error::Result;
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::store::layout::LayoutExtensionName;
+use crate::ocfl::validate::ValidationResult;
 use crate::ocfl::{ContentPath, LogicalPath, VersionRef};
 
 pub mod fs;
@@ -65,6 +66,10 @@ pub trait OcflStore {
 
     /// Returns a list of all of the extension names that are associated with the object
     fn list_object_extensions(&self, object_id: &str) -> Result<Vec<String>>;
+
+    /// Validates the specified object and returns any problems found. Err will only be returned
+    /// if a non-validation problem was encountered.
+    fn validate_object(&self, object_id: &str, fixity_check: bool) -> Result<ValidationResult>;
 
     /// Instructs the store to gracefully stop any in-flight work and not accept any additional
     /// requests.

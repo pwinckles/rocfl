@@ -2,11 +2,11 @@ use std::convert::TryInto;
 use std::io;
 use std::sync::atomic::AtomicBool;
 
-use log::info;
+use log::{error, info, warn};
 
 use crate::cmd::opts::{
     CatCmd, CommitCmd, ConfigCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, Field, InitCmd,
-    ListCmd, MoveCmd, NewCmd, PurgeCmd, RemoveCmd, ResetCmd, ShowCmd, StatusCmd,
+    ListCmd, MoveCmd, NewCmd, PurgeCmd, RemoveCmd, ResetCmd, ShowCmd, StatusCmd, ValidateCmd,
 };
 use crate::cmd::{print, println, Cmd, GlobalArgs};
 use crate::config::Config;
@@ -238,6 +238,77 @@ impl Cmd for PurgeCmd {
         }
 
         repo.purge_object(&self.object_id)
+    }
+}
+
+impl Cmd for ValidateCmd {
+    fn exec(
+        &self,
+        repo: &OcflRepo,
+        _args: GlobalArgs,
+        _config: &Config,
+        _terminate: &AtomicBool,
+    ) -> Result<()> {
+        if let Some(object_id) = &self.object_id {
+            let result = repo.validate_object(object_id, self.no_fixity_check)?;
+
+            fn format_version(version: &Option<String>) -> String {
+                match version {
+                    Some(version) => format!(" ({})", version),
+                    None => "".to_string(),
+                }
+            }
+
+            // TODO use error/warn?
+            if result.has_errors() || result.has_warnings() {
+                if !result.has_errors() {
+                    warn!("{} has {} warnings", object_id, result.warnings.len());
+                } else {
+                    error!(
+                        "{} has {} errors and {} warnings",
+                        object_id,
+                        result.errors.len(),
+                        result.warnings.len()
+                    );
+                }
+
+                if result.has_errors() {
+                    error!("Errors:")
+                }
+                result.errors.iter().enumerate().for_each(|(i, error)| {
+                    // TODO this should probably have Display
+                    error!(
+                        "  {}. [{}]{} {}",
+                        i,
+                        error.code,
+                        format_version(&error.version_num),
+                        error.text
+                    )
+                });
+
+                if result.has_warnings() {
+                    warn!("Warnings:")
+                }
+                result.warnings.iter().enumerate().for_each(|(i, warning)| {
+                    // TODO this should probably have Display
+                    warn!(
+                        "  {}. [{}]{} {}",
+                        i,
+                        warning.code,
+                        format_version(&warning.version_num),
+                        warning.text
+                    )
+                });
+
+                // TODO different return code?
+            } else {
+                info!("{} is valid", object_id);
+            }
+        } else {
+            todo!()
+        }
+
+        Ok(())
     }
 }
 

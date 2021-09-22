@@ -2,20 +2,26 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::str::FromStr;
 
+use log::info;
+
 use strum_macros::Display as EnumDisplay;
 
 use crate::ocfl::consts::{
     INVENTORY_FILE, INVENTORY_SIDECAR_PREFIX, INVENTORY_TYPE, OBJECT_NAMASTE_CONTENTS_1_0,
     OBJECT_NAMASTE_FILE,
 };
-use crate::ocfl::digest::{MultiDigestWriter, HexDigest};
+use crate::ocfl::digest::{HexDigest, MultiDigestWriter};
 use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::validate::store::{Listing, Storage};
 use crate::ocfl::{paths, DigestAlgorithm, VersionNum};
+use regex::Regex;
+use once_cell::sync::Lazy;
 
 mod serde;
-mod store;
+pub mod store;
+
+static SIDECAR_SPLIT: Lazy<Regex> = Lazy::new(|| Regex::new(r#"[\t ]+"#).unwrap());
 
 // TODO
 pub struct Validator<S: Storage> {
@@ -43,6 +49,12 @@ pub struct ValidationResult {
 }
 
 // TODO move
+
+impl Default for ValidationResult {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ValidationResult {
     pub fn new() -> Self {
@@ -281,6 +293,10 @@ pub enum WarnCode {
 
 // TODO
 impl<S: Storage> Validator<S> {
+    pub fn new(storage: S) -> Self {
+        Self { storage }
+    }
+
     pub fn validate_object(
         &self,
         object_id: &str,
@@ -289,9 +305,12 @@ impl<S: Storage> Validator<S> {
     ) -> Result<ValidationResult> {
         let mut result = ValidationResult::with_id(object_id);
 
+        let version = "root";
         // TODO error handling
         let root_listing = self.storage.list(object_root, false)?;
 
+        info!("{:?}", root_listing);
+        // TODO for some reason this is not matching...
         if root_listing.contains(&Listing::File(Cow::Borrowed(OBJECT_NAMASTE_FILE))) {
             // TODO this should also determine what the version is
             self.validate_object_namaste(object_root, &mut result);
@@ -302,38 +321,83 @@ impl<S: Storage> Validator<S> {
             );
         }
 
-        let mut algorithms = Vec::new();
+        if root_listing.contains(&Listing::File(Cow::Borrowed(INVENTORY_FILE))) {
+            let mut algorithms = Vec::new();
 
-        for entry in &root_listing {
-            if let Listing::File(filename) = entry {
-                if let Some(algorithm) = filename.strip_prefix(INVENTORY_SIDECAR_PREFIX) {
-                    if let Ok(algorithm) = DigestAlgorithm::from_str(algorithm) {
-                        algorithms.push(algorithm);
+            for entry in &root_listing {
+                if let Listing::File(filename) = entry {
+                    if let Some(algorithm) = filename.strip_prefix(INVENTORY_SIDECAR_PREFIX) {
+                        if let Ok(algorithm) = DigestAlgorithm::from_str(algorithm) {
+                            algorithms.push(algorithm);
+                        }
                     }
                 }
             }
+
+            let (inventory, digest) = self.validate_inventory(
+                &paths::join(object_root, INVENTORY_FILE),
+                None,
+                &algorithms,
+                &mut result,
+            )?;
+
+            if let Some(inventory) = &inventory {
+                if object_id != inventory.id {
+                    result.error_version(
+                        version.to_string(),
+                        ErrorCode::E083,
+                        format!(
+                            "Inventory field 'id' should be '{}'. Found: {}",
+                            object_id, inventory.id
+                        ),
+                    );
+                }
+            }
+
+            let algorithm = match &inventory {
+                Some(inventory) => Some(inventory.digest_algorithm),
+                None => {
+                    if algorithms.len() == 1 {
+                        Some(algorithms[0])
+                    } else {
+                        None
+                    }
+                }
+            };
+
+            if let Some(algorithm) = algorithm {
+                let sidecar_file = format!("{}.{}", INVENTORY_FILE, algorithm);
+                if root_listing.contains(&Listing::File(Cow::Borrowed(&sidecar_file))) {
+                    if let Some(digest) = digest {
+                        self.validate_sidecar(
+                            &paths::join(object_root, &sidecar_file),
+                            version,
+                            &digest,
+                            &mut result,
+                        )?;
+                    }
+                } else {
+                    result.error_version(
+                        version.to_string(),
+                        ErrorCode::E058,
+                        format!("Inventory sidecar {} does not exist", sidecar_file),
+                    );
+                }
+            }
+        } else {
+            result.error_version(
+                version.to_string(),
+                ErrorCode::E063,
+                "Inventory does not exist".to_string(),
+            );
         }
 
-        let (inventory, digest) = self.validate_inventory(
-            &paths::join(object_root, INVENTORY_FILE),
-            None,
-            &algorithms,
-            &mut result,
-        );
-
-        // TODO validate sidecar
-
-        // TODO id validation
-        // TODO E083 when root with expected id
-        // TODO E037 when comparing to root https://github.com/OCFL/spec/issues/542
-
-        // TODO validate root inventory
-        // TODO validate sidecar
         // TODO validate root contents
 
+        // TODO E037 id when comparing to root https://github.com/OCFL/spec/issues/542
         // TODO don't forget to compare contentDirectory
 
-        todo!()
+        Ok(result)
     }
 
     pub fn validate_repo(&self, fixity_check: bool) {
@@ -380,7 +444,7 @@ impl<S: Storage> Validator<S> {
         version: Option<VersionNum>,
         algorithms: &[DigestAlgorithm],
         result: &mut ValidationResult,
-    ) -> (Option<Inventory>, Option<HexDigest>) {
+    ) -> Result<(Option<Inventory>, Option<HexDigest>)> {
         let mut inventory = None;
         let mut digest = None;
 
@@ -393,66 +457,100 @@ impl<S: Storage> Validator<S> {
             }
         }
 
-        if self.storage.read(inventory_path, &mut writer).is_ok() {
-            match serde_json::from_slice::<ParseResult>(writer.inner()) {
-                Ok(parse_result) => match parse_result {
-                    ParseResult::Ok(parse_result, inv) => {
-                        // TODO this is only valid for 1.0
-                        if inv.type_declaration != INVENTORY_TYPE {
+        self.storage.read(inventory_path, &mut writer)?;
+
+        match serde_json::from_slice::<ParseResult>(writer.inner()) {
+            Ok(parse_result) => match parse_result {
+                ParseResult::Ok(parse_result, inv) => {
+                    // TODO this is only valid for 1.0
+                    if inv.type_declaration != INVENTORY_TYPE {
+                        parse_result.error(
+                            ErrorCode::E038,
+                            format!(
+                                "Inventory field 'type' must equal '{}'. Found: {}",
+                                INVENTORY_TYPE, inv.type_declaration
+                            ),
+                        );
+                    }
+
+                    if let Some(version) = version {
+                        if inv.head != version {
+                            // TODO suspect code
                             parse_result.error(
-                                ErrorCode::E038,
+                                ErrorCode::E040,
                                 format!(
-                                    "Inventory field 'type' must equal '{}'. Found: {}",
-                                    INVENTORY_TYPE, inv.type_declaration
+                                    "Inventory field 'head' must equal '{}'. Found: {}",
+                                    version, inv.head
                                 ),
                             );
                         }
-
-                        if let Some(version) = version {
-                            if inv.head != version {
-                                // TODO suspect code
-                                parse_result.error(
-                                    ErrorCode::E040,
-                                    format!(
-                                        "Inventory field 'head' must equal '{}'. Found: {}",
-                                        version, inv.head
-                                    ),
-                                );
-                            }
-                        }
-
-                        let has_errors = parse_result.has_errors();
-
-                        result.add_parse_result(&version_str(version), parse_result);
-
-                        digest = writer.finalize_hex().remove(&inv.digest_algorithm);
-                        if !has_errors {
-                            inventory = Some(inv);
-                        }
                     }
-                    ParseResult::Error(parse_result) => {
-                        result.add_parse_result(&version_str(version), parse_result)
+
+                    let has_errors = parse_result.has_errors();
+
+                    result.add_parse_result(&version_str(version), parse_result);
+
+                    digest = writer.finalize_hex().remove(&inv.digest_algorithm);
+                    if !has_errors {
+                        inventory = Some(inv);
                     }
-                },
-                Err(_) => {
-                    if let Some(version) = version {
-                        result.error(
-                            ErrorCode::E033,
-                            format!("Version {} inventory could not be parsed", version),
-                        );
-                    } else {
-                        result.error(
-                            ErrorCode::E033,
-                            "Root inventory could not be parsed".to_string(),
+                }
+                ParseResult::Error(parse_result) => {
+                    result.add_parse_result(&version_str(version), parse_result)
+                }
+            },
+            Err(_) => {
+                result.error_version(
+                    version_str(version),
+                    ErrorCode::E033,
+                    "Inventory could not be parsed".to_string(),
+                );
+            }
+        }
+
+        Ok((inventory, digest))
+    }
+
+    fn validate_sidecar(
+        &self,
+        sidecar_path: &str,
+        version: &str,
+        digest: &HexDigest,
+        result: &mut ValidationResult,
+    ) -> Result<()> {
+        let mut bytes = Vec::new();
+        self.storage.read(sidecar_path, &mut bytes)?;
+        match String::from_utf8(bytes) {
+            Ok(contents) => {
+                let parts: Vec<&str> = SIDECAR_SPLIT.split(&contents).collect();
+                if parts.len() != 2 || parts[1].trim_end() != INVENTORY_FILE {
+                    result.error_version(
+                        version.to_string(),
+                        ErrorCode::E061,
+                        "Inventory sidecar is invalid".to_string(),
+                    )
+                } else {
+                    let expected_digest = HexDigest::from(parts[0]);
+                    if expected_digest != *digest {
+                        result.error_version(
+                            version.to_string(),
+                            ErrorCode::E060,
+                            format!(
+                                "Inventory does not match expected digest. Expected: {}; Found: {}",
+                                expected_digest, digest
+                            ),
                         );
                     }
                 }
             }
-        } else if version.is_none() {
-            result.error(ErrorCode::E063, "Root inventory does not exist".to_string());
+            Err(_) => result.error_version(
+                version.to_string(),
+                ErrorCode::E061,
+                "Inventory sidecar is invalid".to_string(),
+            ),
         }
 
-        (inventory, digest)
+        Ok(())
     }
 }
 
@@ -495,7 +593,7 @@ pub fn validate_digest_algorithm(digest_algorithm: DigestAlgorithm) -> Result<()
     if digest_algorithm != DigestAlgorithm::Sha512 && digest_algorithm != DigestAlgorithm::Sha256 {
         return Err(RocflError::InvalidValue(format!(
             "The inventory digest algorithm must be sha512 or sha256. Found: {}",
-            digest_algorithm.to_string()
+            digest_algorithm
         )));
     }
     Ok(())
