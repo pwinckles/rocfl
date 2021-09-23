@@ -9,6 +9,7 @@ pub const INVENTORY_SIDECAR_PREFIX: &str = "inventory.json.";
 pub const OCFL_LAYOUT_FILE: &str = "ocfl_layout.json";
 pub const OCFL_SPEC_FILE: &str = "ocfl_1.0.txt";
 pub const EXTENSIONS_DIR: &str = "extensions";
+pub const LOGS_DIR: &str = "logs";
 pub const EXTENSIONS_CONFIG_FILE: &str = "config.json";
 pub const OCFL_VERSION: &str = "ocfl_1.0";
 pub const OCFL_OBJECT_VERSION: &str = "ocfl_object_1.0";

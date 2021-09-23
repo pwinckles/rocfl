@@ -1,20 +1,19 @@
-use std::borrow::Cow;
 use std::cell::RefCell;
 use std::str::FromStr;
 
+use once_cell::sync::Lazy;
+use regex::Regex;
 use strum_macros::Display as EnumDisplay;
 
 use crate::ocfl::consts::{
-    INVENTORY_FILE, INVENTORY_SIDECAR_PREFIX, INVENTORY_TYPE, OBJECT_NAMASTE_CONTENTS_1_0,
-    OBJECT_NAMASTE_FILE,
+    EXTENSIONS_DIR, INVENTORY_FILE, INVENTORY_SIDECAR_PREFIX, INVENTORY_TYPE, LOGS_DIR,
+    OBJECT_NAMASTE_CONTENTS_1_0, OBJECT_NAMASTE_FILE,
 };
 use crate::ocfl::digest::{HexDigest, MultiDigestWriter};
 use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::validate::store::{Listing, Storage};
 use crate::ocfl::{paths, DigestAlgorithm, VersionNum};
-use regex::Regex;
-use once_cell::sync::Lazy;
 
 mod serde;
 pub mod store;
@@ -307,7 +306,7 @@ impl<S: Storage> Validator<S> {
         // TODO error handling
         let root_listing = self.storage.list(object_root, false)?;
 
-        if root_listing.contains(&Listing::File(Cow::Borrowed(OBJECT_NAMASTE_FILE))) {
+        if root_listing.contains(&Listing::file(OBJECT_NAMASTE_FILE)) {
             // TODO this should also determine what the version is
             self.validate_object_namaste(object_root, &mut result);
         } else {
@@ -317,78 +316,45 @@ impl<S: Storage> Validator<S> {
             );
         }
 
-        if root_listing.contains(&Listing::File(Cow::Borrowed(INVENTORY_FILE))) {
-            let mut algorithms = Vec::new();
+        let (inventory, sidecar_file) = self.validate_inventory_and_sidecar(
+            object_id,
+            version,
+            object_root,
+            &root_listing,
+            &mut result,
+        )?;
 
-            for entry in &root_listing {
-                if let Listing::File(filename) = entry {
-                    if let Some(algorithm) = filename.strip_prefix(INVENTORY_SIDECAR_PREFIX) {
-                        if let Ok(algorithm) = DigestAlgorithm::from_str(algorithm) {
-                            algorithms.push(algorithm);
-                        }
-                    }
-                }
-            }
+        let mut expected_files = match &inventory {
+            Some(inventory) => Vec::with_capacity(inventory.versions.len()),
+            None => Vec::with_capacity(5),
+        };
 
-            let (inventory, digest) = self.validate_inventory(
-                &paths::join(object_root, INVENTORY_FILE),
-                None,
-                &algorithms,
-                &mut result,
-            )?;
+        expected_files.push(Listing::file(OBJECT_NAMASTE_FILE));
+        expected_files.push(Listing::file(INVENTORY_FILE));
+        expected_files.push(Listing::dir(LOGS_DIR));
+        expected_files.push(Listing::dir(EXTENSIONS_DIR));
 
-            if let Some(inventory) = &inventory {
-                if object_id != inventory.id {
-                    result.error_version(
-                        version.to_string(),
-                        ErrorCode::E083,
-                        format!(
-                            "Inventory field 'id' should be '{}'. Found: {}",
-                            object_id, inventory.id
-                        ),
-                    );
-                }
-            }
-
-            let algorithm = match &inventory {
-                Some(inventory) => Some(inventory.digest_algorithm),
-                None => {
-                    if algorithms.len() == 1 {
-                        Some(algorithms[0])
-                    } else {
-                        None
-                    }
-                }
-            };
-
-            if let Some(algorithm) = algorithm {
-                let sidecar_file = format!("{}.{}", INVENTORY_FILE, algorithm);
-                if root_listing.contains(&Listing::File(Cow::Borrowed(&sidecar_file))) {
-                    if let Some(digest) = digest {
-                        self.validate_sidecar(
-                            &paths::join(object_root, &sidecar_file),
-                            version,
-                            &digest,
-                            &mut result,
-                        )?;
-                    }
-                } else {
-                    result.error_version(
-                        version.to_string(),
-                        ErrorCode::E058,
-                        format!("Inventory sidecar {} does not exist", sidecar_file),
-                    );
-                }
-            }
-        } else {
-            result.error_version(
-                version.to_string(),
-                ErrorCode::E063,
-                "Inventory does not exist".to_string(),
-            );
+        if let Some(sidecar_file) = &sidecar_file {
+            expected_files.push(Listing::file(sidecar_file))
         }
 
-        // TODO validate root contents
+        if let Some(inventory) = &inventory {
+            inventory
+                .versions
+                .keys()
+                .for_each(|v| expected_files.push(Listing::dir_owned(v.to_string())));
+        }
+
+        // TODO verify this is efficient
+        for entry in &root_listing {
+            if !expected_files.contains(entry) {
+                result.error_version(
+                    version.to_string(),
+                    ErrorCode::E001,
+                    format!("Unexpected file in object root: {}", entry.path()),
+                );
+            }
+        }
 
         // TODO E037 id when comparing to root https://github.com/OCFL/spec/issues/542
         // TODO don't forget to compare contentDirectory
@@ -432,6 +398,96 @@ impl<S: Storage> Validator<S> {
                 "Object version declaration does not exist".to_string(),
             );
         }
+    }
+
+    // TODO this is currently specific to root
+    fn validate_inventory_and_sidecar(
+        &self,
+        object_id: &str,
+        version: &str,
+        path: &str,
+        files: &[Listing],
+        result: &mut ValidationResult,
+    ) -> Result<(Option<Inventory>, Option<String>)> {
+        let mut inventory = None;
+        let mut sidecar_file = None;
+
+        if files.contains(&Listing::file(INVENTORY_FILE)) {
+            let mut algorithms = Vec::new();
+
+            for entry in files {
+                if let Listing::File(filename) = entry {
+                    if let Some(algorithm) = filename.strip_prefix(INVENTORY_SIDECAR_PREFIX) {
+                        if let Ok(algorithm) = DigestAlgorithm::from_str(algorithm) {
+                            algorithms.push(algorithm);
+                        }
+                    }
+                }
+            }
+
+            let (inv, digest) = self.validate_inventory(
+                &paths::join(path, INVENTORY_FILE),
+                // TODO root
+                None,
+                &algorithms,
+                result,
+            )?;
+            inventory = inv;
+
+            // TODO root
+            if let Some(inventory) = &inventory {
+                if object_id != inventory.id {
+                    result.error_version(
+                        version.to_string(),
+                        ErrorCode::E083,
+                        format!(
+                            "Inventory field 'id' should be '{}'. Found: {}",
+                            object_id, inventory.id
+                        ),
+                    );
+                }
+            }
+
+            let algorithm = match &inventory {
+                Some(inventory) => Some(inventory.digest_algorithm),
+                None => {
+                    if algorithms.len() == 1 {
+                        Some(algorithms[0])
+                    } else {
+                        None
+                    }
+                }
+            };
+
+            if let Some(algorithm) = algorithm {
+                let sidecar = format!("{}.{}", INVENTORY_FILE, algorithm);
+                if files.contains(&Listing::file(&sidecar)) {
+                    if let Some(digest) = digest {
+                        self.validate_sidecar(
+                            &paths::join(path, &sidecar),
+                            version,
+                            &digest,
+                            result,
+                        )?;
+                    }
+                } else {
+                    result.error_version(
+                        version.to_string(),
+                        ErrorCode::E058,
+                        format!("Inventory sidecar {} does not exist", sidecar),
+                    );
+                }
+                sidecar_file = Some(sidecar);
+            }
+        } else {
+            result.error_version(
+                version.to_string(),
+                ErrorCode::E063,
+                "Inventory does not exist".to_string(),
+            );
+        }
+
+        Ok((inventory, sidecar_file))
     }
 
     fn validate_inventory(
@@ -609,5 +665,4 @@ pub fn validate_content_dir(content_dir: &str) -> Result<()> {
 mod tests {
 
     use crate::ocfl::RocflError;
-
 }

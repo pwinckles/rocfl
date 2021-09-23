@@ -16,6 +16,7 @@ pub trait Storage {
 pub enum Listing<'a> {
     File(Cow<'a, str>),
     Directory(Cow<'a, str>),
+    Other(Cow<'a, str>),
 }
 
 // TODO move to store/fs
@@ -67,13 +68,38 @@ pub mod fs {
                 } else if file_type.is_dir() {
                     listings.push(Listing::Directory(Cow::Owned(filename)));
                 } else {
-                    // TODO figure out what to do with this.
+                    listings.push(Listing::Other(Cow::Owned(filename)))
                 }
             }
 
             // TODO recursive
 
             Ok(listings)
+        }
+    }
+}
+
+impl<'a> Listing<'a> {
+    pub fn file(path: &str) -> Listing {
+        Listing::File(Cow::Borrowed(path))
+    }
+
+    pub fn dir(path: &str) -> Listing {
+        Listing::Directory(Cow::Borrowed(path))
+    }
+    pub fn file_owned(path: String) -> Listing<'a> {
+        Listing::File(Cow::Owned(path))
+    }
+
+    pub fn dir_owned(path: String) -> Listing<'a> {
+        Listing::Directory(Cow::Owned(path))
+    }
+
+    pub fn path(&self) -> &str {
+        match self {
+            Listing::File(path) => path,
+            Listing::Directory(path) => path,
+            Listing::Other(path) => path,
         }
     }
 }

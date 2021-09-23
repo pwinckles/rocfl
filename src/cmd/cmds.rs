@@ -263,7 +263,11 @@ impl Cmd for ValidateCmd {
             if result.has_errors() || result.has_warnings() {
                 // TODO pluralization
                 if !result.has_errors() {
-                    println(format!("Object {} has {} warnings", object_id, result.warnings.len()));
+                    println(format!(
+                        "Object {} has {} warnings",
+                        object_id,
+                        result.warnings.len()
+                    ));
                 } else {
                     println(format!(
                         "Object {} has {} errors and {} warnings",
@@ -280,7 +284,7 @@ impl Cmd for ValidateCmd {
                     // TODO this should probably have Display
                     println(format!(
                         "  {}. [{}]{} {}",
-                        i+1,
+                        i + 1,
                         error.code,
                         format_version(&error.version_num),
                         error.text
@@ -294,7 +298,7 @@ impl Cmd for ValidateCmd {
                     // TODO this should probably have Display
                     println(format!(
                         "  {}. [{}]{} {}",
-                        i+1,
+                        i + 1,
                         warning.code,
                         format_version(&warning.version_num),
                         warning.text
