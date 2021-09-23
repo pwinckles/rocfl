@@ -2,7 +2,7 @@ use std::convert::TryInto;
 use std::io;
 use std::sync::atomic::AtomicBool;
 
-use log::{error, info, warn};
+use log::info;
 
 use crate::cmd::opts::{
     CatCmd, CommitCmd, ConfigCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, Field, InitCmd,
@@ -228,11 +228,11 @@ impl Cmd for PurgeCmd {
             print(format!(
                 "Permanently delete '{}'? This cannot be undone. [y/N]: ",
                 self.object_id
-            ))?;
+            ));
             let mut response = String::new();
             io::stdin().read_line(&mut response)?;
             if !response.trim().eq_ignore_ascii_case("y") {
-                println("Aborted")?;
+                println("Aborted");
                 return Ok(());
             }
         }
@@ -261,48 +261,50 @@ impl Cmd for ValidateCmd {
 
             // TODO use error/warn?
             if result.has_errors() || result.has_warnings() {
+                // TODO pluralization
                 if !result.has_errors() {
-                    warn!("{} has {} warnings", object_id, result.warnings.len());
+                    println(format!("Object {} has {} warnings", object_id, result.warnings.len()));
                 } else {
-                    error!(
-                        "{} has {} errors and {} warnings",
+                    println(format!(
+                        "Object {} has {} errors and {} warnings",
                         object_id,
                         result.errors.len(),
                         result.warnings.len()
-                    );
+                    ));
                 }
 
                 if result.has_errors() {
-                    error!("Errors:")
+                    println("Errors:");
                 }
                 result.errors.iter().enumerate().for_each(|(i, error)| {
                     // TODO this should probably have Display
-                    error!(
+                    println(format!(
                         "  {}. [{}]{} {}",
-                        i,
+                        i+1,
                         error.code,
                         format_version(&error.version_num),
                         error.text
-                    )
+                    ));
                 });
 
                 if result.has_warnings() {
-                    warn!("Warnings:")
+                    println("Warnings:");
                 }
                 result.warnings.iter().enumerate().for_each(|(i, warning)| {
                     // TODO this should probably have Display
-                    warn!(
+                    println(format!(
                         "  {}. [{}]{} {}",
-                        i,
+                        i+1,
                         warning.code,
                         format_version(&warning.version_num),
                         warning.text
-                    )
+                    ));
                 });
 
                 // TODO different return code?
             } else {
-                info!("{} is valid", object_id);
+                // TODO I think there's a clever way around the string formatting issue in the book
+                println(format!("Object {} is valid", object_id));
             }
         } else {
             todo!()

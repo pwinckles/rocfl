@@ -1,5 +1,5 @@
 use std::fmt::Display;
-use std::io::{self, ErrorKind, Read, Write};
+use std::io::{self, Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -96,29 +96,12 @@ impl GlobalArgs {
     }
 }
 
-fn println(value: impl Display) -> Result<()> {
-    if let Err(e) = writeln!(io::stdout(), "{}", value) {
-        match e.kind() {
-            // This happens if the app is killed while writing
-            ErrorKind::BrokenPipe => Ok(()),
-            _ => Err(e.into()),
-        }
-    } else {
-        Ok(())
-    }
+fn println(value: impl Display) {
+    let _ = writeln!(io::stdout(), "{}", value);
 }
 
-fn print(value: impl Display) -> Result<()> {
-    if let Err(e) = write!(io::stdout(), "{}", value) {
-        match e.kind() {
-            // This happens if the app is killed while writing
-            ErrorKind::BrokenPipe => Ok(()),
-            _ => Err(e.into()),
-        }
-    } else {
-        io::stdout().flush()?;
-        Ok(())
-    }
+fn print(value: impl Display) {
+    let _ = write!(io::stdout(), "{}", value);
 }
 
 pub fn init_repo(cmd: &InitCmd, args: &RocflArgs, config: &Config) -> Result<()> {
@@ -145,7 +128,7 @@ pub fn init_repo(cmd: &InitCmd, args: &RocflArgs, config: &Config) -> Result<()>
         println(format!(
             "Initialized OCFL repository with layout {}",
             cmd.layout
-        ))?;
+        ));
     }
 
     Ok(())

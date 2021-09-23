@@ -2,8 +2,6 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::str::FromStr;
 
-use log::info;
-
 use strum_macros::Display as EnumDisplay;
 
 use crate::ocfl::consts::{
@@ -309,8 +307,6 @@ impl<S: Storage> Validator<S> {
         // TODO error handling
         let root_listing = self.storage.list(object_root, false)?;
 
-        info!("{:?}", root_listing);
-        // TODO for some reason this is not matching...
         if root_listing.contains(&Listing::File(Cow::Borrowed(OBJECT_NAMASTE_FILE))) {
             // TODO this should also determine what the version is
             self.validate_object_namaste(object_root, &mut result);
@@ -409,7 +405,7 @@ impl<S: Storage> Validator<S> {
         // TODO only valid for 1.0
         let path = paths::join(object_root, OBJECT_NAMASTE_FILE);
         let mut bytes: Vec<u8> = Vec::new();
-        if self.storage.read(&path, &mut bytes).is_err() {
+        if self.storage.read(&path, &mut bytes).is_ok() {
             match String::from_utf8(bytes) {
                 Ok(contents) => {
                     // TODO only valid for 1.0
@@ -611,7 +607,7 @@ pub fn validate_content_dir(content_dir: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
 
     use crate::ocfl::RocflError;
+
 }
