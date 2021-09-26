@@ -85,23 +85,20 @@ impl ValidationResult {
             }));
     }
 
-    // TODO perhaps get rid of this and always require a version
-    pub fn error(&mut self, code: ErrorCode, message: String) {
-        self.errors.push(ValidationError::new(code, message));
+    pub fn error(&mut self, version_num: Option<VersionNum>, code: ErrorCode, message: String) {
+        self.errors.push(ValidationError::with_version(
+            version_str(version_num),
+            code,
+            message,
+        ));
     }
 
-    pub fn warn(&mut self, code: WarnCode, message: String) {
-        self.warnings.push(ValidationWarning::new(code, message));
-    }
-
-    pub fn error_version(&mut self, version_num: String, code: ErrorCode, message: String) {
-        self.errors
-            .push(ValidationError::with_version(version_num, code, message));
-    }
-
-    pub fn warn_version(&mut self, version_num: String, code: WarnCode, message: String) {
-        self.warnings
-            .push(ValidationWarning::with_version(version_num, code, message));
+    pub fn warning(&mut self, version_num: Option<VersionNum>, code: WarnCode, message: String) {
+        self.warnings.push(ValidationWarning::with_version(
+            version_str(version_num),
+            code,
+            message,
+        ));
     }
 
     pub fn has_errors(&self) -> bool {
@@ -313,7 +310,7 @@ impl<S: Storage> Validator<S> {
 
         let (inventory, sidecar_file, digest) = self.validate_inventory_and_sidecar(
             object_id,
-            ROOT,
+            None,
             object_root,
             &root_files,
             &mut result,
@@ -330,9 +327,7 @@ impl<S: Storage> Validator<S> {
                     if num == &inventory.head {
                         self.validate_head_version(&version_dir, &inventory, &digest, &mut result)?;
                     } else {
-                        // TODO verify prior versions
-                        // TODO E037 id when comparing to root https://github.com/OCFL/spec/issues/542
-                        // TODO don't forget to compare contentDirectory
+                        self.validate_version(*num, &version_dir, &inventory, &mut result)?;
                     }
                 }
 
@@ -345,6 +340,86 @@ impl<S: Storage> Validator<S> {
 
     pub fn validate_repo(&self, fixity_check: bool) {
         todo!()
+    }
+
+    fn validate_version(
+        &self,
+        version_num: VersionNum,
+        version_dir: &str,
+        root_inventory: &Inventory,
+        result: &mut ValidationResult,
+    ) -> Result<()> {
+        let files = self.storage.list(version_dir, false)?;
+
+        let mut digest_algorithm = root_inventory.digest_algorithm;
+
+        if files.contains(&Listing::file(INVENTORY_FILE)) {
+            let (inventory, _, _) = self.validate_inventory_and_sidecar(
+                &root_inventory.id,
+                Some(version_num),
+                version_dir,
+                &files,
+                result,
+            )?;
+
+            if let Some(inventory) = inventory {
+                digest_algorithm = inventory.digest_algorithm;
+
+                if inventory.id != root_inventory.id {
+                    result.error(
+                        Some(version_num),
+                        ErrorCode::E037,
+                        format!(
+                            "Inventory field 'id' is inconsistent. Expected: {}; Found: {}",
+                            root_inventory.id, inventory.id
+                        ),
+                    );
+                }
+                if inventory.defaulted_content_dir() != root_inventory.defaulted_content_dir() {
+                    result.error(
+                        Some(version_num),
+                        ErrorCode::E019,
+                        format!(
+                            "Inventory field 'contentDirectory' is inconsistent. Expected: {}; Found: {}",
+                            root_inventory.defaulted_content_dir(),
+                            inventory.defaulted_content_dir()
+                        ),
+                    );
+                }
+                if inventory.head.to_string() != version_num.to_string() {
+                    result.error(
+                        Some(version_num),
+                        // TODO suspect code
+                        ErrorCode::E040,
+                        format!(
+                            "Inventory field 'head' must equal '{}'. Found: {}",
+                            version_num, inventory.head
+                        ),
+                    );
+                }
+
+                // TODO validate invs are consistent
+            }
+        } else {
+            result.warning(
+                Some(version_num),
+                WarnCode::W010,
+                "Inventory file does not exist".to_string(),
+            );
+        }
+
+        self.validate_version_contents(
+            version_dir,
+            &files,
+            version_num,
+            root_inventory.defaulted_content_dir(),
+            digest_algorithm,
+            result,
+        )?;
+
+        // TODO validate content dir
+
+        Ok(())
     }
 
     fn validate_head_version(
@@ -363,8 +438,8 @@ impl<S: Storage> Validator<S> {
 
             let digest = digester.finalize_hex();
             if digest != *root_digest {
-                result.error_version(
-                    inventory.head.to_string(),
+                result.error(
+                    Some(inventory.head),
                     ErrorCode::E064,
                     "Inventory file must be identical to the root inventory".to_string(),
                 );
@@ -374,23 +449,32 @@ impl<S: Storage> Validator<S> {
 
             if files.contains(&Listing::file(&sidecar_name)) {
                 let sidecar_path = paths::join(version_dir, &sidecar_name);
-                self.validate_sidecar(&sidecar_path, &inventory.head.to_string(), &digest, result)?;
+                self.validate_sidecar(&sidecar_path, Some(inventory.head), &digest, result)?;
             } else {
-                result.error_version(
-                    inventory.head.to_string(),
+                result.error(
+                    Some(inventory.head),
                     ErrorCode::E058,
                     format!("Inventory sidecar {} does not exist", sidecar_name),
                 );
             }
         } else {
-            result.warn_version(
-                inventory.head.to_string(),
+            result.warning(
+                Some(inventory.head),
                 WarnCode::W010,
                 "Inventory file does not exist".to_string(),
             );
         }
 
-        self.validate_version_contents(version_dir, &files, inventory, result)?;
+        self.validate_version_contents(
+            version_dir,
+            &files,
+            inventory.head,
+            inventory.defaulted_content_dir(),
+            inventory.digest_algorithm,
+            result,
+        )?;
+
+        // TODO validate content dir
 
         Ok(())
     }
@@ -399,18 +483,19 @@ impl<S: Storage> Validator<S> {
         &self,
         version_dir: &str,
         files: &[Listing],
-        inventory: &Inventory,
+        version_num: VersionNum,
+        content_dir: &str,
+        digest_algorithm: DigestAlgorithm,
         result: &mut ValidationResult,
     ) -> Result<()> {
-        let content_dir = inventory.defaulted_content_dir();
         if files.contains(&Listing::dir(content_dir))
             && !self
                 .storage
                 .list(&paths::join(version_dir, content_dir), false)?
                 .is_empty()
         {
-            result.warn_version(
-                inventory.head.to_string(),
+            result.warning(
+                Some(version_num),
                 WarnCode::W003,
                 "Content directory exists but is empty".to_string(),
             );
@@ -418,7 +503,7 @@ impl<S: Storage> Validator<S> {
 
         let ignore = [
             Listing::file(INVENTORY_FILE),
-            Listing::file_owned(paths::sidecar_name(inventory.digest_algorithm)),
+            Listing::file_owned(paths::sidecar_name(digest_algorithm)),
             Listing::file(content_dir),
         ];
 
@@ -429,15 +514,15 @@ impl<S: Storage> Validator<S> {
 
             match file {
                 Listing::File(name) | Listing::Other(name) => {
-                    result.error_version(
-                        inventory.head.to_string(),
+                    result.error(
+                        Some(version_num),
                         ErrorCode::E015,
                         format!("Version directory contains unexpected file: {}", name),
                     );
                 }
                 Listing::Directory(name) => {
-                    result.warn_version(
-                        inventory.head.to_string(),
+                    result.warning(
+                        Some(version_num),
                         WarnCode::W002,
                         format!("Version directory contains unexpected directory: {}", name),
                     );
@@ -484,8 +569,8 @@ impl<S: Storage> Validator<S> {
             };
 
             if !found && !expected_files.contains(entry) {
-                result.error_version(
-                    ROOT.to_string(),
+                result.error(
+                    None,
                     ErrorCode::E001,
                     format!("Unexpected file in object root: {}", entry.path()),
                 );
@@ -494,8 +579,8 @@ impl<S: Storage> Validator<S> {
 
         if let Some(expected_versions) = expected_versions {
             expected_versions.iter().for_each(|v| {
-                result.error_version(
-                    ROOT.to_string(),
+                result.error(
+                    None,
                     ErrorCode::E010,
                     format!(
                         "Object root does not contain version directory '{}'",
@@ -523,6 +608,7 @@ impl<S: Storage> Validator<S> {
                         // TODO only valid for 1.0
                         if contents != OBJECT_NAMASTE_CONTENTS_1_0 {
                             result.error(
+                                None,
                                 ErrorCode::E007,
                                 format!(
                                     "Object version declaration is invalid. Expected: {}; Found: {}",
@@ -533,6 +619,7 @@ impl<S: Storage> Validator<S> {
                     }
                     Err(_) => {
                         result.error(
+                            None,
                             ErrorCode::E007,
                             "Object version declaration contains invalid UTF-8 content".to_string(),
                         );
@@ -540,23 +627,24 @@ impl<S: Storage> Validator<S> {
                 }
             } else {
                 result.error(
+                    None,
                     ErrorCode::E003,
                     "Object version declaration does not exist".to_string(),
                 );
             }
         } else {
             result.error(
+                None,
                 ErrorCode::E003,
                 "Object version declaration does not exist".to_string(),
             );
         }
     }
 
-    // TODO this is currently specific to root
     fn validate_inventory_and_sidecar(
         &self,
         object_id: &str,
-        version: &str,
+        version_num: Option<VersionNum>,
         path: &str,
         files: &[Listing],
         result: &mut ValidationResult,
@@ -580,25 +668,25 @@ impl<S: Storage> Validator<S> {
 
             let (inv, inv_digest) = self.validate_inventory(
                 &paths::join(path, INVENTORY_FILE),
-                // TODO root
-                None,
+                version_num,
                 &algorithms,
                 result,
             )?;
             inventory = inv;
             digest = inv_digest;
 
-            // TODO root
-            if let Some(inventory) = &inventory {
-                if object_id != inventory.id {
-                    result.error_version(
-                        version.to_string(),
-                        ErrorCode::E083,
-                        format!(
-                            "Inventory field 'id' should be '{}'. Found: {}",
-                            object_id, inventory.id
-                        ),
-                    );
+            if version_num.is_none() {
+                if let Some(inventory) = &inventory {
+                    if object_id != inventory.id {
+                        result.error(
+                            version_num,
+                            ErrorCode::E083,
+                            format!(
+                                "Inventory field 'id' should be '{}'. Found: {}",
+                                object_id, inventory.id
+                            ),
+                        );
+                    }
                 }
             }
 
@@ -619,14 +707,14 @@ impl<S: Storage> Validator<S> {
                     if let Some(digest) = &digest {
                         self.validate_sidecar(
                             &paths::join(path, &sidecar),
-                            version,
+                            version_num,
                             digest,
                             result,
                         )?;
                     }
                 } else {
-                    result.error_version(
-                        version.to_string(),
+                    result.error(
+                        version_num,
                         ErrorCode::E058,
                         format!("Inventory sidecar {} does not exist", sidecar),
                     );
@@ -634,8 +722,8 @@ impl<S: Storage> Validator<S> {
                 sidecar_file = Some(sidecar);
             }
         } else {
-            result.error_version(
-                version.to_string(),
+            result.error(
+                version_num,
                 ErrorCode::E063,
                 "Inventory does not exist".to_string(),
             );
@@ -655,13 +743,6 @@ impl<S: Storage> Validator<S> {
         let mut digest = None;
 
         let mut writer = MultiDigestWriter::new(algorithms, Vec::new());
-
-        fn version_str(version: Option<VersionNum>) -> String {
-            match version {
-                Some(version) => version.to_string(),
-                None => ROOT.to_string(),
-            }
-        }
 
         self.storage.read(inventory_path, &mut writer)?;
 
@@ -706,8 +787,8 @@ impl<S: Storage> Validator<S> {
                 }
             },
             Err(_) => {
-                result.error_version(
-                    version_str(version),
+                result.error(
+                    version,
                     ErrorCode::E033,
                     "Inventory could not be parsed".to_string(),
                 );
@@ -720,7 +801,7 @@ impl<S: Storage> Validator<S> {
     fn validate_sidecar(
         &self,
         sidecar_path: &str,
-        version: &str,
+        version: Option<VersionNum>,
         digest: &HexDigest,
         result: &mut ValidationResult,
     ) -> Result<()> {
@@ -730,16 +811,16 @@ impl<S: Storage> Validator<S> {
             Ok(contents) => {
                 let parts: Vec<&str> = SIDECAR_SPLIT.split(&contents).collect();
                 if parts.len() != 2 || parts[1].trim_end() != INVENTORY_FILE {
-                    result.error_version(
-                        version.to_string(),
+                    result.error(
+                        version,
                         ErrorCode::E061,
                         "Inventory sidecar is invalid".to_string(),
                     )
                 } else {
                     let expected_digest = HexDigest::from(parts[0]);
                     if expected_digest != *digest {
-                        result.error_version(
-                            version.to_string(),
+                        result.error(
+                            version,
                             ErrorCode::E060,
                             format!(
                                 "Inventory does not match expected digest. Expected: {}; Found: {}",
@@ -749,8 +830,8 @@ impl<S: Storage> Validator<S> {
                     }
                 }
             }
-            Err(_) => result.error_version(
-                version.to_string(),
+            Err(_) => result.error(
+                version,
                 ErrorCode::E061,
                 "Inventory sidecar is invalid".to_string(),
             ),
@@ -813,6 +894,13 @@ pub fn validate_content_dir(content_dir: &str) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+fn version_str(version: Option<VersionNum>) -> String {
+    match version {
+        Some(version) => version.to_string(),
+        None => ROOT.to_string(),
+    }
 }
 
 #[cfg(test)]
