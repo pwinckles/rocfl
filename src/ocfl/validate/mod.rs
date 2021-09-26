@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::str::FromStr;
 
 use once_cell::sync::Lazy;
@@ -18,6 +19,7 @@ use crate::ocfl::{paths, DigestAlgorithm, VersionNum};
 mod serde;
 pub mod store;
 
+const ROOT: &str = "root";
 static SIDECAR_SPLIT: Lazy<Regex> = Lazy::new(|| Regex::new(r#"[\t ]+"#).unwrap());
 
 // TODO
@@ -83,6 +85,7 @@ impl ValidationResult {
             }));
     }
 
+    // TODO perhaps get rid of this and always require a version
     pub fn error(&mut self, code: ErrorCode, message: String) {
         self.errors.push(ValidationError::new(code, message));
     }
@@ -302,32 +305,157 @@ impl<S: Storage> Validator<S> {
     ) -> Result<ValidationResult> {
         let mut result = ValidationResult::with_id(object_id);
 
-        let version = "root";
-        // TODO error handling
-        let root_listing = self.storage.list(object_root, false)?;
+        // TODO error handling ?
 
-        if root_listing.contains(&Listing::file(OBJECT_NAMASTE_FILE)) {
-            // TODO this should also determine what the version is
-            self.validate_object_namaste(object_root, &mut result);
-        } else {
-            result.error(
-                ErrorCode::E003,
-                "Object version declaration does not exist".to_string(),
-            );
-        }
+        let root_files = self.storage.list(object_root, false)?;
 
-        let (inventory, sidecar_file) = self.validate_inventory_and_sidecar(
+        self.validate_object_namaste(object_root, &root_files, &mut result);
+
+        let (inventory, sidecar_file, digest) = self.validate_inventory_and_sidecar(
             object_id,
-            version,
+            ROOT,
             object_root,
-            &root_listing,
+            &root_files,
             &mut result,
         )?;
 
-        let mut expected_files = match &inventory {
-            Some(inventory) => Vec::with_capacity(inventory.versions.len()),
-            None => Vec::with_capacity(5),
-        };
+        // TODO replace HashSet -> Vec where appropriate
+
+        self.validate_object_root_contents(&root_files, &inventory, &sidecar_file, &mut result);
+
+        if !result.has_errors() {
+            if let (Some(inventory), Some(digest)) = (inventory, digest) {
+                for (num, version) in inventory.versions.iter().rev() {
+                    let version_dir = paths::join(object_root, &num.to_string());
+                    if num == &inventory.head {
+                        self.validate_head_version(&version_dir, &inventory, &digest, &mut result)?;
+                    } else {
+                        // TODO verify prior versions
+                        // TODO E037 id when comparing to root https://github.com/OCFL/spec/issues/542
+                        // TODO don't forget to compare contentDirectory
+                    }
+                }
+
+                // TODO fixity check
+            }
+        }
+
+        Ok(result)
+    }
+
+    pub fn validate_repo(&self, fixity_check: bool) {
+        todo!()
+    }
+
+    fn validate_head_version(
+        &self,
+        version_dir: &str,
+        inventory: &Inventory,
+        root_digest: &HexDigest,
+        result: &mut ValidationResult,
+    ) -> Result<()> {
+        let files = self.storage.list(version_dir, false)?;
+
+        if files.contains(&Listing::file(INVENTORY_FILE)) {
+            let inventory_path = paths::join(version_dir, INVENTORY_FILE);
+            let mut digester = inventory.digest_algorithm.writer(Vec::new()).unwrap();
+            self.storage.read(&inventory_path, &mut digester)?;
+
+            let digest = digester.finalize_hex();
+            if digest != *root_digest {
+                result.error_version(
+                    inventory.head.to_string(),
+                    ErrorCode::E064,
+                    "Inventory file must be identical to the root inventory".to_string(),
+                );
+            }
+
+            let sidecar_name = paths::sidecar_name(inventory.digest_algorithm);
+
+            if files.contains(&Listing::file(&sidecar_name)) {
+                let sidecar_path = paths::join(version_dir, &sidecar_name);
+                self.validate_sidecar(&sidecar_path, &inventory.head.to_string(), &digest, result)?;
+            } else {
+                result.error_version(
+                    inventory.head.to_string(),
+                    ErrorCode::E058,
+                    format!("Inventory sidecar {} does not exist", sidecar_name),
+                );
+            }
+        } else {
+            result.warn_version(
+                inventory.head.to_string(),
+                WarnCode::W010,
+                "Inventory file does not exist".to_string(),
+            );
+        }
+
+        self.validate_version_contents(version_dir, &files, inventory, result)?;
+
+        Ok(())
+    }
+
+    fn validate_version_contents(
+        &self,
+        version_dir: &str,
+        files: &[Listing],
+        inventory: &Inventory,
+        result: &mut ValidationResult,
+    ) -> Result<()> {
+        let content_dir = inventory.defaulted_content_dir();
+        if files.contains(&Listing::dir(content_dir))
+            && !self
+                .storage
+                .list(&paths::join(version_dir, content_dir), false)?
+                .is_empty()
+        {
+            result.warn_version(
+                inventory.head.to_string(),
+                WarnCode::W003,
+                "Content directory exists but is empty".to_string(),
+            );
+        }
+
+        let ignore = [
+            Listing::file(INVENTORY_FILE),
+            Listing::file_owned(paths::sidecar_name(inventory.digest_algorithm)),
+            Listing::file(content_dir),
+        ];
+
+        for file in files {
+            if ignore.contains(file) {
+                continue;
+            }
+
+            match file {
+                Listing::File(name) | Listing::Other(name) => {
+                    result.error_version(
+                        inventory.head.to_string(),
+                        ErrorCode::E015,
+                        format!("Version directory contains unexpected file: {}", name),
+                    );
+                }
+                Listing::Directory(name) => {
+                    result.warn_version(
+                        inventory.head.to_string(),
+                        WarnCode::W002,
+                        format!("Version directory contains unexpected directory: {}", name),
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_object_root_contents(
+        &self,
+        files: &[Listing],
+        inventory: &Option<Inventory>,
+        sidecar_file: &Option<String>,
+        result: &mut ValidationResult,
+    ) {
+        let mut expected_files = Vec::with_capacity(5);
 
         expected_files.push(Listing::file(OBJECT_NAMASTE_FILE));
         expected_files.push(Listing::file(INVENTORY_FILE));
@@ -338,59 +466,83 @@ impl<S: Storage> Validator<S> {
             expected_files.push(Listing::file(sidecar_file))
         }
 
-        if let Some(inventory) = &inventory {
-            inventory
-                .versions
-                .keys()
-                .for_each(|v| expected_files.push(Listing::dir_owned(v.to_string())));
-        }
+        let mut expected_versions = match &inventory {
+            Some(inventory) => {
+                let mut expected_versions = HashSet::with_capacity(inventory.versions.len());
+                inventory.versions.keys().for_each(|v| {
+                    expected_versions.insert(Listing::dir_owned(v.to_string()));
+                });
+                Some(expected_versions)
+            }
+            None => None,
+        };
 
-        // TODO verify this is efficient
-        for entry in &root_listing {
-            if !expected_files.contains(entry) {
+        for entry in files {
+            let found = match &mut expected_versions {
+                Some(expected_versions) => expected_versions.remove(entry),
+                None => false,
+            };
+
+            if !found && !expected_files.contains(entry) {
                 result.error_version(
-                    version.to_string(),
+                    ROOT.to_string(),
                     ErrorCode::E001,
                     format!("Unexpected file in object root: {}", entry.path()),
                 );
             }
         }
 
-        // TODO E037 id when comparing to root https://github.com/OCFL/spec/issues/542
-        // TODO don't forget to compare contentDirectory
-
-        Ok(result)
-    }
-
-    pub fn validate_repo(&self, fixity_check: bool) {
-        todo!()
+        if let Some(expected_versions) = expected_versions {
+            expected_versions.iter().for_each(|v| {
+                result.error_version(
+                    ROOT.to_string(),
+                    ErrorCode::E010,
+                    format!(
+                        "Object root does not contain version directory '{}'",
+                        v.path()
+                    ),
+                );
+            });
+        }
     }
 
     // TODO this should resolve the OCFL object version
-    fn validate_object_namaste(&self, object_root: &str, result: &mut ValidationResult) {
-        // TODO only valid for 1.0
-        let path = paths::join(object_root, OBJECT_NAMASTE_FILE);
-        let mut bytes: Vec<u8> = Vec::new();
-        if self.storage.read(&path, &mut bytes).is_ok() {
-            match String::from_utf8(bytes) {
-                Ok(contents) => {
-                    // TODO only valid for 1.0
-                    if contents != OBJECT_NAMASTE_CONTENTS_1_0 {
+    fn validate_object_namaste(
+        &self,
+        object_root: &str,
+        root_files: &[Listing],
+        result: &mut ValidationResult,
+    ) {
+        if root_files.contains(&Listing::file(OBJECT_NAMASTE_FILE)) {
+            // TODO only valid for 1.0
+            let path = paths::join(object_root, OBJECT_NAMASTE_FILE);
+            let mut bytes: Vec<u8> = Vec::new();
+            if self.storage.read(&path, &mut bytes).is_ok() {
+                match String::from_utf8(bytes) {
+                    Ok(contents) => {
+                        // TODO only valid for 1.0
+                        if contents != OBJECT_NAMASTE_CONTENTS_1_0 {
+                            result.error(
+                                ErrorCode::E007,
+                                format!(
+                                    "Object version declaration is invalid. Expected: {}; Found: {}",
+                                    OBJECT_NAMASTE_CONTENTS_1_0, contents
+                                ),
+                            );
+                        }
+                    }
+                    Err(_) => {
                         result.error(
                             ErrorCode::E007,
-                            format!(
-                                "Object version declaration is invalid. Expected: {}; Found: {}",
-                                OBJECT_NAMASTE_CONTENTS_1_0, contents
-                            ),
+                            "Object version declaration contains invalid UTF-8 content".to_string(),
                         );
                     }
                 }
-                Err(_) => {
-                    result.error(
-                        ErrorCode::E007,
-                        "Object version declaration contains invalid UTF-8 content".to_string(),
-                    );
-                }
+            } else {
+                result.error(
+                    ErrorCode::E003,
+                    "Object version declaration does not exist".to_string(),
+                );
             }
         } else {
             result.error(
@@ -408,9 +560,10 @@ impl<S: Storage> Validator<S> {
         path: &str,
         files: &[Listing],
         result: &mut ValidationResult,
-    ) -> Result<(Option<Inventory>, Option<String>)> {
+    ) -> Result<(Option<Inventory>, Option<String>, Option<HexDigest>)> {
         let mut inventory = None;
         let mut sidecar_file = None;
+        let mut digest = None;
 
         if files.contains(&Listing::file(INVENTORY_FILE)) {
             let mut algorithms = Vec::new();
@@ -425,7 +578,7 @@ impl<S: Storage> Validator<S> {
                 }
             }
 
-            let (inv, digest) = self.validate_inventory(
+            let (inv, inv_digest) = self.validate_inventory(
                 &paths::join(path, INVENTORY_FILE),
                 // TODO root
                 None,
@@ -433,6 +586,7 @@ impl<S: Storage> Validator<S> {
                 result,
             )?;
             inventory = inv;
+            digest = inv_digest;
 
             // TODO root
             if let Some(inventory) = &inventory {
@@ -460,13 +614,13 @@ impl<S: Storage> Validator<S> {
             };
 
             if let Some(algorithm) = algorithm {
-                let sidecar = format!("{}.{}", INVENTORY_FILE, algorithm);
+                let sidecar = paths::sidecar_name(algorithm);
                 if files.contains(&Listing::file(&sidecar)) {
-                    if let Some(digest) = digest {
+                    if let Some(digest) = &digest {
                         self.validate_sidecar(
                             &paths::join(path, &sidecar),
                             version,
-                            &digest,
+                            digest,
                             result,
                         )?;
                     }
@@ -487,7 +641,7 @@ impl<S: Storage> Validator<S> {
             );
         }
 
-        Ok((inventory, sidecar_file))
+        Ok((inventory, sidecar_file, digest))
     }
 
     fn validate_inventory(
@@ -505,7 +659,7 @@ impl<S: Storage> Validator<S> {
         fn version_str(version: Option<VersionNum>) -> String {
             match version {
                 Some(version) => version.to_string(),
-                None => "root".to_string(),
+                None => ROOT.to_string(),
             }
         }
 

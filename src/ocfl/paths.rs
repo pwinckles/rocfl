@@ -20,8 +20,12 @@ pub fn sidecar_path<P>(dir: P, algorithm: DigestAlgorithm) -> PathBuf
 where
     P: AsRef<Path>,
 {
-    let sidecar_name = format!("{}.{}", INVENTORY_FILE, algorithm.to_string());
-    dir.as_ref().join(sidecar_name)
+    dir.as_ref().join(sidecar_name(algorithm))
+}
+
+/// Returns the name of an inventory sidecar for the specified algorithm
+pub fn sidecar_name(algorithm: DigestAlgorithm) -> String {
+    format!("{}.{}", INVENTORY_FILE, algorithm)
 }
 
 /// Returns the path to an object's namaste file

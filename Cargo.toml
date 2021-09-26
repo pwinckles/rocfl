@@ -10,6 +10,9 @@ repository = "https://github.com/pwinckles/rocfl"
 homepage = "https://github.com/pwinckles/rocfl"
 documentation = "https://docs.rs/rocfl/"
 
+#[profile.test]
+#opt-level = 3
+
 [features]
 default = ["s3"]
 s3 = ["bytes", "futures", "rusoto_core", "rusoto_credential", "rusoto_s3", "tokio"]
@@ -96,4 +99,6 @@ predicates = "2"
 rand = "0.8"
 tempfile = "3"
 tokio-test = "0.4"
+# TODO time switching hash impl
+#fxhash = "0.2"
 # TODO experiment with https://crates.io/crates/criterion/0.2.11
