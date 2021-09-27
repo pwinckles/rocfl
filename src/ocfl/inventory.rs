@@ -80,7 +80,7 @@ pub struct Version {
 }
 
 /// OCFL user serialization object
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, Eq, PartialEq)]
 pub struct User {
     pub name: Option<String>,
     pub address: Option<String>,
@@ -259,6 +259,23 @@ impl Inventory {
         };
 
         self.content_path_for_digest(digest, version_num.into(), Some(logical_path))
+    }
+
+    /// Returns a reference to the set of all of the content paths that are associated to the
+    /// digest
+    pub fn content_paths(&self, digest: &HexDigest) -> Option<&HashSet<Rc<ContentPath>>> {
+        self.manifest.get_paths(digest)
+    }
+
+    /// Returns a set of all of the content paths in the inventory
+    pub fn all_content_paths(&self) -> HashSet<Rc<ContentPath>> {
+        let mut paths = HashSet::with_capacity(self.manifest.len());
+
+        for (path, _) in &self.manifest {
+            paths.insert(path.clone());
+        }
+
+        paths
     }
 
     /// Returns the diffs of two versions. An error is returned if either of the specified versions
@@ -442,11 +459,29 @@ impl Inventory {
         logical_path.to_content_path(self.head, self.defaulted_content_dir())
     }
 
+    /// Returns the content directory specified in the inventory or the default value if none
+    /// is specified.
     pub fn defaulted_content_dir(&self) -> &str {
         match &self.content_directory {
             Some(dir) => dir.as_str(),
             None => DEFAULT_CONTENT_DIR,
         }
+    }
+
+    pub fn fixity_paths(&self) -> HashSet<&str> {
+        let mut paths = HashSet::new();
+
+        if let Some(fixity) = &self.fixity {
+            fixity
+                .values()
+                .flat_map(|m| m.values())
+                .flat_map(|v| v.iter())
+                .for_each(|path| {
+                    paths.insert(path.as_ref());
+                });
+        }
+
+        paths
     }
 }
 
@@ -546,6 +581,16 @@ impl Version {
     /// Returns non-consuming iterator for the version's state
     pub fn state_iter(&self) -> Iter<Rc<LogicalPath>, Rc<HexDigest>> {
         self.state.iter()
+    }
+
+    pub fn logical_paths(&self) -> HashSet<Rc<LogicalPath>> {
+        let mut paths = HashSet::with_capacity(self.state.len());
+
+        for (path, _) in &self.state {
+            paths.insert(path.clone());
+        }
+
+        paths
     }
 
     /// Moves the current state map out, replacing it when an empty state

@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::convert::TryFrom;
 use std::str::FromStr;
 
 use once_cell::sync::Lazy;
@@ -14,7 +15,7 @@ use crate::ocfl::digest::{HexDigest, MultiDigestWriter};
 use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::validate::store::{Listing, Storage};
-use crate::ocfl::{paths, DigestAlgorithm, VersionNum};
+use crate::ocfl::{paths, ContentPath, DigestAlgorithm, VersionNum};
 
 mod serde;
 pub mod store;
@@ -320,8 +321,13 @@ impl<S: Storage> Validator<S> {
 
         self.validate_object_root_contents(&root_files, &inventory, &sidecar_file, &mut result);
 
+        // TODO inspect extensions dir
+
         if !result.has_errors() {
             if let (Some(inventory), Some(digest)) = (inventory, digest) {
+                let content_files =
+                    self.validate_content_dirs(object_root, &inventory, &mut result)?;
+
                 for (num, version) in inventory.versions.iter().rev() {
                     let version_dir = paths::join(object_root, &num.to_string());
                     if num == &inventory.head {
@@ -340,6 +346,91 @@ impl<S: Storage> Validator<S> {
 
     pub fn validate_repo(&self, fixity_check: bool) {
         todo!()
+    }
+
+    fn validate_content_dirs(
+        &self,
+        object_root: &str,
+        root_inventory: &Inventory,
+        result: &mut ValidationResult,
+    ) -> Result<Vec<ContentPath>> {
+        let mut manifest_paths = root_inventory.all_content_paths();
+        let mut all_paths = Vec::with_capacity(manifest_paths.len());
+        let mut fixity_paths = root_inventory.fixity_paths();
+
+        for version in root_inventory.versions.keys() {
+            let prefix = paths::join(&version.to_string(), root_inventory.defaulted_content_dir());
+            let content_root = paths::join(object_root, &prefix);
+
+            let paths = self.storage.list(&content_root, true)?;
+
+            for path in &paths {
+                let full_path = paths::join(&prefix, path.path());
+
+                fixity_paths.remove(full_path.as_str());
+
+                match path {
+                    Listing::File(_) => {
+                        // TODO error handling
+                        let content_path = ContentPath::try_from(full_path)?;
+
+                        if !manifest_paths.remove(&content_path) {
+                            result.error(
+                                Some(*version),
+                                ErrorCode::E023,
+                                format!(
+                                    "A content file exists that is not referenced in the manifest: {}",
+                                    content_path
+                                ),
+                            );
+                        }
+
+                        all_paths.push(content_path);
+                    }
+                    Listing::Directory(_) => {
+                        result.error(
+                            Some(*version),
+                            ErrorCode::E024,
+                            format!(
+                                "An empty directory exist within the content directory: {}",
+                                full_path
+                            ),
+                        );
+                    }
+                    Listing::Other(_) => {
+                        result.error(
+                            Some(*version),
+                            ErrorCode::E090,
+                            format!("Content directory contains an illegal file: {}", full_path),
+                        );
+                    }
+                }
+            }
+        }
+
+        for path in manifest_paths {
+            result.error(
+                None,
+                ErrorCode::E092,
+                format!(
+                    "Inventory manifest references a file that does not exist: {}",
+                    path
+                ),
+            );
+        }
+
+        for path in fixity_paths {
+            result.error(
+                None,
+                ErrorCode::E093,
+                format!(
+                    "Inventory fixity references a file that does not exist: {}",
+                    path
+                ),
+            );
+        }
+
+        Ok(all_paths)
     }
 
     fn validate_version(
@@ -420,6 +511,116 @@ impl<S: Storage> Validator<S> {
         // TODO validate content dir
 
         Ok(())
+    }
+
+    fn validate_version_consistent(
+        &self,
+        version_num: VersionNum,
+        root_inventory: &Inventory,
+        other_inventory: &Inventory,
+        result: &mut ValidationResult,
+    ) {
+        // TODO support algorithm change
+
+        let mut current_num = version_num;
+
+        loop {
+            let root_version = root_inventory.get_version(current_num).unwrap();
+            let other_version = other_inventory.get_version(current_num).unwrap();
+
+            // TODO move
+            let mut other_paths = other_version.logical_paths();
+
+            for (path, digest) in root_version.state_iter() {
+                other_paths.remove(path);
+                match other_version.lookup_digest(path) {
+                    None => {
+                        result.error(
+                            Some(version_num),
+                            ErrorCode::E066,
+                            format!(
+                                "Inventory version {} state is missing a path that exists in the root inventory: {}",
+                                current_num, path
+                            ),
+                        );
+                    }
+                    Some(other_digest) => {
+                        if digest != other_digest {
+                            result.error(
+                                Some(version_num),
+                                ErrorCode::E066,
+                                format!(
+                                    "Inventory version {} state path '{}' does not match digest in root inventory",
+                                    current_num, path
+                                ),
+                            );
+                        } else if root_inventory.content_paths(digest)
+                            != other_inventory.content_paths(digest)
+                        {
+                            // TODO this is incorrect because there could be a dup version added in a later version
+                            result.error(
+                                Some(version_num),
+                                ErrorCode::E066,
+                                format!(
+                                    "Inventory version {} state path '{}' maps to different content paths than the root inventory",
+                                    current_num, path
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+
+            for path in other_paths {
+                result.error(
+                    Some(version_num),
+                    ErrorCode::E066,
+                    format!(
+                        "Inventory version {} state contains a path not in the root inventory: {}",
+                        current_num, path
+                    ),
+                );
+            }
+
+            if root_version.message != other_version.message {
+                result.warning(
+                    Some(version_num),
+                    WarnCode::W011,
+                    format!(
+                        "Inventory version {} field 'message' is inconsistent with the root inventory",
+                        current_num
+                    ),
+                );
+            }
+
+            if root_version.created != other_version.created {
+                result.warning(
+                    Some(version_num),
+                    WarnCode::W011,
+                    format!(
+                        "Inventory version {} field 'created' is inconsistent with the root inventory",
+                        current_num
+                    ),
+                );
+            }
+
+            if root_version.user != other_version.user {
+                result.warning(
+                    Some(version_num),
+                    WarnCode::W011,
+                    format!(
+                        "Inventory version {} field 'user' is inconsistent with the root inventory",
+                        current_num
+                    ),
+                );
+            }
+
+            if current_num == VersionNum::v1() {
+                break;
+            } else {
+                current_num = current_num.previous().unwrap();
+            }
+        }
     }
 
     fn validate_head_version(
@@ -513,7 +714,7 @@ impl<S: Storage> Validator<S> {
             }
 
             match file {
-                Listing::File(name) | Listing::Other(name) => {
+                Listing::File(name) => {
                     result.error(
                         Some(version_num),
                         ErrorCode::E015,
@@ -525,6 +726,13 @@ impl<S: Storage> Validator<S> {
                         Some(version_num),
                         WarnCode::W002,
                         format!("Version directory contains unexpected directory: {}", name),
+                    );
+                }
+                Listing::Other(name) => {
+                    result.error(
+                        Some(version_num),
+                        ErrorCode::E090,
+                        format!("Version directory contains an illegal file: {}", name),
                     );
                 }
             }
@@ -569,11 +777,19 @@ impl<S: Storage> Validator<S> {
             };
 
             if !found && !expected_files.contains(entry) {
-                result.error(
-                    None,
-                    ErrorCode::E001,
-                    format!("Unexpected file in object root: {}", entry.path()),
-                );
+                if let Listing::Other(path) = entry {
+                    result.error(
+                        None,
+                        ErrorCode::E090,
+                        format!("Object root contains an illegal file: {}", path),
+                    );
+                } else {
+                    result.error(
+                        None,
+                        ErrorCode::E001,
+                        format!("Unexpected file in object root: {}", entry.path()),
+                    );
+                }
             }
         }
 
