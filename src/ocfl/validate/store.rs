@@ -22,12 +22,14 @@ pub enum Listing<'a> {
 // TODO move to store/fs
 pub mod fs {
     use std::borrow::Cow;
-    use std::fs;
     use std::fs::File;
     use std::io::{self, Write};
     use std::path::{Path, PathBuf};
 
+    use walkdir::WalkDir;
+
     use crate::ocfl::error::Result;
+    use crate::ocfl::util;
     use crate::ocfl::validate::store::{Listing, Storage};
 
     pub struct FsStorage {
@@ -55,22 +57,36 @@ pub mod fs {
 
         fn list(&self, path: &str, recursive: bool) -> Result<Vec<Listing>> {
             // TODO error handling
-            let read_dir = fs::read_dir(self.storage_root.join(path))?;
-            let mut listings = Vec::with_capacity(read_dir.size_hint().1.unwrap_or(0));
 
-            // TODO recursive
+            let mut listings = Vec::new();
+            let root = self.storage_root.join(path);
 
-            for path in read_dir {
+            let mut walker = WalkDir::new(&root);
+
+            if !recursive {
+                // TODO not sure if this is right
+                walker = walker.max_depth(1);
+            }
+
+            for path in walker {
                 let path = path?;
-                let filename = path.file_name().to_string_lossy().into();
-                let file_type = path.file_type()?;
 
-                if file_type.is_file() {
-                    listings.push(Listing::File(Cow::Owned(filename)));
-                } else if file_type.is_dir() {
-                    listings.push(Listing::Directory(Cow::Owned(filename)));
+                let relative_path = util::convert_backslash_to_forward(
+                    pathdiff::diff_paths(path.path(), &root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .as_ref(),
+                )
+                .to_string();
+
+                if path.file_type().is_file() {
+                    listings.push(Listing::File(Cow::Owned(relative_path)));
+                } else if path.file_type().is_dir() {
+                    if path.path() != root.as_path() && util::dir_is_empty(path.path())? {
+                        listings.push(Listing::Directory(Cow::Owned(relative_path)));
+                    }
                 } else {
-                    listings.push(Listing::Other(Cow::Owned(filename)))
+                    listings.push(Listing::Other(Cow::Owned(relative_path)))
                 }
             }
 

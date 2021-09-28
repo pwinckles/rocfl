@@ -10,7 +10,7 @@ use strum_macros::Display as EnumDisplay;
 
 use crate::ocfl::consts::{
     EXTENSIONS_DIR, INVENTORY_FILE, INVENTORY_SIDECAR_PREFIX, INVENTORY_TYPE, LOGS_DIR,
-    OBJECT_NAMASTE_CONTENTS_1_0, OBJECT_NAMASTE_FILE,
+    OBJECT_NAMASTE_CONTENTS_1_0, OBJECT_NAMASTE_FILE, SUPPORTED_EXTENSIONS,
 };
 use crate::ocfl::digest::{HexDigest, MultiDigestWriter};
 use crate::ocfl::error::{Result, RocflError};
@@ -98,7 +98,7 @@ impl ValidationResult {
         ));
     }
 
-    pub fn warning(&mut self, version_num: Option<VersionNum>, code: WarnCode, message: String) {
+    pub fn warn(&mut self, version_num: Option<VersionNum>, code: WarnCode, message: String) {
         self.warnings.push(ValidationWarning::with_version(
             version_str(version_num),
             code,
@@ -333,9 +333,13 @@ impl<S: Storage> Validator<S> {
 
         // TODO replace HashSet -> Vec where appropriate
 
-        self.validate_object_root_contents(&root_files, &inventory, &sidecar_file, &mut result);
-
-        // TODO inspect extensions dir
+        self.validate_object_root_contents(
+            object_root,
+            &root_files,
+            &inventory,
+            &sidecar_file,
+            &mut result,
+        )?;
 
         if !result.has_errors() {
             if let (Some(inventory), Some(digest)) = (inventory, digest) {
@@ -572,7 +576,7 @@ impl<S: Storage> Validator<S> {
                 inventory_opt = Some(inventory);
             }
         } else {
-            result.warning(
+            result.warn(
                 Some(version_num),
                 WarnCode::W010,
                 "Inventory file does not exist".to_string(),
@@ -632,7 +636,7 @@ impl<S: Storage> Validator<S> {
             }
 
             if root_version.message != other_version.message {
-                result.warning(
+                result.warn(
                     Some(version_num),
                     WarnCode::W011,
                     format!(
@@ -643,7 +647,7 @@ impl<S: Storage> Validator<S> {
             }
 
             if root_version.created != other_version.created {
-                result.warning(
+                result.warn(
                     Some(version_num),
                     WarnCode::W011,
                     format!(
@@ -654,7 +658,7 @@ impl<S: Storage> Validator<S> {
             }
 
             if root_version.user != other_version.user {
-                result.warning(
+                result.warn(
                     Some(version_num),
                     WarnCode::W011,
                     format!(
@@ -802,7 +806,7 @@ impl<S: Storage> Validator<S> {
                 );
             }
         } else {
-            result.warning(
+            result.warn(
                 Some(inventory.head),
                 WarnCode::W010,
                 "Inventory file does not exist".to_string(),
@@ -836,7 +840,7 @@ impl<S: Storage> Validator<S> {
                 .list(&paths::join(version_dir, content_dir), false)?
                 .is_empty()
         {
-            result.warning(
+            result.warn(
                 Some(version_num),
                 WarnCode::W003,
                 "Content directory exists but is empty".to_string(),
@@ -863,7 +867,7 @@ impl<S: Storage> Validator<S> {
                     );
                 }
                 Listing::Directory(name) => {
-                    result.warning(
+                    result.warn(
                         Some(version_num),
                         WarnCode::W002,
                         format!("Version directory contains unexpected directory: {}", name),
@@ -884,11 +888,12 @@ impl<S: Storage> Validator<S> {
 
     fn validate_object_root_contents(
         &self,
+        object_root: &str,
         files: &[Listing],
         inventory: &Option<Inventory>,
         sidecar_file: &Option<String>,
         result: &mut ValidationResult,
-    ) {
+    ) -> Result<()> {
         let mut expected_files = Vec::with_capacity(5);
 
         expected_files.push(Listing::file(OBJECT_NAMASTE_FILE));
@@ -946,6 +951,50 @@ impl<S: Storage> Validator<S> {
                 );
             });
         }
+
+        if files.contains(&Listing::dir(EXTENSIONS_DIR)) {
+            self.validate_extension_contents(object_root, result)?;
+        }
+
+        Ok(())
+    }
+
+    fn validate_extension_contents(
+        &self,
+        object_root: &str,
+        result: &mut ValidationResult,
+    ) -> Result<()> {
+        let extensions = paths::join(object_root, EXTENSIONS_DIR);
+        let files = self.storage.list(&extensions, false)?;
+
+        for file in files {
+            match file {
+                Listing::Directory(path) => {
+                    if !SUPPORTED_EXTENSIONS.contains(path.as_ref()) {
+                        result.warn(
+                            None,
+                            WarnCode::W013,
+                            format!(
+                                "Object extensions directory contains unknown extension: {}",
+                                path
+                            ),
+                        );
+                    }
+                }
+                Listing::File(path) | Listing::Other(path) => {
+                    result.error(
+                        None,
+                        ErrorCode::E067,
+                        format!(
+                            "Object extensions directory contains an illegal file: {}",
+                            path
+                        ),
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 
     // TODO this should resolve the OCFL object version
