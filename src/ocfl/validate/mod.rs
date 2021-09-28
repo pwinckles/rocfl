@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
+use std::slice::Iter;
 use std::str::FromStr;
 
 use once_cell::sync::Lazy;
@@ -15,13 +16,16 @@ use crate::ocfl::digest::{HexDigest, MultiDigestWriter};
 use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::validate::store::{Listing, Storage};
-use crate::ocfl::{paths, ContentPath, ContentPathVersion, DigestAlgorithm, VersionNum};
+use crate::ocfl::{
+    paths, ContentPath, ContentPathVersion, DigestAlgorithm, InventoryPath, VersionNum,
+};
 
 mod serde;
 pub mod store;
 
 const ROOT: &str = "root";
 static SIDECAR_SPLIT: Lazy<Regex> = Lazy::new(|| Regex::new(r#"[\t ]+"#).unwrap());
+static EMPTY_PATHS: Vec<ContentPath> = vec![];
 
 // TODO
 pub struct Validator<S: Storage> {
@@ -289,6 +293,16 @@ pub enum WarnCode {
     W015,
 }
 
+struct ContentPaths {
+    path_map: HashMap<VersionNum, Vec<ContentPath>>,
+}
+
+struct ContentPathsIter<'a> {
+    current_version: VersionNum,
+    current_iter: Iter<'a, ContentPath>,
+    path_map: &'a HashMap<VersionNum, Vec<ContentPath>>,
+}
+
 // TODO
 impl<S: Storage> Validator<S> {
     pub fn new(storage: S) -> Self {
@@ -328,7 +342,14 @@ impl<S: Storage> Validator<S> {
                 let mut inventories = HashMap::new();
 
                 let content_files =
-                    self.validate_content_dirs(object_root, &inventory, &mut result)?;
+                    self.find_all_content_files(object_root, &inventory, &mut result)?;
+                self.validate_manifest(
+                    &inventory,
+                    &content_files,
+                    &inventory,
+                    &inventories,
+                    &mut result,
+                );
 
                 for (num, _) in inventory.versions.iter().rev() {
                     let version_dir = paths::join(object_root, &num.to_string());
@@ -360,15 +381,80 @@ impl<S: Storage> Validator<S> {
         todo!()
     }
 
-    fn validate_content_dirs(
+    fn validate_manifest(
+        &self,
+        inventory: &Inventory,
+        content_files: &ContentPaths,
+        root_inventory: &Inventory,
+        inventories: &HashMap<DigestAlgorithm, Inventory>,
+        result: &mut ValidationResult,
+    ) {
+        let mut manifest_paths = inventory.manifest_paths();
+        let mut fixity_paths = inventory.fixity_paths();
+        let comparing_inventory = if root_inventory.digest_algorithm == inventory.digest_algorithm {
+            root_inventory
+        } else {
+            inventories.get(&inventory.digest_algorithm).unwrap()
+        };
+
+        for content_file in content_files.iter(inventory.head) {
+            fixity_paths.remove(content_file.as_str());
+            if manifest_paths.remove(content_file) {
+                if let Some(expected) = comparing_inventory.digest_for_content_path(content_file) {
+                    let digest = inventory.digest_for_content_path(content_file).unwrap();
+                    if expected != digest {
+                        result.error(
+                            Some(inventory.head),
+                            ErrorCode::E092,
+                            format!(
+                                "Inventory manifest entry for content path '{}' differs from later versions. Expected: {}; Found: {}",
+                                content_file, expected, digest
+                            ),
+                        );
+                    }
+                }
+            } else {
+                result.error(
+                    Some(inventory.head),
+                    ErrorCode::E023,
+                    format!(
+                        "A content file exists that is not referenced in the manifest: {}",
+                        content_file
+                    ),
+                );
+            }
+        }
+
+        for path in manifest_paths {
+            result.error(
+                Some(inventory.head),
+                ErrorCode::E092,
+                format!(
+                    "Inventory manifest references a file that does not exist: {}",
+                    path
+                ),
+            );
+        }
+
+        for path in fixity_paths {
+            result.error(
+                Some(inventory.head),
+                ErrorCode::E093,
+                format!(
+                    "Inventory fixity references a file that does not exist: {}",
+                    path
+                ),
+            );
+        }
+    }
+
+    fn find_all_content_files(
         &self,
         object_root: &str,
         root_inventory: &Inventory,
         result: &mut ValidationResult,
-    ) -> Result<Vec<ContentPath>> {
-        let mut manifest_paths = root_inventory.all_content_paths();
-        let mut all_paths = Vec::with_capacity(manifest_paths.len());
-        let mut fixity_paths = root_inventory.fixity_paths();
+    ) -> Result<ContentPaths> {
+        let mut content_paths = ContentPaths::new();
 
         for version in root_inventory.versions.keys() {
             let prefix = paths::join(&version.to_string(), root_inventory.defaulted_content_dir());
@@ -379,32 +465,17 @@ impl<S: Storage> Validator<S> {
             for path in &paths {
                 let full_path = paths::join(&prefix, path.path());
 
-                fixity_paths.remove(full_path.as_str());
-
                 match path {
                     Listing::File(_) => {
                         // TODO error handling
-                        let content_path = ContentPath::try_from(full_path)?;
-
-                        if !manifest_paths.remove(&content_path) {
-                            result.error(
-                                Some(*version),
-                                ErrorCode::E023,
-                                format!(
-                                    "A content file exists that is not referenced in the manifest: {}",
-                                    content_path
-                                ),
-                            );
-                        }
-
-                        all_paths.push(content_path);
+                        content_paths.add_path(ContentPath::try_from(full_path)?);
                     }
                     Listing::Directory(_) => {
                         result.error(
                             Some(*version),
                             ErrorCode::E024,
                             format!(
-                                "An empty directory exist within the content directory: {}",
+                                "An empty directory exists within the content directory: {}",
                                 full_path
                             ),
                         );
@@ -420,51 +491,7 @@ impl<S: Storage> Validator<S> {
             }
         }
 
-        for path in manifest_paths {
-            result.error(
-                None,
-                ErrorCode::E092,
-                format!(
-                    "Inventory manifest references a file that does not exist: {}",
-                    path
-                ),
-            );
-        }
-
-        for path in fixity_paths {
-            result.error(
-                None,
-                ErrorCode::E093,
-                format!(
-                    "Inventory fixity references a file that does not exist: {}",
-                    path
-                ),
-            );
-        }
-
-        Ok(all_paths)
-    }
-
-    fn validate_fixity_block(
-        &self,
-        inventory: &Inventory,
-        content_paths: &[ContentPath],
-        result: &mut ValidationResult,
-    ) {
-        for path in inventory.fixity_paths() {
-            if let Ok(path) = ContentPath::try_from(path) {
-                if !content_paths.contains(&path) {
-                    result.error(
-                        Some(inventory.head),
-                        ErrorCode::E093,
-                        format!(
-                            "Inventory fixity references a file that does not exist: {}",
-                            path
-                        ),
-                    );
-                }
-            }
-        }
+        Ok(content_paths)
     }
 
     fn validate_version(
@@ -473,7 +500,7 @@ impl<S: Storage> Validator<S> {
         version_dir: &str,
         root_inventory: &Inventory,
         inventories: &HashMap<DigestAlgorithm, Inventory>,
-        content_files: &[ContentPath],
+        content_files: &ContentPaths,
         result: &mut ValidationResult,
     ) -> Result<Option<Inventory>> {
         let mut inventory_opt = None;
@@ -534,7 +561,13 @@ impl<S: Storage> Validator<S> {
                     result,
                 );
 
-                self.validate_fixity_block(&inventory, content_files, result);
+                self.validate_manifest(
+                    &inventory,
+                    content_files,
+                    root_inventory,
+                    inventories,
+                    result,
+                );
 
                 inventory_opt = Some(inventory);
             }
@@ -667,15 +700,17 @@ impl<S: Storage> Validator<S> {
                     );
                 }
                 Some(digest) => {
-                    if compare_digests && comparing_digest != digest {
-                        result.error(
-                            Some(version_num),
-                            ErrorCode::E066,
-                            format!(
-                                "Inventory version {} state path '{}' does not match digest in later inventories. Expected: {}; Found: {}",
-                                current_version, comparing_path, comparing_digest, digest
-                            ),
-                        );
+                    if compare_digests {
+                        if comparing_digest != digest {
+                            result.error(
+                                Some(version_num),
+                                ErrorCode::E066,
+                                format!(
+                                    "Inventory version {} state path '{}' does not match digest in later inventories. Expected: {}; Found: {}",
+                                    current_version, comparing_path, comparing_digest, digest
+                                ),
+                            );
+                        }
                     } else {
                         let comparing_content_paths =
                             comparing_inventory.content_paths(comparing_digest).unwrap();
@@ -1186,6 +1221,55 @@ impl ParseValidationResult {
 
     pub fn has_errors(&self) -> bool {
         self.errors.borrow().len() > 0
+    }
+}
+
+impl ContentPaths {
+    fn new() -> Self {
+        Self {
+            path_map: HashMap::new(),
+        }
+    }
+
+    fn add_path(&mut self, path: ContentPath) {
+        if let ContentPathVersion::VersionNum(num) = path.version {
+            self.path_map.entry(num).or_insert_with(Vec::new).push(path);
+        }
+    }
+
+    fn iter(&self, version_num: VersionNum) -> ContentPathsIter {
+        ContentPathsIter {
+            current_version: version_num,
+            current_iter: self
+                .path_map
+                .get(&version_num)
+                .unwrap_or(&EMPTY_PATHS)
+                .iter(),
+            path_map: &self.path_map,
+        }
+    }
+}
+
+impl<'a> Iterator for ContentPathsIter<'a> {
+    type Item = &'a ContentPath;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.current_iter.next() {
+            Some(next) => Some(next),
+            None => {
+                while self.current_version != VersionNum::v1() {
+                    self.current_version = self.current_version.previous().unwrap();
+                    match self.path_map.get(&self.current_version) {
+                        Some(paths) => {
+                            self.current_iter = paths.iter();
+                        }
+                        None => continue,
+                    }
+                    return self.next();
+                }
+                None
+            }
+        }
     }
 }
 

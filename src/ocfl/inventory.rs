@@ -180,6 +180,11 @@ impl Inventory {
         self.manifest.contains_path(content_path)
     }
 
+    /// Returns the digest associated to the content path in the manifest
+    pub fn digest_for_content_path(&self, content_path: &ContentPath) -> Option<&Rc<HexDigest>> {
+        self.manifest.get_id(content_path)
+    }
+
     /// Returns the first content path associated with the specified digest, or an error if it does
     /// not exist.
     ///
@@ -468,6 +473,18 @@ impl Inventory {
         }
     }
 
+    // TODO
+    pub fn manifest_paths(&self) -> HashSet<Rc<ContentPath>> {
+        let mut paths = HashSet::with_capacity(self.manifest.len());
+
+        for (content_path, _) in &self.manifest {
+            paths.insert(content_path.clone());
+        }
+
+        paths
+    }
+
+    // TODO
     pub fn fixity_paths(&self) -> HashSet<&str> {
         let mut paths = HashSet::new();
 
