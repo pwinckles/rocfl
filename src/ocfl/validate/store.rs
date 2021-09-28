@@ -58,6 +58,8 @@ pub mod fs {
             let read_dir = fs::read_dir(self.storage_root.join(path))?;
             let mut listings = Vec::with_capacity(read_dir.size_hint().1.unwrap_or(0));
 
+            // TODO recursive
+
             for path in read_dir {
                 let path = path?;
                 let filename = path.file_name().to_string_lossy().into();
@@ -71,8 +73,6 @@ pub mod fs {
                     listings.push(Listing::Other(Cow::Owned(filename)))
                 }
             }
-
-            // TODO recursive
 
             Ok(listings)
         }

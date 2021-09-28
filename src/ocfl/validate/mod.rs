@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::str::FromStr;
 
@@ -15,7 +15,7 @@ use crate::ocfl::digest::{HexDigest, MultiDigestWriter};
 use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::validate::store::{Listing, Storage};
-use crate::ocfl::{paths, ContentPath, DigestAlgorithm, VersionNum};
+use crate::ocfl::{paths, ContentPath, ContentPathVersion, DigestAlgorithm, VersionNum};
 
 mod serde;
 pub mod store;
@@ -325,15 +325,27 @@ impl<S: Storage> Validator<S> {
 
         if !result.has_errors() {
             if let (Some(inventory), Some(digest)) = (inventory, digest) {
+                let mut inventories = HashMap::new();
+
                 let content_files =
                     self.validate_content_dirs(object_root, &inventory, &mut result)?;
 
-                for (num, version) in inventory.versions.iter().rev() {
+                for (num, _) in inventory.versions.iter().rev() {
                     let version_dir = paths::join(object_root, &num.to_string());
-                    if num == &inventory.head {
+                    if *num == inventory.head {
                         self.validate_head_version(&version_dir, &inventory, &digest, &mut result)?;
                     } else {
-                        self.validate_version(*num, &version_dir, &inventory, &mut result)?;
+                        let inv = self.validate_version(
+                            *num,
+                            &version_dir,
+                            &inventory,
+                            &inventories,
+                            &content_files,
+                            &mut result,
+                        )?;
+                        if let Some(inv) = inv {
+                            inventories.entry(inv.digest_algorithm).or_insert(inv);
+                        }
                     }
                 }
 
@@ -433,13 +445,38 @@ impl<S: Storage> Validator<S> {
         Ok(all_paths)
     }
 
+    fn validate_fixity_block(
+        &self,
+        inventory: &Inventory,
+        content_paths: &[ContentPath],
+        result: &mut ValidationResult,
+    ) {
+        for path in inventory.fixity_paths() {
+            if let Ok(path) = ContentPath::try_from(path) {
+                if !content_paths.contains(&path) {
+                    result.error(
+                        Some(inventory.head),
+                        ErrorCode::E093,
+                        format!(
+                            "Inventory fixity references a file that does not exist: {}",
+                            path
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
     fn validate_version(
         &self,
         version_num: VersionNum,
         version_dir: &str,
         root_inventory: &Inventory,
+        inventories: &HashMap<DigestAlgorithm, Inventory>,
+        content_files: &[ContentPath],
         result: &mut ValidationResult,
-    ) -> Result<()> {
+    ) -> Result<Option<Inventory>> {
+        let mut inventory_opt = None;
         let files = self.storage.list(version_dir, false)?;
 
         let mut digest_algorithm = root_inventory.digest_algorithm;
@@ -489,7 +526,17 @@ impl<S: Storage> Validator<S> {
                     );
                 }
 
-                // TODO validate invs are consistent
+                self.validate_version_consistent(
+                    version_num,
+                    root_inventory,
+                    &inventory,
+                    inventories,
+                    result,
+                );
+
+                self.validate_fixity_block(&inventory, content_files, result);
+
+                inventory_opt = Some(inventory);
             }
         } else {
             result.warning(
@@ -508,9 +555,7 @@ impl<S: Storage> Validator<S> {
             result,
         )?;
 
-        // TODO validate content dir
-
-        Ok(())
+        Ok(inventory_opt)
     }
 
     fn validate_version_consistent(
@@ -518,67 +563,38 @@ impl<S: Storage> Validator<S> {
         version_num: VersionNum,
         root_inventory: &Inventory,
         other_inventory: &Inventory,
+        inventories: &HashMap<DigestAlgorithm, Inventory>,
         result: &mut ValidationResult,
     ) {
-        // TODO support algorithm change
-
         let mut current_num = version_num;
+        let comparing_inventory =
+            if root_inventory.digest_algorithm == other_inventory.digest_algorithm {
+                Some(root_inventory)
+            } else {
+                inventories.get(&other_inventory.digest_algorithm)
+            };
 
         loop {
             let root_version = root_inventory.get_version(current_num).unwrap();
             let other_version = other_inventory.get_version(current_num).unwrap();
 
-            // TODO move
-            let mut other_paths = other_version.logical_paths();
-
-            for (path, digest) in root_version.state_iter() {
-                other_paths.remove(path);
-                match other_version.lookup_digest(path) {
-                    None => {
-                        result.error(
-                            Some(version_num),
-                            ErrorCode::E066,
-                            format!(
-                                "Inventory version {} state is missing a path that exists in the root inventory: {}",
-                                current_num, path
-                            ),
-                        );
-                    }
-                    Some(other_digest) => {
-                        if digest != other_digest {
-                            result.error(
-                                Some(version_num),
-                                ErrorCode::E066,
-                                format!(
-                                    "Inventory version {} state path '{}' does not match digest in root inventory",
-                                    current_num, path
-                                ),
-                            );
-                        } else if root_inventory.content_paths(digest)
-                            != other_inventory.content_paths(digest)
-                        {
-                            // TODO this is incorrect because there could be a dup version added in a later version
-                            result.error(
-                                Some(version_num),
-                                ErrorCode::E066,
-                                format!(
-                                    "Inventory version {} state path '{}' maps to different content paths than the root inventory",
-                                    current_num, path
-                                ),
-                            );
-                        }
-                    }
-                }
-            }
-
-            for path in other_paths {
-                result.error(
-                    Some(version_num),
-                    ErrorCode::E066,
-                    format!(
-                        "Inventory version {} state contains a path not in the root inventory: {}",
-                        current_num, path
-                    ),
+            if let Some(comparing_inventory) = comparing_inventory {
+                self.validate_state_consistent(
+                    version_num,
+                    current_num,
+                    comparing_inventory,
+                    other_inventory,
+                    true,
+                    result,
+                );
+            } else {
+                self.validate_state_consistent(
+                    version_num,
+                    current_num,
+                    root_inventory,
+                    other_inventory,
+                    false,
+                    result,
                 );
             }
 
@@ -620,6 +636,98 @@ impl<S: Storage> Validator<S> {
             } else {
                 current_num = current_num.previous().unwrap();
             }
+        }
+    }
+
+    fn validate_state_consistent(
+        &self,
+        version_num: VersionNum,
+        current_version: VersionNum,
+        comparing_inventory: &Inventory,
+        inventory: &Inventory,
+        compare_digests: bool,
+        result: &mut ValidationResult,
+    ) {
+        let comparing_version = comparing_inventory.get_version(current_version).unwrap();
+        let version = inventory.get_version(current_version).unwrap();
+
+        let mut paths = version.logical_paths();
+
+        for (comparing_path, comparing_digest) in comparing_version.state_iter() {
+            paths.remove(comparing_path);
+            match version.lookup_digest(comparing_path) {
+                None => {
+                    result.error(
+                        Some(version_num),
+                        ErrorCode::E066,
+                        format!(
+                            "Inventory version {} state is missing a path that exists in later inventories: {}",
+                            current_version, comparing_path
+                        ),
+                    );
+                }
+                Some(digest) => {
+                    if compare_digests && comparing_digest != digest {
+                        result.error(
+                            Some(version_num),
+                            ErrorCode::E066,
+                            format!(
+                                "Inventory version {} state path '{}' does not match digest in later inventories. Expected: {}; Found: {}",
+                                current_version, comparing_path, comparing_digest, digest
+                            ),
+                        );
+                    } else {
+                        let comparing_content_paths =
+                            comparing_inventory.content_paths(comparing_digest).unwrap();
+                        let content_paths = inventory.content_paths(digest).unwrap();
+
+                        if comparing_content_paths.len() == 1 {
+                            if comparing_content_paths != content_paths {
+                                result.error(
+                                    Some(version_num),
+                                    ErrorCode::E066,
+                                    format!(
+                                        "Inventory version {} state path '{}' maps to different content paths than it does in later inventories. Expected: {:?}; Found: {:?}",
+                                        current_version, comparing_path, comparing_content_paths, content_paths
+                                    ),
+                                );
+                            }
+                        } else {
+                            let mut filtered_paths = HashSet::new();
+
+                            for content_path in comparing_content_paths {
+                                if let ContentPathVersion::VersionNum(num) = content_path.version {
+                                    if num <= current_version {
+                                        filtered_paths.insert(content_path.clone());
+                                    }
+                                }
+                            }
+
+                            if filtered_paths != *content_paths {
+                                result.error(
+                                    Some(version_num),
+                                    ErrorCode::E066,
+                                    format!(
+                                        "Inventory version {} state path '{}' maps to different content paths than it does in later inventories. Expected: {:?}; Found: {:?}",
+                                        current_version, comparing_path, filtered_paths, content_paths
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for path in paths {
+            result.error(
+                Some(version_num),
+                ErrorCode::E066,
+                format!(
+                    "Inventory version {} state contains a path not in later inventories: {}",
+                    current_version, path
+                ),
+            );
         }
     }
 
@@ -674,8 +782,6 @@ impl<S: Storage> Validator<S> {
             inventory.digest_algorithm,
             result,
         )?;
-
-        // TODO validate content dir
 
         Ok(())
     }
