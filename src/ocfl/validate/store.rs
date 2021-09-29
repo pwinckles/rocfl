@@ -64,7 +64,6 @@ pub mod fs {
             let mut walker = WalkDir::new(&root);
 
             if !recursive {
-                // TODO not sure if this is right
                 walker = walker.max_depth(1);
             }
 
@@ -82,7 +81,9 @@ pub mod fs {
                 if path.file_type().is_file() {
                     listings.push(Listing::File(Cow::Owned(relative_path)));
                 } else if path.file_type().is_dir() {
-                    if path.path() != root.as_path() && util::dir_is_empty(path.path())? {
+                    if path.path() != root.as_path()
+                        && (!recursive || util::dir_is_empty(path.path())?)
+                    {
                         listings.push(Listing::Directory(Cow::Owned(relative_path)));
                     }
                 } else {

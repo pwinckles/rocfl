@@ -374,7 +374,9 @@ impl<S: Storage> Validator<S> {
                     }
                 }
 
-                // TODO fixity check
+                if fixity_check {
+                    self.fixity_check(object_root, &inventory, &inventories, &mut result)?;
+                }
             }
         }
 
@@ -383,6 +385,67 @@ impl<S: Storage> Validator<S> {
 
     pub fn validate_repo(&self, fixity_check: bool) {
         todo!()
+    }
+
+    fn fixity_check(
+        &self,
+        object_root: &str,
+        root_inventory: &Inventory,
+        inventories: &HashMap<DigestAlgorithm, Inventory>,
+        result: &mut ValidationResult,
+    ) -> Result<()> {
+        let root_algorithm = root_inventory.digest_algorithm;
+        let mut fixity = root_inventory.invert_fixity();
+
+        for (path, digest) in root_inventory.manifest() {
+            let mut expectations = HashMap::new();
+            expectations.insert(root_algorithm, digest);
+
+            if let Some(fixity) = &mut fixity {
+                if let Some(fixity_expectations) = fixity.get(path) {
+                    for (algorithm, alt_digest) in fixity_expectations {
+                        expectations.insert(*algorithm, alt_digest);
+                    }
+                }
+            }
+            for (algorithm, inventory) in inventories {
+                if let Some(alt_digest) = inventory.digest_for_content_path(path) {
+                    expectations.insert(*algorithm, alt_digest);
+                }
+            }
+
+            let algorithms: Vec<DigestAlgorithm> = expectations.keys().copied().collect();
+            let mut digester = MultiDigestWriter::new(&algorithms, std::io::sink());
+
+            let full_path = paths::join(object_root, path.as_str());
+
+            self.storage.read(&full_path, &mut digester)?;
+
+            for (algorithm, actual) in digester.finalize_hex() {
+                let expected = expectations.get(&algorithm).unwrap();
+                if actual != ***expected {
+                    // TODO technically, one of these digests could be in the fixity block...
+                    let code = if algorithm == DigestAlgorithm::Sha512
+                        || algorithm == DigestAlgorithm::Sha256
+                    {
+                        ErrorCode::E092
+                    } else {
+                        ErrorCode::E093
+                    };
+
+                    result.error(
+                        None,
+                        code,
+                        format!(
+                            "Content file {} failed {} fixity check. Expected: {}; Found: {}",
+                            path, algorithm, expected, actual
+                        ),
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn validate_manifest(
@@ -835,7 +898,7 @@ impl<S: Storage> Validator<S> {
         result: &mut ValidationResult,
     ) -> Result<()> {
         if files.contains(&Listing::dir(content_dir))
-            && !self
+            && self
                 .storage
                 .list(&paths::join(version_dir, content_dir), false)?
                 .is_empty()
@@ -850,7 +913,7 @@ impl<S: Storage> Validator<S> {
         let ignore = [
             Listing::file(INVENTORY_FILE),
             Listing::file_owned(paths::sidecar_name(digest_algorithm)),
-            Listing::file(content_dir),
+            Listing::dir(content_dir),
         ];
 
         for file in files {

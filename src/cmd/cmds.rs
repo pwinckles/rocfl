@@ -250,7 +250,7 @@ impl Cmd for ValidateCmd {
         _terminate: &AtomicBool,
     ) -> Result<()> {
         if let Some(object_id) = &self.object_id {
-            let result = repo.validate_object(object_id, self.no_fixity_check)?;
+            let result = repo.validate_object(object_id, !self.no_fixity_check)?;
 
             fn format_version(version: &Option<String>) -> String {
                 match version {

@@ -1,9 +1,10 @@
 use std::borrow::Cow;
 use std::collections::hash_map::Iter;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::mem;
 use std::rc::Rc;
+use std::str::FromStr;
 
 use chrono::{DateTime, Local};
 use globset::GlobBuilder;
@@ -474,6 +475,43 @@ impl Inventory {
     }
 
     // TODO
+    pub fn manifest(&self) -> &PathBiMap<ContentPath> {
+        &self.manifest
+    }
+
+    // TODO
+    #[allow(clippy::type_complexity)]
+    pub fn invert_fixity(
+        &self,
+    ) -> Option<HashMap<ContentPath, Vec<(DigestAlgorithm, Rc<HexDigest>)>>> {
+        if let Some(fixity) = &self.fixity {
+            let mut inverted = HashMap::new();
+
+            for (algorithm, manifest) in fixity {
+                // TODO skipping blake2b until we can support streaming them
+                if algorithm.starts_with("blake2b") {
+                    continue;
+                }
+                if let Ok(algorithm) = DigestAlgorithm::from_str(algorithm) {
+                    for (digest, paths) in manifest {
+                        let digest = Rc::new(HexDigest::from(digest.as_str()));
+                        for path in paths {
+                            inverted
+                                .entry(ContentPath::try_from(path).unwrap())
+                                .or_insert_with(Vec::new)
+                                .push((algorithm, digest.clone()))
+                        }
+                    }
+                }
+            }
+
+            Some(inverted)
+        } else {
+            None
+        }
+    }
+
+    // TODO replace this with above manifest()
     pub fn manifest_paths(&self) -> HashSet<Rc<ContentPath>> {
         let mut paths = HashSet::with_capacity(self.manifest.len());
 
