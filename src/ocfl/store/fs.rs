@@ -450,7 +450,19 @@ impl OcflStore for FsOcflStore {
         let object_root = self.lookup_or_find_object_root_path(object_id)?;
 
         self.validator
-            .validate_object(object_id, &object_root, fixity_check)
+            .validate_object(Some(object_id), &object_root, fixity_check)
+    }
+
+    /// Validates the specified object at the specified path, relative the storage root, and
+    /// returns any problems found. Err will only be returned if a non-validation problem was
+    /// encountered.
+    fn validate_object_at(
+        &self,
+        object_root: &str,
+        fixity_check: bool,
+    ) -> Result<ValidationResult> {
+        self.validator
+            .validate_object(None, object_root, fixity_check)
     }
 
     /// Instructs the store to gracefully stop any in-flight work and not accept any additional

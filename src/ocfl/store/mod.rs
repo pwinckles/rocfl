@@ -71,6 +71,12 @@ pub trait OcflStore {
     /// if a non-validation problem was encountered.
     fn validate_object(&self, object_id: &str, fixity_check: bool) -> Result<ValidationResult>;
 
+    /// Validates the specified object at the specified path, relative the storage root, and
+    /// returns any problems found. Err will only be returned if a non-validation problem was
+    /// encountered.
+    fn validate_object_at(&self, object_root: &str, fixity_check: bool)
+        -> Result<ValidationResult>;
+
     /// Instructs the store to gracefully stop any in-flight work and not accept any additional
     /// requests.
     fn close(&self);

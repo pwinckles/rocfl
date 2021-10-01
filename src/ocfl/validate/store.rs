@@ -22,6 +22,7 @@ pub enum Listing<'a> {
 // TODO move to store/fs
 pub mod fs {
     use std::borrow::Cow;
+    use std::fs;
     use std::fs::File;
     use std::io::{self, Write};
     use std::path::{Path, PathBuf};
@@ -60,6 +61,10 @@ pub mod fs {
 
             let mut listings = Vec::new();
             let root = self.storage_root.join(path);
+
+            if fs::metadata(&root).is_err() {
+                return Ok(listings);
+            }
 
             let mut walker = WalkDir::new(&root);
 

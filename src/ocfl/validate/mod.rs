@@ -10,7 +10,7 @@ use strum_macros::Display as EnumDisplay;
 
 use crate::ocfl::consts::{
     EXTENSIONS_DIR, INVENTORY_FILE, INVENTORY_SIDECAR_PREFIX, INVENTORY_TYPE, LOGS_DIR,
-    OBJECT_NAMASTE_CONTENTS_1_0, OBJECT_NAMASTE_FILE, SUPPORTED_EXTENSIONS,
+    OBJECT_NAMASTE_CONTENTS_1_0, OBJECT_NAMASTE_FILE, OCFL_OBJECT_VERSION, SUPPORTED_EXTENSIONS,
 };
 use crate::ocfl::digest::{HexDigest, MultiDigestWriter};
 use crate::ocfl::error::{Result, RocflError};
@@ -69,11 +69,25 @@ impl ValidationResult {
         }
     }
 
-    pub fn with_id(object_id: &str) -> Self {
+    pub fn with_id(object_id: Option<&str>) -> Self {
         Self {
-            object_id: Some(object_id.to_string()),
+            object_id: object_id.map(String::from),
             errors: Vec::new(),
             warnings: Vec::new(),
+        }
+    }
+
+    pub fn has_errors(&self) -> bool {
+        !self.errors.is_empty()
+    }
+
+    pub fn has_warnings(&self) -> bool {
+        !self.warnings.is_empty()
+    }
+
+    fn object_id(&mut self, object_id: &str) {
+        if self.object_id.is_none() {
+            self.object_id = Some(object_id.to_string());
         }
     }
 
@@ -90,7 +104,7 @@ impl ValidationResult {
             }));
     }
 
-    pub fn error(&mut self, version_num: Option<VersionNum>, code: ErrorCode, message: String) {
+    fn error(&mut self, version_num: Option<VersionNum>, code: ErrorCode, message: String) {
         self.errors.push(ValidationError::with_version(
             version_str(version_num),
             code,
@@ -98,20 +112,12 @@ impl ValidationResult {
         ));
     }
 
-    pub fn warn(&mut self, version_num: Option<VersionNum>, code: WarnCode, message: String) {
+    fn warn(&mut self, version_num: Option<VersionNum>, code: WarnCode, message: String) {
         self.warnings.push(ValidationWarning::with_version(
             version_str(version_num),
             code,
             message,
         ));
-    }
-
-    pub fn has_errors(&self) -> bool {
-        !self.errors.is_empty()
-    }
-
-    pub fn has_warnings(&self) -> bool {
-        !self.warnings.is_empty()
     }
 }
 
@@ -309,9 +315,18 @@ impl<S: Storage> Validator<S> {
         Self { storage }
     }
 
+    // TODO problems
+    //  1. E015_content_not_in_content_dir: Inventory manifest references a file that does not exist: v1/a_file.txt
+    //  2. E023_extra_file: URI warning not working for user address
+    //  3. E036_no_id: If the inv doesn't validate it produces errors for all version dirs even if referenced in inv
+    //  4. E040_wrong_head_format: hangs... the problem is that unexpected json values are not being consumed
+    //     either need to completely change approach of do something like https://github.com/jonasbb/serde_with/blob/9d9ddb8afc6d46142a5371bea022a3f4a59b809e/src/de/impls.rs#L667
+    //  5. E049_created_no_timezone & E049_created_not_to_seconds: panics with none created timestamp
+    //  6. E049_E050_E054_bad_version_block_values: hangs
+
     pub fn validate_object(
         &self,
-        object_id: &str,
+        object_id: Option<&str>,
         object_root: &str,
         fixity_check: bool,
     ) -> Result<ValidationResult> {
@@ -330,6 +345,12 @@ impl<S: Storage> Validator<S> {
             &root_files,
             &mut result,
         )?;
+
+        // TODO I think the parse result should return an id if possible -- this is not useful without an id
+        // TODO It is likely also worth including the path in the validation result
+        if let Some(inventory) = &inventory {
+            result.object_id(&inventory.id);
+        }
 
         // TODO replace HashSet -> Vec where appropriate
 
@@ -375,7 +396,13 @@ impl<S: Storage> Validator<S> {
                 }
 
                 if fixity_check {
-                    self.fixity_check(object_root, &inventory, &inventories, &mut result)?;
+                    self.fixity_check(
+                        object_root,
+                        &content_files,
+                        &inventory,
+                        &inventories,
+                        &mut result,
+                    )?;
                 }
             }
         }
@@ -390,6 +417,7 @@ impl<S: Storage> Validator<S> {
     fn fixity_check(
         &self,
         object_root: &str,
+        content_files: &ContentPaths,
         root_inventory: &Inventory,
         inventories: &HashMap<DigestAlgorithm, Inventory>,
         result: &mut ValidationResult,
@@ -397,50 +425,52 @@ impl<S: Storage> Validator<S> {
         let root_algorithm = root_inventory.digest_algorithm;
         let mut fixity = root_inventory.invert_fixity();
 
-        for (path, digest) in root_inventory.manifest() {
-            let mut expectations = HashMap::new();
-            expectations.insert(root_algorithm, digest);
+        for path in content_files.iter(root_inventory.head) {
+            if let Some(digest) = root_inventory.digest_for_content_path(path) {
+                let mut expectations = HashMap::new();
+                expectations.insert(root_algorithm, digest);
 
-            if let Some(fixity) = &mut fixity {
-                if let Some(fixity_expectations) = fixity.get(path) {
-                    for (algorithm, alt_digest) in fixity_expectations {
+                if let Some(fixity) = &mut fixity {
+                    if let Some(fixity_expectations) = fixity.get(path) {
+                        for (algorithm, alt_digest) in fixity_expectations {
+                            expectations.insert(*algorithm, alt_digest);
+                        }
+                    }
+                }
+                for (algorithm, inventory) in inventories {
+                    if let Some(alt_digest) = inventory.digest_for_content_path(path) {
                         expectations.insert(*algorithm, alt_digest);
                     }
                 }
-            }
-            for (algorithm, inventory) in inventories {
-                if let Some(alt_digest) = inventory.digest_for_content_path(path) {
-                    expectations.insert(*algorithm, alt_digest);
-                }
-            }
 
-            let algorithms: Vec<DigestAlgorithm> = expectations.keys().copied().collect();
-            let mut digester = MultiDigestWriter::new(&algorithms, std::io::sink());
+                let algorithms: Vec<DigestAlgorithm> = expectations.keys().copied().collect();
+                let mut digester = MultiDigestWriter::new(&algorithms, std::io::sink());
 
-            let full_path = paths::join(object_root, path.as_str());
+                let full_path = paths::join(object_root, path.as_str());
 
-            self.storage.read(&full_path, &mut digester)?;
+                self.storage.read(&full_path, &mut digester)?;
 
-            for (algorithm, actual) in digester.finalize_hex() {
-                let expected = expectations.get(&algorithm).unwrap();
-                if actual != ***expected {
-                    // TODO technically, one of these digests could be in the fixity block...
-                    let code = if algorithm == DigestAlgorithm::Sha512
-                        || algorithm == DigestAlgorithm::Sha256
-                    {
-                        ErrorCode::E092
-                    } else {
-                        ErrorCode::E093
-                    };
+                for (algorithm, actual) in digester.finalize_hex() {
+                    let expected = expectations.get(&algorithm).unwrap();
+                    if actual != ***expected {
+                        // TODO technically, one of these digests could be in the fixity block...
+                        let code = if algorithm == DigestAlgorithm::Sha512
+                            || algorithm == DigestAlgorithm::Sha256
+                        {
+                            ErrorCode::E092
+                        } else {
+                            ErrorCode::E093
+                        };
 
-                    result.error(
-                        None,
-                        code,
-                        format!(
-                            "Content file {} failed {} fixity check. Expected: {}; Found: {}",
-                            path, algorithm, expected, actual
-                        ),
-                    );
+                        result.error(
+                            None,
+                            code,
+                            format!(
+                                "Content file {} failed {} fixity check. Expected: {}; Found: {}",
+                                path, algorithm, expected, actual
+                            ),
+                        );
+                    }
                 }
             }
         }
@@ -577,7 +607,7 @@ impl<S: Storage> Validator<S> {
 
         if files.contains(&Listing::file(INVENTORY_FILE)) {
             let (inventory, _, _) = self.validate_inventory_and_sidecar(
-                &root_inventory.id,
+                Some(&root_inventory.id),
                 Some(version_num),
                 version_dir,
                 &files,
@@ -1081,7 +1111,7 @@ impl<S: Storage> Validator<S> {
                                 ErrorCode::E007,
                                 format!(
                                     "Object version declaration is invalid. Expected: {}; Found: {}",
-                                    OBJECT_NAMASTE_CONTENTS_1_0, contents
+                                    OCFL_OBJECT_VERSION, contents
                                 ),
                             );
                         }
@@ -1112,7 +1142,7 @@ impl<S: Storage> Validator<S> {
 
     fn validate_inventory_and_sidecar(
         &self,
-        object_id: &str,
+        object_id: Option<&str>,
         version_num: Option<VersionNum>,
         path: &str,
         files: &[Listing],
@@ -1145,7 +1175,7 @@ impl<S: Storage> Validator<S> {
             digest = inv_digest;
 
             if version_num.is_none() {
-                if let Some(inventory) = &inventory {
+                if let (Some(inventory), Some(object_id)) = (&inventory, object_id) {
                     if object_id != inventory.id {
                         result.error(
                             version_num,

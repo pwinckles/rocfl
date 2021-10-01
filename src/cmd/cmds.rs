@@ -249,66 +249,72 @@ impl Cmd for ValidateCmd {
         _config: &Config,
         _terminate: &AtomicBool,
     ) -> Result<()> {
-        if let Some(object_id) = &self.object_id {
-            let result = repo.validate_object(object_id, !self.no_fixity_check)?;
-
-            fn format_version(version: &Option<String>) -> String {
-                match version {
-                    Some(version) => format!(" ({})", version),
-                    None => "".to_string(),
-                }
-            }
-
-            // TODO use error/warn?
-            if result.has_errors() || result.has_warnings() {
-                // TODO pluralization
-                if !result.has_errors() {
-                    println(format!(
-                        "Object {} has {} warnings",
-                        object_id,
-                        result.warnings.len()
-                    ));
+        if !self.object_ids.is_empty() {
+            for object_id in &self.object_ids {
+                let result = if self.paths {
+                    repo.validate_object_at(object_id, !self.no_fixity_check)?
                 } else {
-                    println(format!(
-                        "Object {} has {} errors and {} warnings",
-                        object_id,
-                        result.errors.len(),
-                        result.warnings.len()
-                    ));
+                    repo.validate_object(object_id, !self.no_fixity_check)?
+                };
+
+                fn format_version(version: &Option<String>) -> String {
+                    match version {
+                        Some(version) => format!(" ({})", version),
+                        None => "".to_string(),
+                    }
                 }
 
-                if result.has_errors() {
-                    println("Errors:");
-                }
-                result.errors.iter().enumerate().for_each(|(i, error)| {
-                    // TODO this should probably have Display
-                    println(format!(
-                        "  {}. [{}]{} {}",
-                        i + 1,
-                        error.code,
-                        format_version(&error.version_num),
-                        error.text
-                    ));
-                });
+                // TODO use error/warn?
+                if result.has_errors() || result.has_warnings() {
+                    // TODO pluralization
+                    if !result.has_errors() {
+                        println(format!(
+                            "Object {} has {} warnings",
+                            result.object_id.as_ref().unwrap_or(&"Unknown".to_string()),
+                            result.warnings.len()
+                        ));
+                    } else {
+                        println(format!(
+                            "Object {} has {} errors and {} warnings",
+                            result.object_id.as_ref().unwrap_or(&"Unknown".to_string()),
+                            result.errors.len(),
+                            result.warnings.len()
+                        ));
+                    }
 
-                if result.has_warnings() {
-                    println("Warnings:");
-                }
-                result.warnings.iter().enumerate().for_each(|(i, warning)| {
-                    // TODO this should probably have Display
-                    println(format!(
-                        "  {}. [{}]{} {}",
-                        i + 1,
-                        warning.code,
-                        format_version(&warning.version_num),
-                        warning.text
-                    ));
-                });
+                    if result.has_errors() {
+                        println("Errors:");
+                    }
+                    result.errors.iter().enumerate().for_each(|(i, error)| {
+                        // TODO this should probably have Display
+                        println(format!(
+                            "  {}. [{}]{} {}",
+                            i + 1,
+                            error.code,
+                            format_version(&error.version_num),
+                            error.text
+                        ));
+                    });
 
-                // TODO different return code?
-            } else {
-                // TODO I think there's a clever way around the string formatting issue in the book
-                println(format!("Object {} is valid", object_id));
+                    if result.has_warnings() {
+                        println("Warnings:");
+                    }
+                    result.warnings.iter().enumerate().for_each(|(i, warning)| {
+                        // TODO this should probably have Display
+                        println(format!(
+                            "  {}. [{}]{} {}",
+                            i + 1,
+                            warning.code,
+                            format_version(&warning.version_num),
+                            warning.text
+                        ));
+                    });
+
+                    // TODO different return code?
+                } else {
+                    // TODO I think there's a clever way around the string formatting issue in the book
+                    println(format!("Object {} is valid", object_id));
+                }
             }
         } else {
             todo!()

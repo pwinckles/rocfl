@@ -22,6 +22,7 @@ use crate::ocfl::serde::{
 };
 use crate::ocfl::validate::{ErrorCode, ParseResult, ParseValidationResult, WarnCode};
 use crate::ocfl::{ContentPath, DigestAlgorithm, LogicalPath, VersionNum};
+use serde_json::Value;
 
 static MD5_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{32}$"#).unwrap());
 static SHA1_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{40}$"#).unwrap());
@@ -359,6 +360,14 @@ impl<'de> Deserialize<'de> for ParseResult {
                 }
                 if versions.is_none() && !versions_failed {
                     missing_inv_field_2(VERSIONS_FIELD, &result);
+                }
+                if let Some(versions) = &versions {
+                    if versions.is_empty() && !versions_failed {
+                        result.error(
+                            ErrorCode::E008,
+                            "Inventory does not contain any versions".to_string(),
+                        );
+                    }
                 }
 
                 if let (Some(head), Some(versions)) = (&head, &versions) {
@@ -728,6 +737,7 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
                     missing_version_field_warn(USER_FIELD, self.version, self.result);
                 }
 
+                // TODO this will panic if created/state is none
                 Ok(Version::new(
                     created.unwrap(),
                     state.unwrap(),
@@ -1126,6 +1136,7 @@ impl<'de, 'a, 'b> DeserializeSeed<'de> for UserSeed<'a, 'b> {
                     );
                 }
 
+                // TODO this will panic if user is none
                 Ok(User::new(name.unwrap(), address))
             }
         }

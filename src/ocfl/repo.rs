@@ -146,6 +146,14 @@ impl OcflRepo {
         self.store.validate_object(object_id, fixity_check)
     }
 
+    /// Validates the specified object at the specified path, relative the storage root, and
+    /// returns any problems found. Err will only be returned if a non-validation problem was
+    /// encountered.
+    pub fn validate_object_at(&self, path: &str, fixity_check: bool) -> Result<ValidationResult> {
+        self.ensure_open()?;
+        self.store.validate_object_at(path, fixity_check)
+    }
+
     /// Returns an iterator that iterate through all of the objects in an OCFL repository.
     /// Objects are lazy-loaded. An optional glob pattern may be provided to filter the objects
     /// that are returned.

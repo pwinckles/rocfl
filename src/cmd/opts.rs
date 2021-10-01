@@ -552,14 +552,18 @@ pub struct PurgeCmd {
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct ValidateCmd {
+    /// Interpret positional parameters as paths to object roots relative the repository root
+    #[structopt(short, long)]
+    pub paths: bool,
+
     /// Disable fixity check on stored files
     #[structopt(short, long)]
     pub no_fixity_check: bool,
 
     // TODO allow multiple?
-    /// ID of the object to validate
-    #[structopt(name = "OBJ_ID")]
-    pub object_id: Option<String>,
+    /// IDs of the objects to validate, or paths object roots when used with '--paths'
+    #[structopt(name = "OBJ_ID/PATH")]
+    pub object_ids: Vec<String>,
 }
 
 // TODO a command for rebasing staging if an object is updated after the staged version was created?
