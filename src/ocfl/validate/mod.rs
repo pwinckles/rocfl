@@ -121,7 +121,7 @@ impl ValidationResult {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ValidationError {
     pub version_num: Option<String>,
     pub code: ErrorCode,
@@ -147,7 +147,7 @@ impl ValidationError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ValidationWarning {
     pub version_num: Option<String>,
     pub code: WarnCode,
@@ -174,7 +174,7 @@ impl ValidationWarning {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, EnumDisplay, Copy, Clone, PartialEq)]
+#[derive(Debug, EnumDisplay, Copy, Clone, Eq, PartialEq)]
 pub enum ErrorCode {
     E001,
     E002,
@@ -280,7 +280,7 @@ pub enum ErrorCode {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, EnumDisplay, Copy, Clone, PartialEq)]
+#[derive(Debug, EnumDisplay, Copy, Clone, Eq, PartialEq)]
 pub enum WarnCode {
     W001,
     W002,
@@ -1245,52 +1245,43 @@ impl<S: Storage> Validator<S> {
 
         self.storage.read(inventory_path, &mut writer)?;
 
-        match serde_json::from_slice::<ParseResult>(writer.inner()) {
-            Ok(parse_result) => match parse_result {
-                ParseResult::Ok(parse_result, inv) => {
-                    // TODO this is only valid for 1.0
-                    if inv.type_declaration != INVENTORY_TYPE {
+        match serde::parse(writer.inner()) {
+            ParseResult::Ok(parse_result, inv) => {
+                // TODO this is only valid for 1.0
+                if inv.type_declaration != INVENTORY_TYPE {
+                    parse_result.error(
+                        ErrorCode::E038,
+                        format!(
+                            "Inventory field 'type' must equal '{}'. Found: {}",
+                            INVENTORY_TYPE, inv.type_declaration
+                        ),
+                    );
+                }
+
+                if let Some(version) = version {
+                    if inv.head != version {
+                        // TODO suspect code
                         parse_result.error(
-                            ErrorCode::E038,
+                            ErrorCode::E040,
                             format!(
-                                "Inventory field 'type' must equal '{}'. Found: {}",
-                                INVENTORY_TYPE, inv.type_declaration
+                                "Inventory field 'head' must equal '{}'. Found: {}",
+                                version, inv.head
                             ),
                         );
                     }
-
-                    if let Some(version) = version {
-                        if inv.head != version {
-                            // TODO suspect code
-                            parse_result.error(
-                                ErrorCode::E040,
-                                format!(
-                                    "Inventory field 'head' must equal '{}'. Found: {}",
-                                    version, inv.head
-                                ),
-                            );
-                        }
-                    }
-
-                    let has_errors = parse_result.has_errors();
-
-                    result.add_parse_result(&version_str(version), parse_result);
-
-                    digest = writer.finalize_hex().remove(&inv.digest_algorithm);
-                    if !has_errors {
-                        inventory = Some(inv);
-                    }
                 }
-                ParseResult::Error(parse_result) => {
-                    result.add_parse_result(&version_str(version), parse_result)
+
+                let has_errors = parse_result.has_errors();
+
+                result.add_parse_result(&version_str(version), parse_result);
+
+                digest = writer.finalize_hex().remove(&inv.digest_algorithm);
+                if !has_errors {
+                    inventory = Some(inv);
                 }
-            },
-            Err(_) => {
-                result.error(
-                    version,
-                    ErrorCode::E033,
-                    "Inventory could not be parsed".to_string(),
-                );
+            }
+            ParseResult::Error(parse_result) => {
+                result.add_parse_result(&version_str(version), parse_result)
             }
         }
 
@@ -1363,6 +1354,12 @@ impl ParseValidationResult {
 
     pub fn has_errors(&self) -> bool {
         self.errors.borrow().len() > 0
+    }
+}
+
+impl Default for ParseValidationResult {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -1452,7 +1449,4 @@ fn version_str(version: Option<VersionNum>) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-
-    use crate::ocfl::RocflError;
-}
+mod tests {}

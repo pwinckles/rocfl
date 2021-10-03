@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryFrom;
@@ -10,6 +11,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::de::{DeserializeSeed, Error as SerdeError, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
+use serde_json::Value;
 use uriparse::URI;
 
 use crate::ocfl::bimap::PathBiMap;
@@ -22,7 +24,8 @@ use crate::ocfl::serde::{
 };
 use crate::ocfl::validate::{ErrorCode, ParseResult, ParseValidationResult, WarnCode};
 use crate::ocfl::{ContentPath, DigestAlgorithm, LogicalPath, VersionNum};
-use serde_json::Value;
+
+const ERROR_MARKER: &str = "ROCFL";
 
 static MD5_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{32}$"#).unwrap());
 static SHA1_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{40}$"#).unwrap());
@@ -34,7 +37,33 @@ static BLAKE2B_384_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{
 static BLAKE2B_512_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{128}$"#).unwrap());
 static SHA512_256_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{64}$"#).unwrap());
 
-impl<'de> Deserialize<'de> for ParseResult {
+thread_local!(static PARSE_RESULT: RefCell<ParseValidationResult> = RefCell::new(ParseValidationResult::new()));
+
+pub(super) fn parse(bytes: &[u8]) -> ParseResult {
+    fn take_result() -> ParseValidationResult {
+        PARSE_RESULT.with(|result| result.take())
+    }
+
+    match serde_json::from_slice::<OptionWrapper<Inventory>>(bytes) {
+        Ok(OptionWrapper(Some(inventory))) => ParseResult::Ok(take_result(), inventory),
+        Ok(_) => ParseResult::Error(take_result()),
+        Err(e) => {
+            let result = take_result();
+            if !e.is_data() {
+                result.error(
+                    ErrorCode::E033,
+                    format!("Inventory could not be parsed: {}", e),
+                );
+            }
+            ParseResult::Error(result)
+        }
+    }
+}
+
+#[derive(Debug)]
+struct OptionWrapper<T>(Option<T>);
+
+impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -66,7 +95,7 @@ impl<'de> Deserialize<'de> for ParseResult {
                     type Value = Field;
 
                     fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                        formatter.write_str("an OCFL inventory field")
+                        formatter.write_str(ERROR_MARKER)
                     }
 
                     fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
@@ -94,21 +123,21 @@ impl<'de> Deserialize<'de> for ParseResult {
             }
         }
 
-        struct InventoryVisitor;
+        struct InventoryVisitor<'a> {
+            result: &'a ParseValidationResult,
+        }
 
-        impl<'de> Visitor<'de> for InventoryVisitor {
-            type Value = ParseResult;
+        impl<'de, 'a> Visitor<'de> for InventoryVisitor<'a> {
+            type Value = Option<Inventory>;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("an OCFL inventory object")
+                formatter.write_str(ERROR_MARKER)
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
             where
                 A: MapAccess<'de>,
             {
-                let result = ParseValidationResult::new();
-
                 let mut id = None;
                 let mut type_declaration = None;
                 let mut digest_algorithm = None;
@@ -118,8 +147,6 @@ impl<'de> Deserialize<'de> for ParseResult {
                 let mut versions = None;
                 let mut fixity: Option<HashMap<String, HashMap<String, Vec<String>>>> = None;
 
-                let mut id_failed = false;
-                let mut type_failed = false;
                 let mut digest_failed = false;
                 let mut head_failed = false;
                 let mut manifest_failed = false;
@@ -128,65 +155,61 @@ impl<'de> Deserialize<'de> for ParseResult {
                 let mut data = DigestsAndPaths::new();
 
                 loop {
-                    let key = match map.next_key_seed(FieldSeed(&result)) {
-                        Ok(None) => break,
-                        Ok(Some(key)) => key,
-                        Err(e) => {
-                            result.error(
-                                ErrorCode::E033,
-                                format!(
-                                    "Inventory contains invalid field: {}",
-                                    // TODO verify what this produces
-                                    e.to_string()
-                                ),
-                            );
-                            continue;
-                        }
+                    let key = match map.next_key_seed(FieldSeed(self.result))? {
+                        None => break,
+                        Some(key) => key,
                     };
 
                     match key {
                         Field::Id => {
                             if id.is_some() {
-                                duplicate_field(ID_FIELD, &result);
+                                duplicate_field(ID_FIELD, self.result);
+                                map.next_value::<Value>()?;
                             } else {
                                 match map.next_value::<&str>() {
                                     Ok(value) => {
                                         if URI::try_from(value).is_err() {
-                                            result.warn(
+                                            self.result.warn(
                                                 WarnCode::W005,
-                                                format!("Inventory field 'id' should be a URI. Found: {}", value));
+                                                format!(
+                                                    "Inventory 'id' should be a URI. Found: {}",
+                                                    value
+                                                ),
+                                            );
                                         }
                                         id = Some(value.to_string());
                                     }
-                                    Err(_) => {
-                                        result.error(
+                                    Err(e) => {
+                                        self.result.error(
                                             ErrorCode::E037,
-                                            "Inventory field 'id' must be a string".to_string(),
+                                            "Inventory 'id' must be a string".to_string(),
                                         );
-                                        id_failed = true;
+                                        return Err(e);
                                     }
                                 }
                             }
                         }
                         Field::Type => {
                             if type_declaration.is_some() {
-                                duplicate_field(TYPE_FIELD, &result);
+                                duplicate_field(TYPE_FIELD, self.result);
+                                map.next_value::<Value>()?;
                             } else {
                                 match map.next_value() {
                                     Ok(value) => type_declaration = Some(value),
-                                    Err(_) => {
-                                        result.error(
+                                    Err(e) => {
+                                        self.result.error(
                                             ErrorCode::E038,
-                                            "Inventory field 'type' must be a URI".to_string(),
+                                            "Inventory 'type' must be a URI".to_string(),
                                         );
-                                        type_failed = true;
+                                        return Err(e);
                                     }
                                 }
                             }
                         }
                         Field::DigestAlgorithm => {
                             if digest_algorithm.is_some() {
-                                duplicate_field(DIGEST_ALGORITHM_FIELD, &result);
+                                duplicate_field(DIGEST_ALGORITHM_FIELD, self.result);
+                                map.next_value::<Value>()?;
                             } else {
                                 match map.next_value::<&str>() {
                                     Ok(value) => match DigestAlgorithm::from_str(value) {
@@ -194,43 +217,44 @@ impl<'de> Deserialize<'de> for ParseResult {
                                             if algorithm != DigestAlgorithm::Sha512
                                                 && algorithm != DigestAlgorithm::Sha256
                                             {
-                                                result.error(
+                                                self.result.error(
                                                         ErrorCode::E025,
-                                                        format!("Inventory field 'digestAlgorithm' must be 'sha512' or 'sha256. Found: {}", value),
+                                                        format!("Inventory 'digestAlgorithm' must be 'sha512' or 'sha256. Found: {}", value),
                                                     );
                                                 digest_failed = true;
                                             } else {
                                                 if algorithm == DigestAlgorithm::Sha256 {
-                                                    result.warn(
+                                                    self.result.warn(
                                                             WarnCode::W004,
-                                                            format!("Inventory field 'digestAlgorithm' should be 'sha512'. Found: {}", value),
+                                                            format!("Inventory 'digestAlgorithm' should be 'sha512'. Found: {}", value),
                                                         );
                                                 }
                                                 digest_algorithm = Some(algorithm);
                                             }
                                         }
                                         Err(_) => {
-                                            result.error(
+                                            self.result.error(
                                                     ErrorCode::E025,
-                                                    format!("Inventory field 'digestAlgorithm' must be 'sha512' or 'sha256. Found: {}", value),
+                                                    format!("Inventory 'digestAlgorithm' must be 'sha512' or 'sha256. Found: {}", value),
                                                 );
                                             digest_failed = true;
                                         }
                                     },
-                                    Err(_) => {
-                                        result.error(
+                                    Err(e) => {
+                                        self.result.error(
                                             ErrorCode::E033,
-                                            "Inventory field 'digestAlgorithm' must be a string"
+                                            "Inventory 'digestAlgorithm' must be a string"
                                                 .to_string(),
                                         );
-                                        digest_failed = true;
+                                        return Err(e);
                                     }
                                 }
                             }
                         }
                         Field::Head => {
                             if head.is_some() {
-                                duplicate_field(HEAD_FIELD, &result);
+                                duplicate_field(HEAD_FIELD, self.result);
+                                map.next_value::<Value>()?;
                             } else {
                                 match map.next_value::<&str>() {
                                     Ok(value) => {
@@ -238,132 +262,146 @@ impl<'de> Deserialize<'de> for ParseResult {
                                             Ok(num) => head = Some(num),
                                             Err(_) => {
                                                 // TODO this is not the right code https://github.com/OCFL/spec/issues/532
-                                                result.error(
+                                                self.result.error(
                                                     ErrorCode::E011,
-                                                    format!("Inventory field 'head' must be a valid version number. Found: {}", value),
+                                                    format!("Inventory 'head' must be a valid version number. Found: {}", value),
                                                 );
                                                 head_failed = true;
                                             }
                                         }
                                     }
-                                    Err(_) => {
-                                        result.error(
+                                    Err(e) => {
+                                        self.result.error(
                                             ErrorCode::E040,
-                                            "Inventory field 'head' must be a string".to_string(),
+                                            "Inventory 'head' must be a string".to_string(),
                                         );
-                                        head_failed = true;
+                                        return Err(e);
                                     }
                                 }
                             }
                         }
                         Field::ContentDirectory => {
                             if content_directory.is_some() {
-                                duplicate_field(CONTENT_DIRECTORY_FIELD, &result);
+                                duplicate_field(CONTENT_DIRECTORY_FIELD, self.result);
+                                map.next_value::<Value>()?;
                             } else {
                                 match map.next_value::<&str>() {
                                     Ok(value) => {
                                         if value.eq(".") || value.eq("..") {
-                                            result.error(ErrorCode::E018,
-                                                         format!("Inventory field 'contentDirectory' cannot equal '.' or '..'. Found: {}", value));
+                                            self.result.error(ErrorCode::E018,
+                                                         format!("Inventory 'contentDirectory' cannot equal '.' or '..'. Found: {}", value));
                                         } else if value.contains('/') {
-                                            result.error(ErrorCode::E017,
-                                                         format!("Inventory field 'contentDirectory' cannot contain '/'. Found: {}", value));
+                                            self.result.error(ErrorCode::E017,
+                                                         format!("Inventory 'contentDirectory' cannot contain '/'. Found: {}", value));
                                         } else {
                                             content_directory = Some(value.to_string());
                                         }
                                     }
-                                    Err(_) => {
-                                        result.error(
+                                    Err(e) => {
+                                        self.result.error(
                                             ErrorCode::E033,
-                                            "Inventory field 'contentDirectory' must be a string"
+                                            "Inventory 'contentDirectory' must be a string"
                                                 .to_string(),
                                         );
+                                        return Err(e);
                                     }
                                 }
                             }
                         }
                         Field::Manifest => {
                             if manifest.is_some() {
-                                duplicate_field(MANIFEST_FIELD, &result);
+                                duplicate_field(MANIFEST_FIELD, self.result);
+                                map.next_value::<Value>()?;
                             } else {
                                 match map.next_value_seed(ManifestSeed {
                                     data: &mut data,
-                                    result: &result,
+                                    result: self.result,
                                 }) {
                                     Ok(value) => manifest = Some(value),
-                                    Err(_) => {
-                                        result.error(
-                                            ErrorCode::E033,
-                                            "Inventory field 'manifest' must be an object"
-                                                .to_string(),
-                                        );
-                                        manifest_failed = true;
+                                    Err(e) => {
+                                        if e.to_string().contains(ERROR_MARKER) {
+                                            self.result.error(
+                                                ErrorCode::E033,
+                                                "Inventory 'manifest' must be an object"
+                                                    .to_string(),
+                                            );
+                                            manifest_failed = true;
+                                        } else {
+                                            return Err(e);
+                                        }
                                     }
                                 }
                             }
                         }
                         Field::Versions => {
                             if versions.is_some() {
-                                duplicate_field(VERSIONS_FIELD, &result);
+                                duplicate_field(VERSIONS_FIELD, self.result);
+                                map.next_value::<Value>()?;
                             } else {
                                 match map.next_value_seed(VersionsSeed {
                                     data: &mut data,
-                                    result: &result,
+                                    result: self.result,
                                 }) {
                                     Ok(value) => versions = Some(value),
-                                    Err(_) => {
-                                        result.error(
-                                            ErrorCode::E044,
-                                            "Inventory field 'versions' must be an object"
-                                                .to_string(),
-                                        );
-                                        versions_failed = true;
+                                    Err(e) => {
+                                        if e.to_string().contains(ERROR_MARKER) {
+                                            self.result.error(
+                                                ErrorCode::E044,
+                                                "Inventory 'versions' must be an object"
+                                                    .to_string(),
+                                            );
+                                            versions_failed = true;
+                                        } else {
+                                            return Err(e);
+                                        }
                                     }
                                 }
                             }
                         }
                         Field::Fixity => {
                             if fixity.is_some() {
-                                duplicate_field(FIXITY_FIELD, &result);
+                                duplicate_field(FIXITY_FIELD, self.result);
+                                map.next_value::<Value>()?;
                             } else {
                                 match map.next_value() {
                                     Ok(value) => fixity = Some(value),
                                     Err(_) => {
-                                        result.error(
+                                        self.result.error(
                                             ErrorCode::E057,
-                                            "Inventory field 'fixity' is not structured correctly"
+                                            "Inventory 'fixity' must be a map of maps of arrays"
                                                 .to_string(),
                                         );
                                     }
                                 }
                             }
                         }
-                        // TODO do I need to explicitly skip the value when unknown?
-                        Field::Unknown => (),
+                        Field::Unknown => {
+                            map.next_value::<Value>()?;
+                        }
                     }
                 }
 
-                if id.is_none() && !id_failed {
-                    missing_inv_field(ID_FIELD, &result);
+                if id.is_none() {
+                    missing_inv_field(ID_FIELD, self.result);
                 }
-                if type_declaration.is_none() && !type_failed {
-                    missing_inv_field(TYPE_FIELD, &result);
+                if type_declaration.is_none() {
+                    missing_inv_field(TYPE_FIELD, self.result);
                 }
                 if digest_algorithm.is_none() && !digest_failed {
-                    missing_inv_field(DIGEST_ALGORITHM_FIELD, &result);
+                    missing_inv_field(DIGEST_ALGORITHM_FIELD, self.result);
                 }
                 if head.is_none() && !head_failed {
-                    missing_inv_field(HEAD_FIELD, &result);
+                    missing_inv_field(HEAD_FIELD, self.result);
                 }
                 if manifest.is_none() && !manifest_failed {
-                    missing_inv_field_2(MANIFEST_FIELD, &result);
+                    missing_inv_field_2(MANIFEST_FIELD, self.result);
                 }
                 if versions.is_none() && !versions_failed {
-                    missing_inv_field_2(VERSIONS_FIELD, &result);
+                    missing_inv_field_2(VERSIONS_FIELD, self.result);
                 }
                 if let Some(versions) = &versions {
                     if versions.is_empty() && !versions_failed {
-                        result.error(
+                        self.result.error(
                             ErrorCode::E008,
                             "Inventory does not contain any versions".to_string(),
                         );
@@ -372,18 +410,18 @@ impl<'de> Deserialize<'de> for ParseResult {
 
                 if let (Some(head), Some(versions)) = (&head, &versions) {
                     if !versions.contains_key(head) {
-                        result.error(
+                        self.result.error(
                             ErrorCode::E010,
-                            format!("Inventory field 'versions' is missing version '{}'", head),
+                            format!("Inventory 'versions' is missing version '{}'", head),
                         )
                     }
 
                     if let Some(highest_version) = versions.keys().rev().next() {
                         if head != highest_version {
-                            result.error(
+                            self.result.error(
                                 ErrorCode::E040,
                                 format!(
-                                    "Inventory field 'head' references '{}' but '{}' was expected",
+                                    "Inventory 'head' references '{}' but '{}' was expected",
                                     head, highest_version
                                 ),
                             );
@@ -394,7 +432,7 @@ impl<'de> Deserialize<'de> for ParseResult {
                 if let (Some(algorithm), Some(manifest)) = (digest_algorithm, &manifest) {
                     for (digest, _) in manifest.iter_id_paths() {
                         if !validate_digest(algorithm, (**digest).as_ref()) {
-                            result.error(
+                            self.result.error(
                                 ErrorCode::E096,
                                 format!("Inventory manifest contains invalid digest: {}", digest),
                             );
@@ -408,7 +446,7 @@ impl<'de> Deserialize<'de> for ParseResult {
                     for (num, version) in versions {
                         for (_, digest) in version.state_iter() {
                             if !manifest.contains_id(digest) {
-                                result.error(
+                                self.result.error(
                                     ErrorCode::E050,
                                     format!("Inventory version {} state contains a digest not present in the manifest. Found: {}",
                                             num, digest),
@@ -418,13 +456,12 @@ impl<'de> Deserialize<'de> for ParseResult {
                     }
                 }
 
-                validate_fixity(&fixity, &manifest, &result);
+                validate_fixity(&fixity, &manifest, self.result);
 
-                if result.has_errors() {
-                    Ok(ParseResult::Error(result))
+                if self.result.has_errors() {
+                    Ok(None)
                 } else {
-                    Ok(ParseResult::Ok(
-                        result,
+                    Ok(Some(
                         Inventory::new(
                             id.unwrap(),
                             type_declaration.unwrap(),
@@ -441,7 +478,19 @@ impl<'de> Deserialize<'de> for ParseResult {
             }
         }
 
-        deserializer.deserialize_struct("Inventory", INVENTORY_FIELDS, InventoryVisitor)
+        PARSE_RESULT.with(|result| {
+            match deserializer.deserialize_struct(
+                "Inventory",
+                INVENTORY_FIELDS,
+                InventoryVisitor {
+                    result: &result.borrow(),
+                },
+            ) {
+                Ok(Some(inventory)) => Ok(OptionWrapper(Some(inventory))),
+                Ok(None) => Ok(OptionWrapper(None)),
+                Err(e) => Err(e),
+            }
+        })
     }
 }
 
@@ -466,7 +515,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for VersionsSeed<'a, 'b> {
             type Value = BTreeMap<VersionNum, Version>;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("a map of OCFL version objects")
+                formatter.write_str(ERROR_MARKER)
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -477,15 +526,15 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for VersionsSeed<'a, 'b> {
                 let mut invalid_versions = HashSet::new();
 
                 loop {
-                    match map.next_key() {
-                        Ok(None) => break,
-                        Ok(Some(version_num)) => {
+                    match map.next_key()? {
+                        None => break,
+                        Some(version_num) => {
                             let num = match VersionNum::try_from(version_num) {
                                 Ok(num) => Some(num),
                                 Err(_) => {
                                     self.result.error(
                                         ErrorCode::E046,
-                                        format!("Inventory field 'versions' contains an invalid version number. Found: {}", version_num),
+                                        format!("Inventory 'versions' contains an invalid version number. Found: {}", version_num),
                                     );
                                     None
                                 }
@@ -496,29 +545,32 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for VersionsSeed<'a, 'b> {
                                 result: self.result,
                                 version: version_num,
                             }) {
-                                Ok(version) => {
+                                Ok(Some(version)) => {
                                     if let Some(num) = num {
                                         versions.insert(num, version);
                                     }
                                 }
-                                Err(_) => {
+                                Ok(None) => {
                                     if let Some(num) = num {
                                         invalid_versions.insert(num);
                                     }
-                                    self.result.error(
-                                        ErrorCode::E047,
-                                        "Inventory field 'versions' contains a version that is not an object"
-                                            .to_string(),
-                                    );
+                                }
+                                Err(e) => {
+                                    if let Some(num) = num {
+                                        invalid_versions.insert(num);
+                                    }
+
+                                    if e.to_string().contains(ERROR_MARKER) {
+                                        self.result.error(
+                                            ErrorCode::E047,
+                                            "Inventory 'versions' contains a version that is not an object"
+                                                .to_string(),
+                                        );
+                                    } else {
+                                        return Err(e);
+                                    }
                                 }
                             }
-                        }
-                        Err(_) => {
-                            self.result.error(
-                                ErrorCode::E046,
-                                "Inventory field 'versions' contains a key that is not a string"
-                                    .to_string(),
-                            );
                         }
                     }
                 }
@@ -543,7 +595,7 @@ struct VersionSeed<'a, 'b, 'c> {
 }
 
 impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
-    type Value = Version;
+    type Value = Option<Version>;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
     where
@@ -578,7 +630,7 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
                     type Value = Field;
 
                     fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                        formatter.write_str("an OCFL version field")
+                        formatter.write_str(ERROR_MARKER)
                     }
 
                     fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
@@ -612,10 +664,10 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
         }
 
         impl<'de: 'b, 'a, 'b, 'c> Visitor<'de> for VersionVisitor<'a, 'b, 'c> {
-            type Value = Version;
+            type Value = Option<Version>;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("an OCFL version object")
+                formatter.write_str(ERROR_MARKER)
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -629,47 +681,42 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
 
                 let mut created_failed = false;
                 let mut state_failed = false;
-                let mut message_failed = false;
                 let mut user_failed = false;
 
                 loop {
                     let key = match map.next_key_seed(FieldSeed {
                         result: self.result,
                         version: self.version,
-                    }) {
-                        Ok(None) => break,
-                        Ok(Some(key)) => key,
-                        Err(_) => {
-                            self.result.error(
-                                ErrorCode::E033,
-                                format!(
-                                    "Inventory version {} contains an invalid field",
-                                    self.version
-                                ),
-                            );
-                            continue;
-                        }
+                    })? {
+                        None => break,
+                        Some(key) => key,
                     };
 
                     match key {
                         Field::Created => {
                             if created.is_some() {
                                 duplicate_version_field(CREATED_FIELD, self.version, self.result);
+                                map.next_value::<Value>()?;
                             } else {
                                 match map.next_value::<&str>() {
                                     Ok(value) => match DateTime::parse_from_rfc3339(value) {
                                         Ok(value) => created = Some(value.with_timezone(&Local)),
                                         Err(_) => {
                                             self.result.error(ErrorCode::E049,
-                                                              format!("Inventory version {} field 'created' must be an RFC3339 formatted date. Found: {}",
+                                                              format!("Inventory version {} 'created' must be an RFC3339 formatted date. Found: {}",
                                                                       self.version, value));
                                             created_failed = true;
                                         }
                                     },
-                                    Err(_) => {
-                                        self.result.error(ErrorCode::E049,
-                                                          format!("Inventory version {} field 'created' must be a string", self.version));
-                                        created_failed = true;
+                                    Err(e) => {
+                                        self.result.error(
+                                            ErrorCode::E049,
+                                            format!(
+                                                "Inventory version {} 'created' must be a string",
+                                                self.version
+                                            ),
+                                        );
+                                        return Err(e);
                                     }
                                 }
                             }
@@ -677,6 +724,7 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
                         Field::State => {
                             if state.is_some() {
                                 duplicate_version_field(STATE_FIELD, self.version, self.result);
+                                map.next_value::<Value>()?;
                             } else {
                                 match map.next_value_seed(StateSeed {
                                     data: self.data,
@@ -684,10 +732,14 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
                                     version: self.version,
                                 }) {
                                     Ok(value) => state = Some(value),
-                                    Err(_) => {
-                                        self.result.error(ErrorCode::E050,
-                                                          format!("Inventory version {} field 'state' must be an object", self.version));
-                                        state_failed = true;
+                                    Err(e) => {
+                                        if e.to_string().contains(ERROR_MARKER) {
+                                            self.result.error(ErrorCode::E050,
+                                                              format!("Inventory version {} 'state' must be an object", self.version));
+                                            state_failed = true;
+                                        } else {
+                                            return Err(e);
+                                        }
                                     }
                                 }
                             }
@@ -695,13 +747,29 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
                         Field::User => {
                             if user.is_some() {
                                 duplicate_version_field(USER_FIELD, self.version, self.result);
+                                map.next_value::<Value>()?;
                             } else {
-                                match map.next_value() {
-                                    Ok(value) => user = Some(value),
-                                    Err(_) => {
-                                        self.result.error(ErrorCode::E054,
-                                                          format!("Inventory version {} field 'user' must be an object", self.version));
+                                match map.next_value_seed(UserSeed {
+                                    result: self.result,
+                                    version: self.version,
+                                }) {
+                                    Ok(Some(value)) => user = Some(value),
+                                    Ok(None) => {
                                         user_failed = true;
+                                    }
+                                    Err(e) => {
+                                        if e.to_string().contains(ERROR_MARKER) {
+                                            self.result.error(
+                                                ErrorCode::E054,
+                                                format!(
+                                                    "Inventory version {} 'user' must be an object",
+                                                    self.version
+                                                ),
+                                            );
+                                            user_failed = true;
+                                        } else {
+                                            return Err(e);
+                                        }
                                     }
                                 }
                             }
@@ -709,18 +777,26 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
                         Field::Message => {
                             if message.is_some() {
                                 duplicate_version_field(MESSAGE_FIELD, self.version, self.result);
+                                map.next_value::<Value>()?;
                             } else {
                                 match map.next_value() {
                                     Ok(value) => message = Some(value),
-                                    Err(_) => {
-                                        self.result.error(ErrorCode::E094,
-                                                          format!("Inventory version {} field 'message' must be a string", self.version));
-                                        message_failed = true;
+                                    Err(e) => {
+                                        self.result.error(
+                                            ErrorCode::E094,
+                                            format!(
+                                                "Inventory version {} 'message' must be a string",
+                                                self.version
+                                            ),
+                                        );
+                                        return Err(e);
                                     }
                                 }
                             }
                         }
-                        Field::Unknown => (),
+                        Field::Unknown => {
+                            map.next_value::<Value>()?;
+                        }
                     }
                 }
 
@@ -730,20 +806,18 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
                 if state.is_none() && !state_failed {
                     missing_version_field(STATE_FIELD, self.version, self.result);
                 }
-                if message.is_none() && !message_failed {
+                if message.is_none() {
                     missing_version_field_warn(MESSAGE_FIELD, self.version, self.result);
                 }
                 if user.is_none() && !user_failed {
                     missing_version_field_warn(USER_FIELD, self.version, self.result);
                 }
 
-                // TODO this will panic if created/state is none
-                Ok(Version::new(
-                    created.unwrap(),
-                    state.unwrap(),
-                    message,
-                    user,
-                ))
+                if let (Some(created), Some(state)) = (created, state) {
+                    Ok(Some(Version::new(created, state, message, user)))
+                } else {
+                    Ok(None)
+                }
             }
         }
 
@@ -780,7 +854,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
             type Value = PathBiMap<ContentPath>;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("an OCFL inventory manifest map")
+                formatter.write_str(ERROR_MARKER)
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -791,9 +865,9 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
                 let mut all_paths = HashSet::with_capacity(map.size_hint().unwrap_or(0));
 
                 loop {
-                    match map.next_key() {
-                        Ok(None) => break,
-                        Ok(Some(digest)) => match map.next_value::<Vec<&str>>() {
+                    match map.next_key()? {
+                        None => break,
+                        Some(digest) => match map.next_value::<Vec<&str>>() {
                             Ok(paths) => {
                                 let mut content_paths = Vec::with_capacity(paths.len());
 
@@ -838,18 +912,12 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
 
                                 manifest.insert_multiple_rc(digest_ref, path_refs);
                             }
-                            Err(_) => {
+                            Err(e) => {
                                 self.result.error(ErrorCode::E092,
                                                       format!("Inventory manifest key '{}' must reference an array of strings", digest));
+                                return Err(e);
                             }
                         },
-                        Err(_) => {
-                            self.result.error(
-                                ErrorCode::E096,
-                                "Inventory manifest contains a key that is not a string"
-                                    .to_string(),
-                            );
-                        }
                     }
                 }
 
@@ -894,7 +962,7 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
             type Value = PathBiMap<LogicalPath>;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("an OCFL version state map")
+                formatter.write_str(ERROR_MARKER)
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -905,9 +973,9 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
                 let mut all_paths = HashSet::with_capacity(map.size_hint().unwrap_or(0));
 
                 loop {
-                    match map.next_key() {
-                        Ok(None) => break,
-                        Ok(Some(digest)) => match map.next_value::<Vec<&str>>() {
+                    match map.next_key()? {
+                        None => break,
+                        Some(digest) => match map.next_value::<Vec<&str>>() {
                             Ok(paths) => {
                                 let digest_ref = self.data.insert_digest(digest);
                                 let mut path_refs = Vec::with_capacity(paths.len());
@@ -939,17 +1007,13 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
 
                                 state.insert_multiple_rc(digest_ref, path_refs);
                             }
-                            Err(_) => {
+                            Err(e) => {
                                 self.result.error(ErrorCode::E051,
                                                       format!("Inventory version {} state key '{}' must reference an array of strings",
                                                               self.version, digest));
+                                return Err(e);
                             }
                         },
-                        Err(_) => {
-                            self.result.error(
-                                ErrorCode::E050,
-                                format!("Inventory version {} state contains a key that is not a string", self.version));
-                        }
                     }
                 }
 
@@ -978,7 +1042,7 @@ struct UserSeed<'a, 'b> {
 }
 
 impl<'de, 'a, 'b> DeserializeSeed<'de> for UserSeed<'a, 'b> {
-    type Value = User;
+    type Value = Option<User>;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
     where
@@ -1011,7 +1075,7 @@ impl<'de, 'a, 'b> DeserializeSeed<'de> for UserSeed<'a, 'b> {
                     type Value = Field;
 
                     fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                        formatter.write_str("an OCFL user field")
+                        formatter.write_str(ERROR_MARKER)
                     }
 
                     fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
@@ -1042,10 +1106,10 @@ impl<'de, 'a, 'b> DeserializeSeed<'de> for UserSeed<'a, 'b> {
         }
 
         impl<'de, 'a, 'b> Visitor<'de> for UserVisitor<'a, 'b> {
-            type Value = User;
+            type Value = Option<User>;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("an OCFL user object")
+                formatter.write_str(ERROR_MARKER)
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -1055,39 +1119,32 @@ impl<'de, 'a, 'b> DeserializeSeed<'de> for UserSeed<'a, 'b> {
                 let mut name = None;
                 let mut address = None;
 
-                let mut name_failed = false;
-                let mut address_failed = false;
-
                 loop {
                     let key = match map.next_key_seed(FieldSeed {
                         result: self.result,
                         version: self.version,
-                    }) {
-                        Ok(None) => break,
-                        Ok(Some(key)) => key,
-                        Err(_) => {
-                            self.result.error(
-                                ErrorCode::E033,
-                                format!(
-                                    "Inventory version {} user contains an invalid field",
-                                    self.version
-                                ),
-                            );
-                            continue;
-                        }
+                    })? {
+                        None => break,
+                        Some(key) => key,
                     };
 
                     match key {
                         Field::Name => {
                             if name.is_some() {
                                 duplicate_version_field(NAME_FIELD, self.version, self.result);
+                                map.next_value::<Value>()?;
                             } else {
                                 match map.next_value() {
                                     Ok(value) => name = Some(value),
-                                    Err(_) => {
-                                        self.result.error(ErrorCode::E033,
-                                                          format!("Inventory version {} user field 'name' must be a string", self.version));
-                                        name_failed = true;
+                                    Err(e) => {
+                                        self.result.error(
+                                            ErrorCode::E033,
+                                            format!(
+                                                "Inventory version {} user 'name' must be a string",
+                                                self.version
+                                            ),
+                                        );
+                                        return Err(e);
                                     }
                                 }
                             }
@@ -1095,49 +1152,55 @@ impl<'de, 'a, 'b> DeserializeSeed<'de> for UserSeed<'a, 'b> {
                         Field::Address => {
                             if address.is_some() {
                                 duplicate_version_field(ADDRESS_FIELD, self.version, self.result);
+                                map.next_value::<Value>()?;
                             } else {
                                 match map.next_value::<&str>() {
                                     Ok(value) => {
                                         if URI::try_from(value).is_err() {
                                             self.result.warn(WarnCode::W008,
-                                                              format!("Inventory version {} user field 'address' should be a URI. Found: {}",
+                                                              format!("Inventory version {} user 'address' should be a URI. Found: {}",
                                                                       self.version, value));
                                         }
                                         address = Some(value.to_string());
                                     }
-                                    Err(_) => {
+                                    Err(e) => {
                                         self.result.error(ErrorCode::E033,
-                                                          format!("Inventory version {} user field 'address' must be a string", self.version));
-                                        address_failed = true;
+                                                          format!("Inventory version {} user 'address' must be a string", self.version));
+                                        return Err(e);
                                     }
                                 }
                             }
                         }
-                        Field::Unknown => (),
+                        Field::Unknown => {
+                            map.next_value::<Value>()?;
+                        }
                     }
                 }
 
-                if name.is_none() && !name_failed {
+                if name.is_none() {
                     self.result.error(
                         ErrorCode::E054,
                         format!(
-                            "Inventory version '{}' is missing required field '{}'",
+                            "Inventory version '{}' is missing required key '{}'",
                             self.version, NAME_FIELD
                         ),
                     );
                 }
-                if address.is_none() && !address_failed {
+                if address.is_none() {
                     self.result.warn(
                         WarnCode::W008,
                         format!(
-                            "Inventory version '{}' is missing recommended field '{}'",
+                            "Inventory version '{}' is missing recommended key '{}'",
                             self.version, ADDRESS_FIELD
                         ),
                     );
                 }
 
-                // TODO this will panic if user is none
-                Ok(User::new(name.unwrap(), address))
+                if let Some(name) = name {
+                    Ok(Some(User::new(name, address)))
+                } else {
+                    Ok(None)
+                }
             }
         }
 
@@ -1213,10 +1276,7 @@ fn validate_version_nums(
         if *version != next_version && !invalid_versions.contains(version) {
             result.error(
                 ErrorCode::E010,
-                format!(
-                    "Inventory field 'versions' is missing version '{}'",
-                    next_version
-                ),
+                format!("Inventory 'versions' is missing version '{}'", next_version),
             );
         }
 
@@ -1226,7 +1286,7 @@ fn validate_version_nums(
     if !consistent_padding {
         result.error(
             ErrorCode::E013,
-            "Inventory field 'versions' contains inconsistently padded version numbers".to_string(),
+            "Inventory 'versions' contains inconsistently padded version numbers".to_string(),
         );
     }
 }
@@ -1335,7 +1395,7 @@ fn validate_digest(algorithm: DigestAlgorithm, digest: &str) -> bool {
 fn duplicate_field(field: &str, result: &ParseValidationResult) {
     result.error(
         ErrorCode::E033,
-        format!("Inventory contains duplicate field '{}'", field),
+        format!("Inventory contains duplicate key '{}'", field),
     );
 }
 
@@ -1343,7 +1403,7 @@ fn duplicate_version_field(field: &str, version: &str, result: &ParseValidationR
     result.error(
         ErrorCode::E033,
         format!(
-            "Inventory version '{}' contains duplicate field '{}'",
+            "Inventory version '{}' contains duplicate key '{}'",
             version, field
         ),
     );
@@ -1352,7 +1412,7 @@ fn duplicate_version_field(field: &str, version: &str, result: &ParseValidationR
 fn unknown_field(field: &str, result: &ParseValidationResult) {
     result.error(
         ErrorCode::E102,
-        format!("Inventory contains unknown field '{}'", field),
+        format!("Inventory contains unknown key '{}'", field),
     );
 }
 
@@ -1360,7 +1420,7 @@ fn unknown_version_field(field: &str, version: &str, result: &ParseValidationRes
     result.error(
         ErrorCode::E102,
         format!(
-            "Inventory version '{}' contains unknown field '{}'",
+            "Inventory version '{}' contains unknown key '{}'",
             version, field
         ),
     );
@@ -1369,14 +1429,14 @@ fn unknown_version_field(field: &str, version: &str, result: &ParseValidationRes
 fn missing_inv_field(field: &str, result: &ParseValidationResult) {
     result.error(
         ErrorCode::E036,
-        format!("Inventory is missing required field '{}'", field),
+        format!("Inventory is missing required key '{}'", field),
     );
 }
 
 fn missing_inv_field_2(field: &str, result: &ParseValidationResult) {
     result.error(
         ErrorCode::E041,
-        format!("Inventory is missing required field '{}'", field),
+        format!("Inventory is missing required key '{}'", field),
     );
 }
 
@@ -1384,7 +1444,7 @@ fn missing_version_field(field: &str, version: &str, result: &ParseValidationRes
     result.error(
         ErrorCode::E048,
         format!(
-            "Inventory version '{}' is missing required field '{}'",
+            "Inventory version '{}' is missing required key '{}'",
             version, field
         ),
     );
@@ -1394,7 +1454,7 @@ fn missing_version_field_warn(field: &str, version: &str, result: &ParseValidati
     result.warn(
         WarnCode::W007,
         format!(
-            "Inventory version '{}' is missing recommended field '{}'",
+            "Inventory version '{}' is missing recommended key '{}'",
             version, field
         ),
     );
@@ -1402,16 +1462,171 @@ fn missing_version_field_warn(field: &str, version: &str, result: &ParseValidati
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use crate::ocfl::validate::serde::parse;
+    use crate::ocfl::validate::{ParseResult, ParseValidationResult};
+    use crate::ocfl::{ErrorCode, ValidationError, ValidationWarning, WarnCode};
 
-    use crate::ocfl::validate::ParseResult;
-    use crate::ocfl::{Result, RocflError};
+    // TODO test IValue to see if it will work with state/manifest
 
     #[test]
-    fn asdf() -> Result<()> {
-        let json = json!({
-            "id": "test",
+    fn head_wrong_type() {
+        let json = r###"{
+            "id": "urn:example:test",
             "type": "https://ocfl.io/1.0/spec/#inventory",
+            "digestAlgorithm": "sha512",
+            "head": false,
+            "contentDirectory": "content",
+            "manifest": {
+                "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                    "v1/content/file1.txt"
+                ]
+            },
+            "versions": {
+                "v1": {
+                    "created": "2021-09-05T20:36:50.923505656-05:00",
+                    "state": {
+                        "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                            "file1.txt"
+                        ]
+                    },
+                    "message": "initial commit",
+                    "user": {
+                        "name": "Peter Winckles",
+                        "address": "mailto:me@example.com"
+                    }
+                }
+            },
+            "fixity": {
+                "md5": {
+                    "184f84e28cbe75e050e9c25ea7f2e939": [
+                        "v1/content/file1.txt"
+                    ]
+                }
+            }
+        }"###;
+
+        match parse(json.as_bytes()) {
+            ParseResult::Ok(_, _) => panic!("Expected parse failure"),
+            ParseResult::Error(result) => {
+                has_error(
+                    ErrorCode::E040,
+                    "Inventory 'head' must be a string",
+                    &result,
+                );
+                error_count(1, &result);
+                warning_count(0, &result);
+            }
+        }
+    }
+
+    #[test]
+    fn head_object() {
+        let json = r###"{
+            "id": "urn:example:test",
+            "type": "https://ocfl.io/1.0/spec/#inventory",
+            "digestAlgorithm": "sha512",
+            "head": {"a": 1, "b", 2},
+            "contentDirectory": "content",
+            "manifest": {
+                "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                    "v1/content/file1.txt"
+                ]
+            },
+            "versions": {
+                "v1": {
+                    "created": "2021-09-05T20:36:50.923505656-05:00",
+                    "state": {
+                        "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                            "file1.txt"
+                        ]
+                    },
+                    "message": "initial commit",
+                    "user": {
+                        "name": "Peter Winckles",
+                        "address": "mailto:me@example.com"
+                    }
+                }
+            },
+            "fixity": {
+                "md5": {
+                    "184f84e28cbe75e050e9c25ea7f2e939": [
+                        "v1/content/file1.txt"
+                    ]
+                }
+            }
+        }"###;
+
+        match parse(json.as_bytes()) {
+            ParseResult::Ok(_, _) => panic!("Expected parse failure"),
+            ParseResult::Error(result) => {
+                has_error(
+                    ErrorCode::E040,
+                    "Inventory 'head' must be a string",
+                    &result,
+                );
+                error_count(1, &result);
+                warning_count(0, &result);
+            }
+        }
+    }
+
+    #[test]
+    fn bad_key() {
+        let json = r###"{
+            "id": "urn:example:test",
+            "type": "https://ocfl.io/1.0/spec/#inventory",
+            "digestAlgorithm": "sha512",
+            1: "v1",
+            "contentDirectory": "content",
+            "manifest": {
+                "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                    "v1/content/file1.txt"
+                ]
+            },
+            "versions": {
+                "v1": {
+                    "created": "2021-09-05T20:36:50.923505656-05:00",
+                    "state": {
+                        "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                            "file1.txt"
+                        ]
+                    },
+                    "message": "initial commit",
+                    "user": {
+                        "name": "Peter Winckles",
+                        "address": "mailto:me@example.com"
+                    }
+                }
+            },
+            "fixity": {
+                "md5": {
+                    "184f84e28cbe75e050e9c25ea7f2e939": [
+                        "v1/content/file1.txt"
+                    ]
+                }
+            }
+        }"###;
+
+        match parse(json.as_bytes()) {
+            ParseResult::Ok(_, _) => panic!("Expected parse failure"),
+            ParseResult::Error(result) => {
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory could not be parsed: key must be a string at line 5 column 13",
+                    &result,
+                );
+                error_count(1, &result);
+                warning_count(0, &result);
+            }
+        }
+    }
+
+    #[test]
+    fn duplicate_key() {
+        let json = r###"{
+            "id": "urn:example:test",
+            "type": "https://ocfl.io/1.0/spec/#inventory",
+            "id": "urn:example:test",
             "digestAlgorithm": "sha512",
             "head": "v1",
             "contentDirectory": "content",
@@ -1442,12 +1657,598 @@ mod tests {
                     ]
                 }
             }
-        }).to_string();
+        }"###;
 
-        let result: ParseResult = serde_json::from_str(&json)?;
-        // TODO add a print method that takes the object id and object relative path to the inv
-        println!("{:?}", result);
+        match parse(json.as_bytes()) {
+            ParseResult::Ok(_, _) => panic!("Expected parse failure"),
+            ParseResult::Error(result) => {
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory contains duplicate key 'id'",
+                    &result,
+                );
+                error_count(1, &result);
+                warning_count(0, &result);
+            }
+        }
+    }
 
-        Ok(())
+    #[test]
+    fn manifest_wrong_key_type() {
+        let json = r###"{
+            "id": "urn:example:test",
+            "type": "https://ocfl.io/1.0/spec/#inventory",
+            "digestAlgorithm": "sha512",
+            "head": "v1",
+            "contentDirectory": "content",
+            "manifest": {
+                1: [
+                    "v1/content/file1.txt"
+                ]
+            },
+            "versions": {
+                "v1": {
+                    "created": "2021-09-05T20:36:50.923505656-05:00",
+                    "state": {
+                        "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                            "file1.txt"
+                        ]
+                    },
+                    "message": "initial commit",
+                    "user": {
+                        "name": "Peter Winckles",
+                        "address": "mailto:me@example.com"
+                    }
+                }
+            },
+            "fixity": {
+                "md5": {
+                    "184f84e28cbe75e050e9c25ea7f2e939": [
+                        "v1/content/file1.txt"
+                    ]
+                }
+            }
+        }"###;
+
+        match parse(json.as_bytes()) {
+            ParseResult::Ok(_, _) => panic!("Expected parse failure"),
+            ParseResult::Error(result) => {
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory could not be parsed: key must be a string at line 8 column 17",
+                    &result,
+                );
+                error_count(1, &result);
+                warning_count(0, &result);
+            }
+        }
+    }
+
+    #[test]
+    fn manifest_wrong_type() {
+        let json = r###"{
+            "id": "urn:example:test",
+            "type": "https://ocfl.io/1.0/spec/#inventory",
+            "digestAlgorithm": "sha512",
+            "head": "v1",
+            "contentDirectory": "content",
+            "manifest": false,
+            "versions": {
+                "v1": {
+                    "created": "2021-09-05T20:36:50.923505656-05:00",
+                    "state": {
+                        "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                            "file1.txt"
+                        ]
+                    },
+                    "message": "initial commit",
+                    "user": {
+                        "name": "Peter Winckles",
+                        "address": "mailto:me@example.com"
+                    }
+                }
+            },
+            "fixity": {
+                "md5": {
+                    "184f84e28cbe75e050e9c25ea7f2e939": [
+                        "v1/content/file1.txt"
+                    ]
+                }
+            }
+        }"###;
+
+        match parse(json.as_bytes()) {
+            ParseResult::Ok(_, _) => panic!("Expected parse failure"),
+            ParseResult::Error(result) => {
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory 'manifest' must be an object",
+                    &result,
+                );
+                error_count(1, &result);
+                warning_count(0, &result);
+            }
+        }
+    }
+
+    #[test]
+    fn unknown_key() {
+        let json = r###"{
+            "id": "urn:example:test",
+            "type": "https://ocfl.io/1.0/spec/#inventory",
+            "digestAlgorithm": "sha512",
+            "head": "v1",
+            "contentDirectory": "content",
+            "bogus": "key",
+            "manifest": {
+                "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                    "v1/content/file1.txt"
+                ]
+            },
+            "versions": {
+                "v1": {
+                    "created": "2021-09-05T20:36:50.923505656-05:00",
+                    "state": {
+                        "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                            "file1.txt"
+                        ]
+                    },
+                    "message": "initial commit",
+                    "user": {
+                        "name": "Peter Winckles",
+                        "address": "mailto:me@example.com"
+                    }
+                }
+            },
+            "fixity": {
+                "md5": {
+                    "184f84e28cbe75e050e9c25ea7f2e939": [
+                        "v1/content/file1.txt"
+                    ]
+                }
+            }
+        }"###;
+
+        match parse(json.as_bytes()) {
+            ParseResult::Ok(_, _) => panic!("Expected parse failure"),
+            ParseResult::Error(result) => {
+                has_error(
+                    ErrorCode::E102,
+                    "Inventory contains unknown key 'bogus'",
+                    &result,
+                );
+                error_count(1, &result);
+                warning_count(0, &result);
+            }
+        }
+    }
+
+    #[test]
+    fn state_invalid_type() {
+        let json = r###"{
+            "id": "urn:example:test",
+            "type": "https://ocfl.io/1.0/spec/#inventory",
+            "digestAlgorithm": "sha512",
+            "head": "v1",
+            "contentDirectory": "content",
+            "manifest": {
+                "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                    "v1/content/file1.txt"
+                ]
+            },
+            "versions": {
+                "v1": {
+                    "created": "2021-09-05T20:36:50.923505656-05:00",
+                    "state": {
+                        "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": {"a": 1}
+                    },
+                    "message": "initial commit",
+                    "user": {
+                        "name": "Peter Winckles",
+                        "address": "mailto:me@example.com"
+                    }
+                }
+            },
+            "fixity": {
+                "md5": {
+                    "184f84e28cbe75e050e9c25ea7f2e939": [
+                        "v1/content/file1.txt"
+                    ]
+                }
+            }
+        }"###;
+
+        match parse(json.as_bytes()) {
+            ParseResult::Ok(_, _) => panic!("Expected parse failure"),
+            ParseResult::Error(result) => {
+                has_error(ErrorCode::E051, "Inventory version v1 state key 'fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455' must reference an array of strings", &result);
+                error_count(1, &result);
+                warning_count(0, &result);
+            }
+        }
+    }
+
+    #[test]
+    fn fixity_invalid_type() {
+        let json = r###"{
+            "type": "https://ocfl.io/1.0/spec/#inventory",
+            "digestAlgorithm": "sha512",
+            "head": "v1",
+            "contentDirectory": "content",
+            "manifest": {
+                "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                    "v1/content/file1.txt"
+                ]
+            },
+            "versions": {
+                "v1": {
+                    "created": "2021-09-05T20:36:50.923505656-05:00",
+                    "state": {
+                        "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                            "file1.txt"
+                        ]
+                    },
+                    "message": "initial commit",
+                    "user": {
+                        "name": "Peter Winckles",
+                        "address": "mailto:me@example.com"
+                    }
+                }
+            },
+            "fixity": {
+                "md5": {
+                    "184f84e28cbe75e050e9c25ea7f2e939": "v1/content/file1.txt"
+                }
+            },
+            "id": "urn:example:test"
+        }"###;
+
+        match parse(json.as_bytes()) {
+            ParseResult::Ok(_, _) => panic!("Expected parse failure"),
+            ParseResult::Error(result) => {
+                has_error(
+                    ErrorCode::E057,
+                    "Inventory 'fixity' must be a map of maps of arrays",
+                    &result,
+                );
+                error_count(1, &result);
+                warning_count(0, &result);
+            }
+        }
+    }
+
+    #[test]
+    fn user_address_invalid_type() {
+        let json = r###"{
+            "id": "urn:example:test",
+            "type": "https://ocfl.io/1.0/spec/#inventory",
+            "digestAlgorithm": "sha512",
+            "head": "v1",
+            "contentDirectory": "content",
+            "manifest": {
+                "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                    "v1/content/file1.txt"
+                ]
+            },
+            "versions": {
+                "v1": {
+                    "created": "2021-09-05T20:36:50.923505656-05:00",
+                    "state": {
+                        "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                            "file1.txt"
+                        ]
+                    },
+                    "message": "initial commit",
+                    "user": {
+                        "name": "Peter Winckles",
+                        "address": {"a": 1}
+                    }
+                }
+            },
+            "fixity": {
+                "md5": {
+                    "184f84e28cbe75e050e9c25ea7f2e939": [
+                        "v1/content/file1.txt"
+                    ]
+                }
+            }
+        }"###;
+
+        match parse(json.as_bytes()) {
+            ParseResult::Ok(_, _) => panic!("Expected parse failure"),
+            ParseResult::Error(result) => {
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory version v1 user 'address' must be a string",
+                    &result,
+                );
+                error_count(1, &result);
+                warning_count(0, &result);
+            }
+        }
+    }
+
+    #[test]
+    fn user_wrong_type() {
+        let json = r###"{
+            "id": "urn:example:test",
+            "type": "https://ocfl.io/1.0/spec/#inventory",
+            "digestAlgorithm": "sha512",
+            "head": "v1",
+            "contentDirectory": "content",
+            "manifest": {
+                "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                    "v1/content/file1.txt"
+                ]
+            },
+            "versions": {
+                "v1": {
+                    "created": "2021-09-05T20:36:50.923505656-05:00",
+                    "state": {
+                        "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                            "file1.txt"
+                        ]
+                    },
+                    "message": "initial commit",
+                    "user": false
+                }
+            },
+            "fixity": {
+                "md5": {
+                    "184f84e28cbe75e050e9c25ea7f2e939": [
+                        "v1/content/file1.txt"
+                    ]
+                }
+            }
+        }"###;
+
+        match parse(json.as_bytes()) {
+            ParseResult::Ok(_, _) => panic!("Expected parse failure"),
+            ParseResult::Error(result) => {
+                has_error(
+                    ErrorCode::E054,
+                    "Inventory version v1 'user' must be an object",
+                    &result,
+                );
+                error_count(1, &result);
+                warning_count(0, &result);
+            }
+        }
+    }
+
+    #[test]
+    fn manifest_invalid_path_type() {
+        let json = r###"{
+            "id": "urn:example:test",
+            "type": "https://ocfl.io/1.0/spec/#inventory",
+            "digestAlgorithm": "sha512",
+            "head": "v1",
+            "contentDirectory": "content",
+            "manifest": {
+                "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": "v1/content/file1.txt"
+            },
+            "versions": {
+                "v1": {
+                    "created": "2021-09-05T20:36:50.923505656-05:00",
+                    "state": {
+                        "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                            "file1.txt"
+                        ]
+                    },
+                    "message": "initial commit",
+                    "user": {
+                        "name": "Peter Winckles",
+                        "address": "mailto:me@example.com"
+                    }
+                }
+            },
+            "fixity": {
+                "md5": {
+                    "184f84e28cbe75e050e9c25ea7f2e939": [
+                        "v1/content/file1.txt"
+                    ]
+                }
+            }
+        }"###;
+
+        match parse(json.as_bytes()) {
+            ParseResult::Ok(_, _) => panic!("Expected parse failure"),
+            ParseResult::Error(result) => {
+                has_error(ErrorCode::E092, "Inventory manifest key 'fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455' must reference an array of strings", &result);
+                error_count(1, &result);
+                warning_count(0, &result);
+            }
+        }
+    }
+
+    #[test]
+    fn manifest_invalid_path_object() {
+        let json = r###"{
+            "id": "urn:example:test",
+            "type": "https://ocfl.io/1.0/spec/#inventory",
+            "digestAlgorithm": "sha512",
+            "head": "v1",
+            "contentDirectory": "content",
+            "manifest": {
+                "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": {"a": 1}
+            },
+            "versions": {
+                "v1": {
+                    "created": "2021-09-05T20:36:50.923505656-05:00",
+                    "state": {
+                        "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                            "file1.txt"
+                        ]
+                    },
+                    "message": "initial commit",
+                    "user": {
+                        "name": "Peter Winckles",
+                        "address": "mailto:me@example.com"
+                    }
+                }
+            },
+            "fixity": {
+                "md5": {
+                    "184f84e28cbe75e050e9c25ea7f2e939": [
+                        "v1/content/file1.txt"
+                    ]
+                }
+            }
+        }"###;
+
+        match parse(json.as_bytes()) {
+            ParseResult::Ok(_, _) => panic!("Expected parse failure"),
+            ParseResult::Error(result) => {
+                has_error(ErrorCode::E092, "Inventory manifest key 'fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455' must reference an array of strings", &result);
+                error_count(1, &result);
+                warning_count(0, &result);
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_version_type() {
+        let json = r###"{
+            "id": "urn:example:test",
+            "type": "https://ocfl.io/1.0/spec/#inventory",
+            "digestAlgorithm": "sha512",
+            "head": "v1",
+            "contentDirectory": "content",
+            "manifest": {
+                "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                    "v1/content/file1.txt"
+                ]
+            },
+            "versions": {
+                "v1": "version"
+            },
+            "fixity": {
+                "md5": {
+                    "184f84e28cbe75e050e9c25ea7f2e939": [
+                        "v1/content/file1.txt"
+                    ]
+                }
+            }
+        }"###;
+
+        match parse(json.as_bytes()) {
+            ParseResult::Ok(_, _) => panic!("Expected parse failure"),
+            ParseResult::Error(result) => {
+                has_error(
+                    ErrorCode::E047,
+                    "Inventory 'versions' contains a version that is not an object",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E008,
+                    "Inventory does not contain any versions",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E010,
+                    "Inventory 'versions' is missing version 'v1'",
+                    &result,
+                );
+                error_count(3, &result);
+                warning_count(0, &result);
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_version_object() {
+        let json = r###"{
+            "id": "urn:example:test",
+            "type": "https://ocfl.io/1.0/spec/#inventory",
+            "digestAlgorithm": "sha512",
+            "head": "v1",
+            "contentDirectory": "content",
+            "manifest": {
+                "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                    "v1/content/file1.txt"
+                ]
+            },
+            "versions": {
+                "v1": {
+                    "created": "2021-09-05T20:36:50.923505656-05:00",
+                    "state": {
+                        "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                            "file1.txt"
+                        ]
+                    },
+                    "message": false,
+                    "user": {
+                        "name": "Peter Winckles",
+                        "address": "mailto:me@example.com"
+                    }
+                }
+            },
+            "fixity": {
+                "md5": {
+                    "184f84e28cbe75e050e9c25ea7f2e939": [
+                        "v1/content/file1.txt"
+                    ]
+                }
+            }
+        }"###;
+
+        match parse(json.as_bytes()) {
+            ParseResult::Ok(_, _) => panic!("Expected parse failure"),
+            ParseResult::Error(result) => {
+                has_error(
+                    ErrorCode::E094,
+                    "Inventory version v1 'message' must be a string",
+                    &result,
+                );
+                error_count(1, &result);
+                warning_count(0, &result);
+            }
+        }
+    }
+
+    fn error_count(count: usize, result: &ParseValidationResult) {
+        let errors = result.errors.borrow();
+        assert_eq!(
+            count,
+            errors.len(),
+            "Expected {} errors; found {}: {:?}",
+            count,
+            errors.len(),
+            errors
+        )
+    }
+
+    fn has_error(code: ErrorCode, message: &str, result: &ParseValidationResult) {
+        let errors = result.errors.borrow();
+        assert!(
+            errors.contains(&ValidationError::new(code, message.to_string())),
+            "Expected errors to contain code={}; msg='{}'. Found: {:?}",
+            code,
+            message,
+            errors
+        );
+    }
+
+    fn warning_count(count: usize, result: &ParseValidationResult) {
+        let warnings = result.warnings.borrow();
+        assert_eq!(
+            count,
+            warnings.len(),
+            "Expected {} warnings; found {}: {:?}",
+            count,
+            warnings.len(),
+            warnings
+        )
+    }
+
+    fn has_warning(code: WarnCode, message: &str, result: &ParseValidationResult) {
+        let warnings = result.warnings.borrow();
+        assert!(
+            warnings.contains(&ValidationWarning::new(code, message.to_string())),
+            "Expected warnings to contain code={}; msg='{}'. Found: {:?}",
+            code,
+            message,
+            warnings
+        );
     }
 }
