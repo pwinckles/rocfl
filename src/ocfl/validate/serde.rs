@@ -403,7 +403,7 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                     if versions.is_empty() && !versions_failed {
                         self.result.error(
                             ErrorCode::E008,
-                            "Inventory does not contain any versions".to_string(),
+                            "Inventory does not contain any valid versions".to_string(),
                         );
                     }
                 }

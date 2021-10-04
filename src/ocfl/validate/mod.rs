@@ -94,18 +94,18 @@ impl ValidationResult {
     fn add_parse_result(&mut self, version: &str, result: ParseValidationResult) {
         self.errors
             .extend(result.errors.take().into_iter().map(|mut e| {
-                e.version_num = Some(version.to_string());
+                e.context = Some(version.to_string());
                 e
             }));
         self.warnings
             .extend(result.warnings.take().into_iter().map(|mut w| {
-                w.version_num = Some(version.to_string());
+                w.context = Some(version.to_string());
                 w
             }));
     }
 
     fn error(&mut self, version_num: Option<VersionNum>, code: ErrorCode, message: String) {
-        self.errors.push(ValidationError::with_version(
+        self.errors.push(ValidationError::with_context(
             version_str(version_num),
             code,
             message,
@@ -113,7 +113,7 @@ impl ValidationResult {
     }
 
     fn warn(&mut self, version_num: Option<VersionNum>, code: WarnCode, message: String) {
-        self.warnings.push(ValidationWarning::with_version(
+        self.warnings.push(ValidationWarning::with_context(
             version_str(version_num),
             code,
             message,
@@ -123,8 +123,7 @@ impl ValidationResult {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ValidationError {
-    // TODO change type and name?
-    pub version_num: Option<String>,
+    pub context: Option<String>,
     pub code: ErrorCode,
     pub text: String,
 }
@@ -133,15 +132,15 @@ pub struct ValidationError {
 impl ValidationError {
     pub fn new(code: ErrorCode, text: String) -> Self {
         Self {
-            version_num: None,
+            context: None,
             code,
             text,
         }
     }
 
-    pub fn with_version(version_num: String, code: ErrorCode, text: String) -> Self {
+    pub fn with_context(context: String, code: ErrorCode, text: String) -> Self {
         Self {
-            version_num: Some(version_num),
+            context: Some(context),
             code,
             text,
         }
@@ -150,7 +149,7 @@ impl ValidationError {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ValidationWarning {
-    pub version_num: Option<String>,
+    pub context: Option<String>,
     pub code: WarnCode,
     pub text: String,
 }
@@ -159,15 +158,15 @@ pub struct ValidationWarning {
 impl ValidationWarning {
     pub fn new(code: WarnCode, text: String) -> Self {
         Self {
-            version_num: None,
+            context: None,
             code,
             text,
         }
     }
 
-    pub fn with_version(version_num: String, code: WarnCode, text: String) -> Self {
+    pub fn with_context(context: String, code: WarnCode, text: String) -> Self {
         Self {
-            version_num: Some(version_num),
+            context: Some(context),
             code,
             text,
         }

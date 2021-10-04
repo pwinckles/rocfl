@@ -291,7 +291,7 @@ impl Cmd for ValidateCmd {
                             "  {}. [{}]{} {}",
                             i + 1,
                             error.code,
-                            format_version(&error.version_num),
+                            format_version(&error.context),
                             error.text
                         ));
                     });
@@ -305,7 +305,7 @@ impl Cmd for ValidateCmd {
                             "  {}. [{}]{} {}",
                             i + 1,
                             warning.code,
-                            format_version(&warning.version_num),
+                            format_version(&warning.context),
                             warning.text
                         ));
                     });
