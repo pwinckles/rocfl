@@ -1,0 +1,33 @@
+{
+  "id": "urn:example",
+  "head": "v1",
+  "type": "https://ocfl.io/1.0/spec/#inventory",
+  "digestAlgorithm": "md5",
+  "contentDirectory": "content",
+  "manifest": {
+    "fccd3f96d461f495a3bef31dc1d28f01": [
+      "v1/content/my_content/dracula.txt"
+    ],
+    "d2c79c8519af858fac2993c2373b5203": [
+      "v1/content/my_content/poe.txt"
+    ]
+  },
+  "versions": {
+    "v1": {
+      "created": "2020-01-01T03:03:03Z",
+      "message": "First version",
+      "user": {
+        "name": "Yog-Sothoth",
+        "address": "mailto:all_seeing_spheres@miskatonic.edu"
+      },
+      "state": {
+        "fccd3f96d461f495a3bef31dc1d28f01": [
+          "my_content/dracula.txt"
+        ],
+        "d2c79c8519af858fac2993c2373b5203": [
+          "my_content/poe.txt"
+        ]
+      }
+    }
+  }
+}

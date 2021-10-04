@@ -123,6 +123,7 @@ impl ValidationResult {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ValidationError {
+    // TODO change type and name?
     pub version_num: Option<String>,
     pub code: ErrorCode,
     pub text: String,

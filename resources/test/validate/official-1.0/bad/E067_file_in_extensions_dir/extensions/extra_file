@@ -1,0 +1,4 @@
+This an extra file that is not allowed in the extensions
+directory. It should result in the object being reported
+as invalid.
+ 

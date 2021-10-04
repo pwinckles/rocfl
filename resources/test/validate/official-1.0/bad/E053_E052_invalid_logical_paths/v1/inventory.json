@@ -1,0 +1,39 @@
+{
+  "id": "urn:example-3",
+  "type": "https://ocfl.io/1.0/spec/#inventory",
+  "digestAlgorithm": "sha512",
+  "head": "v1",
+  "contentDirectory": "content",
+  "manifest": {
+    "b3b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2": [
+      "v1/content/file-3.txt"
+    ],
+    "07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1": [
+      "v1/content/file-1.txt"
+    ],
+    "9fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5": [
+      "v1/content/file-2.txt"
+    ]
+  },
+  "versions": {
+    "v1": {
+      "created": "2021-03-31T10:21:21.740101149-05:00",
+      "state": {
+        "07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1": [
+          "/file-1.txt"
+        ],
+        "9fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5": [
+          "../../file-2.txt"
+        ],
+        "b3b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2": [
+          "//file-3.txt"
+        ]
+      },
+      "message": "Multiple files",
+      "user": {
+        "name": "tester",
+        "address": "mailto:tests@example.com"
+      }
+    }
+  }
+}
