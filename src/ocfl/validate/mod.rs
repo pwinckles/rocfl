@@ -354,15 +354,15 @@ impl<S: Storage> Validator<S> {
 
         // TODO replace HashSet -> Vec where appropriate
 
-        self.validate_object_root_contents(
-            object_root,
-            &root_files,
-            &inventory,
-            &sidecar_file,
-            &mut result,
-        )?;
-
         if !result.has_errors() {
+            self.validate_object_root_contents(
+                object_root,
+                &root_files,
+                &inventory,
+                &sidecar_file,
+                &mut result,
+            )?;
+
             if let (Some(inventory), Some(digest)) = (inventory, digest) {
                 let mut inventories = HashMap::new();
 
@@ -493,6 +493,11 @@ impl<S: Storage> Validator<S> {
         } else {
             inventories.get(&inventory.digest_algorithm).unwrap()
         };
+        let context_version = if inventory.head == root_inventory.head {
+            None
+        } else {
+            Some(inventory.head)
+        };
 
         for content_file in content_files.iter(inventory.head) {
             fixity_paths.remove(content_file.as_str());
@@ -501,7 +506,7 @@ impl<S: Storage> Validator<S> {
                     let digest = inventory.digest_for_content_path(content_file).unwrap();
                     if expected != digest {
                         result.error(
-                            Some(inventory.head),
+                            context_version,
                             ErrorCode::E092,
                             format!(
                                 "Inventory manifest entry for content path '{}' differs from later versions. Expected: {}; Found: {}",
@@ -512,7 +517,7 @@ impl<S: Storage> Validator<S> {
                 }
             } else {
                 result.error(
-                    Some(inventory.head),
+                    context_version,
                     ErrorCode::E023,
                     format!(
                         "A content file exists that is not referenced in the manifest: {}",
@@ -524,10 +529,10 @@ impl<S: Storage> Validator<S> {
 
         for path in manifest_paths {
             result.error(
-                Some(inventory.head),
+                context_version,
                 ErrorCode::E092,
                 format!(
-                    "Inventory manifest references a file that does not exist: {}",
+                    "Inventory manifest references a file that does not exist in a content directory: {}",
                     path
                 ),
             );
@@ -535,10 +540,10 @@ impl<S: Storage> Validator<S> {
 
         for path in fixity_paths {
             result.error(
-                Some(inventory.head),
+                context_version,
                 ErrorCode::E093,
                 format!(
-                    "Inventory fixity references a file that does not exist: {}",
+                    "Inventory fixity references a file that does not exist in a content directory: {}",
                     path
                 ),
             );
@@ -622,7 +627,7 @@ impl<S: Storage> Validator<S> {
                         Some(version_num),
                         ErrorCode::E037,
                         format!(
-                            "Inventory field 'id' is inconsistent. Expected: {}; Found: {}",
+                            "Inventory 'id' is inconsistent. Expected: {}; Found: {}",
                             root_inventory.id, inventory.id
                         ),
                     );
@@ -632,7 +637,7 @@ impl<S: Storage> Validator<S> {
                         Some(version_num),
                         ErrorCode::E019,
                         format!(
-                            "Inventory field 'contentDirectory' is inconsistent. Expected: {}; Found: {}",
+                            "Inventory 'contentDirectory' is inconsistent. Expected: {}; Found: {}",
                             root_inventory.defaulted_content_dir(),
                             inventory.defaulted_content_dir()
                         ),
@@ -644,7 +649,7 @@ impl<S: Storage> Validator<S> {
                         // TODO suspect code
                         ErrorCode::E040,
                         format!(
-                            "Inventory field 'head' must equal '{}'. Found: {}",
+                            "Inventory 'head' must equal '{}'. Found: {}",
                             version_num, inventory.head
                         ),
                     );
@@ -733,7 +738,7 @@ impl<S: Storage> Validator<S> {
                     Some(version_num),
                     WarnCode::W011,
                     format!(
-                        "Inventory version {} field 'message' is inconsistent with the root inventory",
+                        "Inventory version {} 'message' is inconsistent with the root inventory",
                         current_num
                     ),
                 );
@@ -744,7 +749,7 @@ impl<S: Storage> Validator<S> {
                     Some(version_num),
                     WarnCode::W011,
                     format!(
-                        "Inventory version {} field 'created' is inconsistent with the root inventory",
+                        "Inventory version {} 'created' is inconsistent with the root inventory",
                         current_num
                     ),
                 );
@@ -755,7 +760,7 @@ impl<S: Storage> Validator<S> {
                     Some(version_num),
                     WarnCode::W011,
                     format!(
-                        "Inventory version {} field 'user' is inconsistent with the root inventory",
+                        "Inventory version {} 'user' is inconsistent with the root inventory",
                         current_num
                     ),
                 );
@@ -1181,7 +1186,7 @@ impl<S: Storage> Validator<S> {
                             version_num,
                             ErrorCode::E083,
                             format!(
-                                "Inventory field 'id' should be '{}'. Found: {}",
+                                "Inventory 'id' must equal '{}'. Found: {}",
                                 object_id, inventory.id
                             ),
                         );
@@ -1252,7 +1257,7 @@ impl<S: Storage> Validator<S> {
                     parse_result.error(
                         ErrorCode::E038,
                         format!(
-                            "Inventory field 'type' must equal '{}'. Found: {}",
+                            "Inventory 'type' must equal '{}'. Found: {}",
                             INVENTORY_TYPE, inv.type_declaration
                         ),
                     );
@@ -1264,7 +1269,7 @@ impl<S: Storage> Validator<S> {
                         parse_result.error(
                             ErrorCode::E040,
                             format!(
-                                "Inventory field 'head' must equal '{}'. Found: {}",
+                                "Inventory 'head' must equal '{}'. Found: {}",
                                 version, inv.head
                             ),
                         );

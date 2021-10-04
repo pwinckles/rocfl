@@ -874,14 +874,14 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
                                 for path in paths {
                                     if path.starts_with('/') || path.ends_with('/') {
                                         self.result.error(ErrorCode::E100,
-                                                              format!("Inventory manifest key '{}' contains a content path with a leading/trailing '/'. Found: {}",
+                                                              format!("Inventory manifest key '{}' contains a path with a leading/trailing '/'. Found: {}",
                                                                       digest, path));
                                     } else {
                                         match ContentPath::try_from(path) {
                                             Ok(content_path) => content_paths.push(content_path),
                                             Err(_) => {
                                                 self.result.error(ErrorCode::E099,
-                                                                      format!("Inventory manifest key '{}' contains a content path containing an illegal path part. Found: {}",
+                                                                      format!("Inventory manifest key '{}' contains a path containing an illegal path part. Found: {}",
                                                                               digest, path));
                                             }
                                         }
@@ -889,7 +889,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
 
                                     if all_paths.contains(path) {
                                         self.result.error(ErrorCode::E101,
-                                                          format!("Inventory manifest contains a duplicate content path. Found: {}",
+                                                          format!("Inventory manifest contains a duplicate path. Found: {}",
                                                                   path));
                                     } else {
                                         all_paths.insert(path);
@@ -983,14 +983,14 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
                                 for path in paths {
                                     if path.starts_with('/') || path.ends_with('/') {
                                         self.result.error(ErrorCode::E053,
-                                                              format!("Inventory version {} state key '{}' contains a logical path with a leading/trailing '/'. Found: {}",
+                                                              format!("Inventory version {} state key '{}' contains a path with a leading/trailing '/'. Found: {}",
                                                                       self.version, digest, path));
                                     } else {
                                         match self.data.insert_path::<A::Error>(path) {
                                             Ok(logical_path) => path_refs.push(logical_path),
                                             Err(_) => {
                                                 self.result.error(ErrorCode::E052,
-                                                                      format!("Inventory version {} state key '{}' contains a logical path containing an illegal path part. Found: {}",
+                                                                      format!("Inventory version {} state key '{}' contains a path containing an illegal path part. Found: {}",
                                                                               self.version, digest, path));
                                             }
                                         }
@@ -998,7 +998,7 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
 
                                     if all_paths.contains(path) {
                                         self.result.error(ErrorCode::E095,
-                                                          format!("Inventory version {} state contains a duplicate logical path. Found: {}",
+                                                          format!("Inventory version {} state contains a duplicate path. Found: {}",
                                                                   self.version, path));
                                     } else {
                                         all_paths.insert(path);
@@ -1157,7 +1157,7 @@ impl<'de, 'a, 'b> DeserializeSeed<'de> for UserSeed<'a, 'b> {
                                 match map.next_value::<&str>() {
                                     Ok(value) => {
                                         if URI::try_from(value).is_err() {
-                                            self.result.warn(WarnCode::W008,
+                                            self.result.warn(WarnCode::W009,
                                                               format!("Inventory version {} user 'address' should be a URI. Found: {}",
                                                                       self.version, value));
                                         }
@@ -1274,10 +1274,13 @@ fn validate_version_nums(
         }
 
         if *version != next_version && !invalid_versions.contains(version) {
-            result.error(
-                ErrorCode::E010,
-                format!("Inventory 'versions' is missing version '{}'", next_version),
-            );
+            while next_version < *version {
+                result.error(
+                    ErrorCode::E010,
+                    format!("Inventory 'versions' is missing version '{}'", next_version),
+                );
+                next_version = next_version.next().unwrap();
+            }
         }
 
         next_version = next_version.next().unwrap();
@@ -1331,7 +1334,7 @@ fn validate_fixity(
                         if all_paths.contains(&path) {
                             result.error(
                                 ErrorCode::E101,
-                                format!("Inventory fixity block '{}' contains a duplicate content path. Found: {}",
+                                format!("Inventory fixity block '{}' contains a duplicate path. Found: {}",
                                         algorithm, path),
                             );
 
@@ -1344,14 +1347,14 @@ fn validate_fixity(
                             if !manifest.contains_path(&content_path) {
                                 result.error(
                                     ErrorCode::E057,
-                                    format!("Inventory fixity block '{}' contains a content path not present in the manifest. Found: {}",
+                                    format!("Inventory fixity block '{}' contains a path not present in the manifest. Found: {}",
                                             algorithm, path),
                                 );
                             }
                         } else {
                             result.error(
                                 ErrorCode::E099,
-                                format!("Inventory fixity block '{}' contains a content path containing an illegal path part. Found: {}",
+                                format!("Inventory fixity block '{}' contains a path containing an illegal path part. Found: {}",
                                         algorithm, path),
                             );
                         }
