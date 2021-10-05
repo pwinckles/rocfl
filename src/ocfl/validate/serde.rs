@@ -1369,7 +1369,11 @@ fn validate_fixity(
 
                         all_paths.push(path);
 
-                        if let Ok(content_path) = ContentPath::try_from(path) {
+                        if path.starts_with('/') || path.ends_with('/') {
+                            result.error(ErrorCode::E100,
+                                              format!("Inventory fixity block '{}' contains a path with a leading/trailing '/'. Found: {}",
+                                                      algorithm, path));
+                        } else if let Ok(content_path) = ContentPath::try_from(path) {
                             if !manifest.manifest.contains_path(&content_path) {
                                 result.error(
                                     ErrorCode::E057,

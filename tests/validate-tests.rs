@@ -970,10 +970,9 @@ fn fixity_invalid_content_paths() {
             ErrorCode::E099,
             "Inventory fixity block 'md5' contains a path containing an illegal path part. Found: v1/content/../content/file-1.txt",
         ),
-        // TODO technically this should be 100
         root_error(
-            ErrorCode::E099,
-            "Inventory fixity block 'md5' contains a path containing an illegal path part. Found: /v1/content/file-3.txt",
+            ErrorCode::E100,
+            "Inventory fixity block 'md5' contains a path with a leading/trailing '/'. Found: /v1/content/file-3.txt",
         ),
         root_error(
             ErrorCode::E099,
