@@ -491,7 +491,8 @@ impl<S: Storage> Validator<S> {
         let comparing_inventory = if root_inventory.digest_algorithm == inventory.digest_algorithm {
             root_inventory
         } else {
-            inventories.get(&inventory.digest_algorithm).unwrap()
+            // TODO no need to compare digests when first version after algo change
+            inventories.get(&inventory.digest_algorithm).unwrap_or(inventory)
         };
         let context_version = if inventory.head == root_inventory.head {
             None
@@ -824,6 +825,7 @@ impl<S: Storage> Validator<S> {
                                     Some(version_num),
                                     ErrorCode::E066,
                                     format!(
+                                        // TODO paths are not displaying right
                                         "Inventory version {} state path '{}' maps to different content paths than it does in later inventories. Expected: {:?}; Found: {:?}",
                                         current_version, comparing_path, comparing_content_paths, content_paths
                                     ),
