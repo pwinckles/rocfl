@@ -549,15 +549,6 @@ fn created_no_timezone() {
             ErrorCode::E049,
             "Inventory version v1 'created' must be an RFC3339 formatted date. Found: 2019-01-01T02:03:04",
         ),
-        // TODO it is a little unfortunate how much this cascades
-        root_error(
-            ErrorCode::E010,
-            "Inventory 'versions' is missing version 'v1'",
-        ),
-        root_error(
-            ErrorCode::E008,
-            "Inventory does not contain any valid versions",
-        ),
     ]);
     no_warnings(&result);
 }
@@ -570,15 +561,6 @@ fn created_not_to_seconds() {
         root_error(
             ErrorCode::E049,
             "Inventory version v1 'created' must be an RFC3339 formatted date. Found: 2019-01-01T01:02Z",
-        ),
-        // TODO it is a little unfortunate how much this cascades
-        root_error(
-            ErrorCode::E010,
-            "Inventory 'versions' is missing version 'v1'",
-        ),
-        root_error(
-            ErrorCode::E008,
-            "Inventory does not contain any valid versions",
         ),
     ]);
     no_warnings(&result);
@@ -611,12 +593,11 @@ fn file_in_manifest_not_used() {
 fn manifest_digest_wrong_case() {
     let result = official_error_test("E050_manifest_digest_wrong_case");
 
-    // TODO this is supposed to be a case-sensitive match
     has_errors(
         &result,
         &[root_error(
             ErrorCode::E050,
-            "Inventory version v1 'created' must be a string",
+            "Inventory version v1 state contains a digest that is not present in the manifest. Found: 24F950AAC7B9EA9B3CB728228A0C82B67C39E96B4B344798870D5DAEE93E3AE5931BAAE8C7CACFEA4B629452C38026A81D138BC7AAD1AF3EF7BFD5EC646D6C28",
         )],
     );
     no_warnings(&result);
@@ -1019,19 +1000,6 @@ fn manifest_invalid_content_paths() {
             ErrorCode::E099,
             "Inventory manifest key '9fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5' contains a path containing an illegal path part. Found: v1/content//file-2.txt",
         ),
-        // TODO ideally, these wouldn't be here
-        root_error(
-            ErrorCode::E050,
-            "Inventory version v1 state contains a digest not present in the manifest. Found: 9fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5",
-        ),
-        root_error(
-            ErrorCode::E050,
-            "Inventory version v1 state contains a digest not present in the manifest. Found: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
-        ),
-        root_error(
-            ErrorCode::E050,
-            "Inventory version v1 state contains a digest not present in the manifest. Found: b3b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2",
-        ),
     ]);
     no_warnings(&result);
 }
@@ -1379,14 +1347,6 @@ fn has_warnings(result: &ValidationResult, expected_warnings: &[ValidationWarnin
         expected_warnings.len(),
         result.warnings.len(),
         result.warnings
-    )
-}
-
-fn error_count(result: &ValidationResult) {
-    assert!(
-        result.errors.is_empty(),
-        "Expected no errors; found: {:?}",
-        result.errors
     )
 }
 

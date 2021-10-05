@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt::Formatter;
 use std::rc::Rc;
@@ -400,9 +400,8 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                     missing_inv_field_2(VERSIONS_FIELD, self.result);
                 }
 
-                // TODO ideally, these version checks  would know about the invalid versions
                 if let Some(versions) = &versions {
-                    if versions.is_empty() && !versions_failed {
+                    if versions.nums.is_empty() {
                         self.result.error(
                             ErrorCode::E008,
                             "Inventory does not contain any valid versions".to_string(),
@@ -411,14 +410,14 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                 }
 
                 if let (Some(head), Some(versions)) = (&head, &versions) {
-                    if !versions.contains_key(head) {
+                    if !versions.nums.contains(head) {
                         self.result.error(
                             ErrorCode::E010,
                             format!("Inventory 'versions' is missing version '{}'", head),
                         )
                     }
 
-                    if let Some(highest_version) = versions.keys().rev().next() {
+                    if let Some(highest_version) = versions.nums.iter().rev().next() {
                         if head != highest_version {
                             self.result.error(
                                 ErrorCode::E040,
@@ -432,7 +431,7 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                 }
 
                 if let (Some(algorithm), Some(manifest)) = (digest_algorithm, &manifest) {
-                    for (digest, _) in manifest.iter_id_paths() {
+                    for (digest, _) in manifest.manifest.iter_id_paths() {
                         if !validate_digest(algorithm, (**digest).as_ref()) {
                             self.result.error(
                                 ErrorCode::E096,
@@ -444,15 +443,13 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
 
                 // TODO validate that every manifest entry is in a version state: https://github.com/OCFL/spec/issues/537
 
-                // TODO ideal this would include invalid digests...
                 if let (Some(manifest), Some(versions)) = (&manifest, &versions) {
-                    for (num, version) in versions {
+                    for (num, version) in &versions.map {
                         for (_, digest) in version.state_iter() {
-                            // TODO this has to be an exact case-sensitive match...
-                            if !manifest.contains_id(digest) {
+                            if !manifest.digests.contains(&(**digest).as_ref()) {
                                 self.result.error(
                                     ErrorCode::E050,
-                                    format!("Inventory version {} state contains a digest not present in the manifest. Found: {}",
+                                    format!("Inventory version {} state contains a digest that is not present in the manifest. Found: {}",
                                             num, digest),
                                 );
                             }
@@ -472,8 +469,8 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                             digest_algorithm.unwrap(),
                             head.unwrap(),
                             content_directory,
-                            manifest.unwrap(),
-                            versions.unwrap(),
+                            manifest.unwrap().manifest,
+                            versions.unwrap().map,
                             fixity,
                         )
                         .unwrap(),
@@ -498,13 +495,19 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
     }
 }
 
+struct VersionsResult {
+    map: BTreeMap<VersionNum, Version>,
+    /// These are the version numbers as found in the json that are parsable
+    nums: BTreeSet<VersionNum>,
+}
+
 struct VersionsSeed<'a, 'b> {
     data: &'a mut DigestsAndPaths<'b>,
     result: &'a ParseValidationResult,
 }
 
 impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for VersionsSeed<'a, 'b> {
-    type Value = BTreeMap<VersionNum, Version>;
+    type Value = VersionsResult;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
     where
@@ -516,7 +519,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for VersionsSeed<'a, 'b> {
         }
 
         impl<'de: 'b, 'a, 'b> Visitor<'de> for VersionsVisitor<'a, 'b> {
-            type Value = BTreeMap<VersionNum, Version>;
+            type Value = VersionsResult;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
                 formatter.write_str(ERROR_MARKER)
@@ -527,14 +530,17 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for VersionsSeed<'a, 'b> {
                 A: MapAccess<'de>,
             {
                 let mut versions = BTreeMap::new();
-                let mut invalid_versions = HashSet::new();
+                let mut all_versions = BTreeSet::new();
 
                 loop {
                     match map.next_key()? {
                         None => break,
                         Some(version_num) => {
                             let num = match VersionNum::try_from(version_num) {
-                                Ok(num) => Some(num),
+                                Ok(num) => {
+                                    all_versions.insert(num);
+                                    Some(num)
+                                }
                                 Err(_) => {
                                     self.result.error(
                                         ErrorCode::E046,
@@ -554,16 +560,8 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for VersionsSeed<'a, 'b> {
                                         versions.insert(num, version);
                                     }
                                 }
-                                Ok(None) => {
-                                    if let Some(num) = num {
-                                        invalid_versions.insert(num);
-                                    }
-                                }
+                                Ok(None) => (),
                                 Err(e) => {
-                                    if let Some(num) = num {
-                                        invalid_versions.insert(num);
-                                    }
-
                                     if e.to_string().contains(ERROR_MARKER) {
                                         self.result.error(
                                             ErrorCode::E047,
@@ -579,9 +577,12 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for VersionsSeed<'a, 'b> {
                     }
                 }
 
-                validate_version_nums(&versions, &invalid_versions, self.result);
+                validate_version_nums(&all_versions, self.result);
 
-                Ok(versions)
+                Ok(VersionsResult {
+                    map: versions,
+                    nums: all_versions,
+                })
             }
         }
 
@@ -837,13 +838,18 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
     }
 }
 
+struct ManifestResult<'a> {
+    manifest: PathBiMap<ContentPath>,
+    digests: Vec<&'a str>,
+}
+
 struct ManifestSeed<'a, 'b> {
     data: &'a mut DigestsAndPaths<'b>,
     result: &'a ParseValidationResult,
 }
 
 impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
-    type Value = PathBiMap<ContentPath>;
+    type Value = ManifestResult<'de>;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
     where
@@ -855,7 +861,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
         }
 
         impl<'de: 'b, 'a, 'b> Visitor<'de> for ManifestVisitor<'a, 'b> {
-            type Value = PathBiMap<ContentPath>;
+            type Value = ManifestResult<'de>;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
                 formatter.write_str(ERROR_MARKER)
@@ -867,11 +873,13 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
             {
                 let mut manifest = PathBiMap::with_capacity(map.size_hint().unwrap_or(0));
                 let mut all_paths = HashSet::with_capacity(map.size_hint().unwrap_or(0));
+                let mut digests = Vec::with_capacity(map.size_hint().unwrap_or(0));
 
                 loop {
                     match map.next_key()? {
                         None => break,
                         Some(digest) => {
+                            digests.push(digest);
                             match map.next_value::<Vec<&str>>() {
                                 Ok(paths) => {
                                     let mut content_paths = Vec::with_capacity(paths.len());
@@ -936,7 +944,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
                                 path, part));
                 });
 
-                Ok(manifest)
+                Ok(ManifestResult { manifest, digests })
             }
         }
 
@@ -1262,16 +1270,12 @@ impl<'a> DigestsAndPaths<'a> {
     }
 }
 
-fn validate_version_nums(
-    versions: &BTreeMap<VersionNum, Version>,
-    invalid_versions: &HashSet<VersionNum>,
-    result: &ParseValidationResult,
-) {
+fn validate_version_nums(version_nums: &BTreeSet<VersionNum>, result: &ParseValidationResult) {
     let mut padding = None;
     let mut consistent_padding = true;
     let mut next_version = VersionNum::v1();
 
-    for version in versions.keys() {
+    for version in version_nums {
         match padding {
             None => padding = Some(version.width),
             Some(padding) => {
@@ -1281,8 +1285,8 @@ fn validate_version_nums(
             }
         }
 
-        if *version != next_version && !invalid_versions.contains(version) {
-            while next_version < *version && !invalid_versions.contains(version) {
+        if *version != next_version {
+            while next_version < *version {
                 result.error(
                     ErrorCode::E010,
                     format!("Inventory 'versions' is missing version '{}'", next_version),
@@ -1313,7 +1317,7 @@ fn validate_version_nums(
 
 fn validate_fixity(
     fixity: &Option<HashMap<String, HashMap<String, Vec<String>>>>,
-    manifest: &Option<PathBiMap<ContentPath>>,
+    manifest: &Option<ManifestResult>,
     result: &ParseValidationResult,
 ) {
     if let Some(fixity) = fixity {
@@ -1366,7 +1370,7 @@ fn validate_fixity(
                         all_paths.push(path);
 
                         if let Ok(content_path) = ContentPath::try_from(path) {
-                            if !manifest.contains_path(&content_path) {
+                            if !manifest.manifest.contains_path(&content_path) {
                                 result.error(
                                     ErrorCode::E057,
                                     format!("Inventory fixity block '{}' contains a path not present in the manifest. Found: {}",
@@ -2162,17 +2166,7 @@ mod tests {
                     "Inventory 'versions' contains a version that is not an object",
                     &result,
                 );
-                has_error(
-                    ErrorCode::E008,
-                    "Inventory does not contain any valid versions",
-                    &result,
-                );
-                has_error(
-                    ErrorCode::E010,
-                    "Inventory 'versions' is missing version 'v1'",
-                    &result,
-                );
-                error_count(3, &result);
+                error_count(1, &result);
                 warning_count(0, &result);
             }
         }
