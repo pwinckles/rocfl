@@ -210,9 +210,13 @@ fn invalid_padded_head_version() {
             "Inventory 'versions' contains inconsistently padded version numbers",
         )],
     );
-    has_warnings(&result, &[
-        root_warning(WarnCode::W001, "Contains zero-padded version numbers")
-    ])
+    has_warnings(
+        &result,
+        &[root_warning(
+            WarnCode::W001,
+            "Contains zero-padded version numbers",
+        )],
+    )
 }
 
 #[test]
@@ -968,10 +972,9 @@ fn fixity_duplicate_digests() {
             ErrorCode::E101,
             "Inventory fixity block 'md5' contains duplicate path 'v1/content/test.txt'",
         ),
-        // TODO need to check fixity for duplicate digests
         root_error(
             ErrorCode::E097,
-            "Inventory manifest contains a duplicate key '24F950AAC7B9EA9B3CB728228A0C82B67C39E96B4B344798870D5DAEE93E3AE5931BAAE8C7CACFEA4B629452C38026A81D138BC7AAD1AF3EF7BFD5EC646D6C28'",
+            "Inventory fixity block 'md5' contains duplicate digest 'eb1a3227cdc3fedbaec2fe38bf6c044a'",
         ),
     ]);
     no_warnings(&result);
@@ -1052,20 +1055,65 @@ fn zero_padded_versions() {
     let result = official_warn_test("W001_W004_W005_zero_padded_versions");
 
     no_errors(&result);
-    has_warnings(&result, &[
-        root_warning(WarnCode::W005, "Inventory 'id' should be a URI. Found: bb123cd4567"),
-        root_warning(WarnCode::W004, "Inventory 'digestAlgorithm' should be 'sha512'. Found: sha256"),
-        root_warning(WarnCode::W001, "Contains zero-padded version numbers"),
-        version_warning("v0003", WarnCode::W005, "Inventory 'id' should be a URI. Found: bb123cd4567"),
-        version_warning("v0003", WarnCode::W004, "Inventory 'digestAlgorithm' should be 'sha512'. Found: sha256"),
-        version_warning("v0003", WarnCode::W001, "Contains zero-padded version numbers"),
-        version_warning("v0002", WarnCode::W005, "Inventory 'id' should be a URI. Found: bb123cd4567"),
-        version_warning("v0002", WarnCode::W004, "Inventory 'digestAlgorithm' should be 'sha512'. Found: sha256"),
-        version_warning("v0002", WarnCode::W001, "Contains zero-padded version numbers"),
-        version_warning("v0001", WarnCode::W005, "Inventory 'id' should be a URI. Found: bb123cd4567"),
-        version_warning("v0001", WarnCode::W004, "Inventory 'digestAlgorithm' should be 'sha512'. Found: sha256"),
-        version_warning("v0001", WarnCode::W001, "Contains zero-padded version numbers"),
-    ]);
+    has_warnings(
+        &result,
+        &[
+            root_warning(
+                WarnCode::W005,
+                "Inventory 'id' should be a URI. Found: bb123cd4567",
+            ),
+            root_warning(
+                WarnCode::W004,
+                "Inventory 'digestAlgorithm' should be 'sha512'. Found: sha256",
+            ),
+            root_warning(WarnCode::W001, "Contains zero-padded version numbers"),
+            version_warning(
+                "v0003",
+                WarnCode::W005,
+                "Inventory 'id' should be a URI. Found: bb123cd4567",
+            ),
+            version_warning(
+                "v0003",
+                WarnCode::W004,
+                "Inventory 'digestAlgorithm' should be 'sha512'. Found: sha256",
+            ),
+            version_warning(
+                "v0003",
+                WarnCode::W001,
+                "Contains zero-padded version numbers",
+            ),
+            version_warning(
+                "v0002",
+                WarnCode::W005,
+                "Inventory 'id' should be a URI. Found: bb123cd4567",
+            ),
+            version_warning(
+                "v0002",
+                WarnCode::W004,
+                "Inventory 'digestAlgorithm' should be 'sha512'. Found: sha256",
+            ),
+            version_warning(
+                "v0002",
+                WarnCode::W001,
+                "Contains zero-padded version numbers",
+            ),
+            version_warning(
+                "v0001",
+                WarnCode::W005,
+                "Inventory 'id' should be a URI. Found: bb123cd4567",
+            ),
+            version_warning(
+                "v0001",
+                WarnCode::W004,
+                "Inventory 'digestAlgorithm' should be 'sha512'. Found: sha256",
+            ),
+            version_warning(
+                "v0001",
+                WarnCode::W001,
+                "Contains zero-padded version numbers",
+            ),
+        ],
+    );
 }
 
 #[test]
@@ -1073,11 +1121,22 @@ fn zero_padded_versions_2() {
     let result = official_warn_test("W001_zero_padded_versions");
 
     no_errors(&result);
-    has_warnings(&result, &[
-        root_warning(WarnCode::W001, "Contains zero-padded version numbers"),
-        version_warning("v002", WarnCode::W001, "Contains zero-padded version numbers"),
-        version_warning("v001", WarnCode::W001, "Contains zero-padded version numbers"),
-    ]);
+    has_warnings(
+        &result,
+        &[
+            root_warning(WarnCode::W001, "Contains zero-padded version numbers"),
+            version_warning(
+                "v002",
+                WarnCode::W001,
+                "Contains zero-padded version numbers",
+            ),
+            version_warning(
+                "v001",
+                WarnCode::W001,
+                "Contains zero-padded version numbers",
+            ),
+        ],
+    );
 }
 
 #[test]
@@ -1085,9 +1144,14 @@ fn extra_dir_in_version_dir() {
     let result = official_warn_test("W002_extra_dir_in_version_dir");
 
     no_errors(&result);
-    has_warnings(&result, &[
-        version_warning("v1", WarnCode::W002, "Version directory contains unexpected directory: extra_dir"),
-    ]);
+    has_warnings(
+        &result,
+        &[version_warning(
+            "v1",
+            WarnCode::W002,
+            "Version directory contains unexpected directory: extra_dir",
+        )],
+    );
 }
 
 #[test]
@@ -1095,9 +1159,13 @@ fn uses_sha256() {
     let result = official_warn_test("W004_uses_sha256");
 
     no_errors(&result);
-    has_warnings(&result, &[
-        root_warning(WarnCode::W004, "Inventory 'digestAlgorithm' should be 'sha512'. Found: sha256"),
-    ]);
+    has_warnings(
+        &result,
+        &[root_warning(
+            WarnCode::W004,
+            "Inventory 'digestAlgorithm' should be 'sha512'. Found: sha256",
+        )],
+    );
 }
 
 #[test]
@@ -1105,9 +1173,14 @@ fn versions_diff_digests() {
     let result = official_warn_test("W004_versions_diff_digests");
 
     no_errors(&result);
-    has_warnings(&result, &[
-        version_warning("v1", WarnCode::W004, "Inventory 'digestAlgorithm' should be 'sha512'. Found: sha256"),
-    ]);
+    has_warnings(
+        &result,
+        &[version_warning(
+            "v1",
+            WarnCode::W004,
+            "Inventory 'digestAlgorithm' should be 'sha512'. Found: sha256",
+        )],
+    );
 }
 
 #[test]
@@ -1115,9 +1188,13 @@ fn id_not_uri() {
     let result = official_warn_test("W005_id_not_uri");
 
     no_errors(&result);
-    has_warnings(&result, &[
-        root_warning(WarnCode::W005, "Inventory 'id' should be a URI. Found: not_a_uri"),
-    ]);
+    has_warnings(
+        &result,
+        &[root_warning(
+            WarnCode::W005,
+            "Inventory 'id' should be a URI. Found: not_a_uri",
+        )],
+    );
 }
 
 #[test]
@@ -1125,10 +1202,19 @@ fn no_message_or_user() {
     let result = official_warn_test("W007_no_message_or_user");
 
     no_errors(&result);
-    has_warnings(&result, &[
-        root_warning(WarnCode::W007, "Inventory version 'v1' is missing recommended key 'message'"),
-        root_warning(WarnCode::W007, "Inventory version 'v1' is missing recommended key 'user'"),
-    ]);
+    has_warnings(
+        &result,
+        &[
+            root_warning(
+                WarnCode::W007,
+                "Inventory version 'v1' is missing recommended key 'message'",
+            ),
+            root_warning(
+                WarnCode::W007,
+                "Inventory version 'v1' is missing recommended key 'user'",
+            ),
+        ],
+    );
 }
 
 #[test]
@@ -1136,9 +1222,13 @@ fn user_no_address() {
     let result = official_warn_test("W008_user_no_address");
 
     no_errors(&result);
-    has_warnings(&result, &[
-        root_warning(WarnCode::W008, "Inventory version 'v1' is missing recommended key 'address'"),
-    ]);
+    has_warnings(
+        &result,
+        &[root_warning(
+            WarnCode::W008,
+            "Inventory version 'v1' is missing recommended key 'address'",
+        )],
+    );
 }
 
 #[test]
@@ -1156,9 +1246,14 @@ fn no_version_inventory() {
     let result = official_warn_test("W010_no_version_inventory");
 
     no_errors(&result);
-    has_warnings(&result, &[
-        version_warning("v1", WarnCode::W010, "Inventory file does not exist"),
-    ]);
+    has_warnings(
+        &result,
+        &[version_warning(
+            "v1",
+            WarnCode::W010,
+            "Inventory file does not exist",
+        )],
+    );
 }
 
 #[test]
@@ -1166,11 +1261,26 @@ fn version_inv_diff_metadata() {
     let result = official_warn_test("W011_version_inv_diff_metadata");
 
     no_errors(&result);
-    has_warnings(&result, &[
-        version_warning("v1", WarnCode::W011, "Inventory version v1 'message' is inconsistent with the root inventory"),
-        version_warning("v1", WarnCode::W011, "Inventory version v1 'created' is inconsistent with the root inventory"),
-        version_warning("v1", WarnCode::W011, "Inventory version v1 'user' is inconsistent with the root inventory"),
-    ]);
+    has_warnings(
+        &result,
+        &[
+            version_warning(
+                "v1",
+                WarnCode::W011,
+                "Inventory version v1 'message' is inconsistent with the root inventory",
+            ),
+            version_warning(
+                "v1",
+                WarnCode::W011,
+                "Inventory version v1 'created' is inconsistent with the root inventory",
+            ),
+            version_warning(
+                "v1",
+                WarnCode::W011,
+                "Inventory version v1 'user' is inconsistent with the root inventory",
+            ),
+        ],
+    );
 }
 
 #[test]
@@ -1178,9 +1288,13 @@ fn unregistered_extension() {
     let result = official_warn_test("W013_unregistered_extension");
 
     no_errors(&result);
-    has_warnings(&result, &[
-        root_warning(WarnCode::W013, "Object extensions directory contains unknown extension: unregistered"),
-    ]);
+    has_warnings(
+        &result,
+        &[root_warning(
+            WarnCode::W013,
+            "Object extensions directory contains unknown extension: unregistered",
+        )],
+    );
 }
 
 #[test]
@@ -1199,8 +1313,18 @@ fn official_valid() {
 
     for name in names {
         let result = official_valid_test(name);
-        assert!(!result.has_errors(), "{} should have no errors; found: {:?}", name, result.errors);
-        assert!(!result.has_warnings(), "{} should have no warnings; found: {:?}", name, result.warnings);
+        assert!(
+            !result.has_errors(),
+            "{} should have no errors; found: {:?}",
+            name,
+            result.errors
+        );
+        assert!(
+            !result.has_warnings(),
+            "{} should have no warnings; found: {:?}",
+            name,
+            result.warnings
+        );
     }
 }
 

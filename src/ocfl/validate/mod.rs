@@ -316,15 +316,6 @@ impl<S: Storage> Validator<S> {
         Self { storage }
     }
 
-    // TODO problems
-    //  1. E015_content_not_in_content_dir: Inventory manifest references a file that does not exist: v1/a_file.txt
-    //  2. E023_extra_file: URI warning not working for user address
-    //  3. E036_no_id: If the inv doesn't validate it produces errors for all version dirs even if referenced in inv
-    //  4. E040_wrong_head_format: hangs... the problem is that unexpected json values are not being consumed
-    //     either need to completely change approach of do something like https://github.com/jonasbb/serde_with/blob/9d9ddb8afc6d46142a5371bea022a3f4a59b809e/src/de/impls.rs#L667
-    //  5. E049_created_no_timezone & E049_created_not_to_seconds: panics with none created timestamp
-    //  6. E049_E050_E054_bad_version_block_values: hangs
-
     pub fn validate_object(
         &self,
         object_id: Option<&str>,

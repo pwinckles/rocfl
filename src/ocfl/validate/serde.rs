@@ -399,6 +399,8 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                 if versions.is_none() && !versions_failed {
                     missing_inv_field_2(VERSIONS_FIELD, self.result);
                 }
+
+                // TODO ideally, these version checks  would know about the invalid versions
                 if let Some(versions) = &versions {
                     if versions.is_empty() && !versions_failed {
                         self.result.error(
@@ -442,9 +444,11 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
 
                 // TODO validate that every manifest entry is in a version state: https://github.com/OCFL/spec/issues/537
 
+                // TODO ideal this would include invalid digests...
                 if let (Some(manifest), Some(versions)) = (&manifest, &versions) {
                     for (num, version) in versions {
                         for (_, digest) in version.state_iter() {
+                            // TODO this has to be an exact case-sensitive match...
                             if !manifest.contains_id(digest) {
                                 self.result.error(
                                     ErrorCode::E050,
@@ -1278,7 +1282,7 @@ fn validate_version_nums(
         }
 
         if *version != next_version && !invalid_versions.contains(version) {
-            while next_version < *version {
+            while next_version < *version && !invalid_versions.contains(version) {
                 result.error(
                     ErrorCode::E010,
                     format!("Inventory 'versions' is missing version '{}'", next_version),
@@ -1299,7 +1303,10 @@ fn validate_version_nums(
 
     if let Some(padding) = padding {
         if padding > 0 {
-            result.warn(WarnCode::W001, "Contains zero-padded version numbers".to_string());
+            result.warn(
+                WarnCode::W001,
+                "Contains zero-padded version numbers".to_string(),
+            );
         }
     }
 }
@@ -1330,6 +1337,7 @@ fn validate_fixity(
 
             if let Some(manifest) = manifest {
                 for (digest, paths) in fixity_manifest {
+                    let digest = digest.to_ascii_lowercase();
                     if all_digests.contains(&digest) {
                         result.error(
                             ErrorCode::E097,
@@ -1482,8 +1490,6 @@ mod tests {
     use crate::ocfl::validate::serde::parse;
     use crate::ocfl::validate::{ParseResult, ParseValidationResult};
     use crate::ocfl::{ErrorCode, ValidationError, ValidationWarning, WarnCode};
-
-    // TODO test IValue to see if it will work with state/manifest
 
     #[test]
     fn head_wrong_type() {
@@ -2158,7 +2164,7 @@ mod tests {
                 );
                 has_error(
                     ErrorCode::E008,
-                    "Inventory does not contain any versions",
+                    "Inventory does not contain any valid versions",
                     &result,
                 );
                 has_error(
