@@ -1,0 +1,66 @@
+{
+  "id": "bb123cd4567",
+  "head": "v0002",
+  "type": "https://ocfl.io/1.0/spec/#inventory",
+  "digestAlgorithm": "sha256",
+  "contentDirectory": "content",
+  "manifest": {
+    "cffe55838a878a29da82a0e10b2909b7e46b6f7167ed7f815782465573e98f27": [
+      "v0001/content/my_content/dracula.txt"
+    ],
+    "f512eb0a032f562225e848ce88449895f3ec19f3d4836a80df80c77c74557bab": [
+      "v0001/content/my_content/poe.txt"
+    ]
+  },
+  "versions": {
+    "v0001": {
+      "created": "2019-08-12T00:00:00Z",
+      "message": "A message",
+      "user": {
+        "name": "A Person",
+        "address": "mailto:person@example.org"
+      },
+      "state": {
+        "cffe55838a878a29da82a0e10b2909b7e46b6f7167ed7f815782465573e98f27": [
+          "my_content/dracula.txt"
+        ],
+        "f512eb0a032f562225e848ce88449895f3ec19f3d4836a80df80c77c74557bab": [
+          "my_content/poe.txt"
+        ]
+      }
+    },
+    "v0002": {
+      "created": "2019-09-12T00:00:00Z",
+      "message": "A message",
+      "user": {
+        "name": "A Person",
+        "address": "mailto:person@example.org"
+      },
+      "state": {
+        "cffe55838a878a29da82a0e10b2909b7e46b6f7167ed7f815782465573e98f27": [
+          "my_content/dracula.txt",
+          "my_content/a_second_copy_of_dracula.txt",
+          "my_content/another_directory/a_third_copy_of_dracula.txt"
+        ],
+        "f512eb0a032f562225e848ce88449895f3ec19f3d4836a80df80c77c74557bab": [
+          "my_content/poe-nevermore.txt"
+        ]
+      }
+    }
+  },
+  "fixity": {
+    "md5": {
+      "fccd3f96d461f495a3bef31dc1d28f01": [
+        "v0001/content/my_content/dracula.txt"
+      ],
+      "d2c79c8519af858fac2993c2373b5203": [
+        "v0001/content/my_content/poe.txt"
+      ]
+    },
+    "sha1": {
+      "aa9e59cde167454f1f8b1f0eeeb0795e2d2f8c6f": [
+        "v0001/content/my_content/poe.txt"
+      ]
+    }
+  }
+}

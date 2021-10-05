@@ -1296,6 +1296,12 @@ fn validate_version_nums(
             "Inventory 'versions' contains inconsistently padded version numbers".to_string(),
         );
     }
+
+    if let Some(padding) = padding {
+        if padding > 0 {
+            result.warn(WarnCode::W001, "Contains zero-padded version numbers".to_string());
+        }
+    }
 }
 
 fn validate_fixity(
