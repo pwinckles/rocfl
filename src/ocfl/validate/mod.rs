@@ -17,7 +17,8 @@ use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::validate::store::{Listing, Storage};
 use crate::ocfl::{
-    paths, ContentPath, ContentPathVersion, DigestAlgorithm, InventoryPath, VersionNum,
+    paths, ContentPath, ContentPathVersion, DigestAlgorithm, InventoryPath, PrettyPrintSet,
+    VersionNum,
 };
 
 mod serde;
@@ -492,7 +493,9 @@ impl<S: Storage> Validator<S> {
             root_inventory
         } else {
             // TODO no need to compare digests when first version after algo change
-            inventories.get(&inventory.digest_algorithm).unwrap_or(inventory)
+            inventories
+                .get(&inventory.digest_algorithm)
+                .unwrap_or(inventory)
         };
         let context_version = if inventory.head == root_inventory.head {
             None
@@ -809,7 +812,7 @@ impl<S: Storage> Validator<S> {
                                 Some(version_num),
                                 ErrorCode::E066,
                                 format!(
-                                    "Inventory version {} state path '{}' does not match digest in later inventories. Expected: {}; Found: {}",
+                                    "In inventory version {}, path '{}' does not match the digest in later inventories. Expected: {}; Found: {}",
                                     current_version, comparing_path, comparing_digest, digest
                                 ),
                             );
@@ -825,9 +828,8 @@ impl<S: Storage> Validator<S> {
                                     Some(version_num),
                                     ErrorCode::E066,
                                     format!(
-                                        // TODO paths are not displaying right
-                                        "Inventory version {} state path '{}' maps to different content paths than it does in later inventories. Expected: {:?}; Found: {:?}",
-                                        current_version, comparing_path, comparing_content_paths, content_paths
+                                        "In inventory version {}, path '{}' maps to different content paths than it does in later inventories. Expected: {}; Found: {}",
+                                        current_version, comparing_path, PrettyPrintSet(comparing_content_paths), PrettyPrintSet(content_paths)
                                     ),
                                 );
                             }
@@ -847,8 +849,8 @@ impl<S: Storage> Validator<S> {
                                     Some(version_num),
                                     ErrorCode::E066,
                                     format!(
-                                        "Inventory version {} state path '{}' maps to different content paths than it does in later inventories. Expected: {:?}; Found: {:?}",
-                                        current_version, comparing_path, filtered_paths, content_paths
+                                        "In inventory version {}, path '{}' maps to different content paths than it does in later inventories. Expected: {}; Found: {}",
+                                        current_version, comparing_path, PrettyPrintSet(&filtered_paths), PrettyPrintSet(content_paths)
                                     ),
                                 );
                             }

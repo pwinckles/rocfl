@@ -351,13 +351,14 @@ fn missing_file() {
 fn old_manifest_missing_entries() {
     let result = official_bad_test("E023_old_manifest_missing_entries");
 
-    has_errors(&result, &vec![
-        version_error(
+    has_errors(
+        &result,
+        &vec![version_error(
             "v2",
             ErrorCode::E023,
             "A content file exists that is not referenced in the manifest: v1/content/file-3.txt",
-        ),
-    ]);
+        )],
+    );
     no_warnings(&result);
 }
 
@@ -365,12 +366,13 @@ fn old_manifest_missing_entries() {
 fn wrong_digest_algorithm() {
     let result = official_bad_test("E025_wrong_digest_algorithm");
 
-    has_errors(&result, &vec![
-        root_error(
+    has_errors(
+        &result,
+        &vec![root_error(
             ErrorCode::E025,
             "Inventory 'digestAlgorithm' must be 'sha512' or 'sha256. Found: md5",
-        ),
-    ]);
+        )],
+    );
     no_warnings(&result);
 }
 
@@ -378,12 +380,13 @@ fn wrong_digest_algorithm() {
 fn no_head() {
     let result = official_bad_test("E036_no_head");
 
-    has_errors(&result, &vec![
-        root_error(
+    has_errors(
+        &result,
+        &vec![root_error(
             ErrorCode::E036,
             "Inventory is missing required key 'head'",
-        ),
-    ]);
+        )],
+    );
     no_warnings(&result);
 }
 
@@ -391,12 +394,13 @@ fn no_head() {
 fn no_id() {
     let result = official_bad_test("E036_no_id");
 
-    has_errors(&result, &vec![
-        root_error(
+    has_errors(
+        &result,
+        &vec![root_error(
             ErrorCode::E036,
             "Inventory is missing required key 'id'",
-        ),
-    ]);
+        )],
+    );
     no_warnings(&result);
 }
 
@@ -404,13 +408,14 @@ fn no_id() {
 fn inconsistent_id() {
     let result = official_bad_test("E037_inconsistent_id");
 
-    has_errors(&result, &vec![
-        version_error(
+    has_errors(
+        &result,
+        &vec![version_error(
             "v1",
             ErrorCode::E037,
             "Inventory 'id' is inconsistent. Expected: urn:example-2; Found: urn:example-two",
-        ),
-    ]);
+        )],
+    );
     no_warnings(&result);
 }
 
@@ -418,12 +423,13 @@ fn inconsistent_id() {
 fn head_not_most_recent() {
     let result = official_bad_test("E040_head_not_most_recent");
 
-    has_errors(&result, &vec![
-        root_error(
+    has_errors(
+        &result,
+        &vec![root_error(
             ErrorCode::E040,
             "Inventory 'head' references 'v1' but 'v2' was expected",
-        ),
-    ]);
+        )],
+    );
     no_warnings(&result);
 }
 
@@ -431,16 +437,19 @@ fn head_not_most_recent() {
 fn wrong_head_doesnt_exist() {
     let result = official_bad_test("E040_wrong_head_doesnt_exist");
 
-    has_errors(&result, &vec![
-        root_error(
-            ErrorCode::E040,
-            "Inventory 'head' references 'v2' but 'v1' was expected",
-        ),
-        root_error(
-            ErrorCode::E010,
-            "Inventory 'versions' is missing version 'v2'",
-        ),
-    ]);
+    has_errors(
+        &result,
+        &vec![
+            root_error(
+                ErrorCode::E040,
+                "Inventory 'head' references 'v2' but 'v1' was expected",
+            ),
+            root_error(
+                ErrorCode::E010,
+                "Inventory 'versions' is missing version 'v2'",
+            ),
+        ],
+    );
     has_warnings(
         &result,
         &vec![
@@ -460,12 +469,13 @@ fn wrong_head_doesnt_exist() {
 fn wrong_head_format() {
     let result = official_bad_test("E040_wrong_head_format");
 
-    has_errors(&result, &vec![
-        root_error(
+    has_errors(
+        &result,
+        &vec![root_error(
             ErrorCode::E040,
             "Inventory 'head' must be a string",
-        ),
-    ]);
+        )],
+    );
     no_warnings(&result);
 }
 
@@ -473,13 +483,14 @@ fn wrong_head_format() {
 fn wrong_version_in_version_dir() {
     let result = official_bad_test("E040_wrong_version_in_version_dir");
 
-    has_errors(&result, &vec![
-        version_error(
+    has_errors(
+        &result,
+        &vec![version_error(
             "v2",
             ErrorCode::E040,
             "Inventory 'head' must equal 'v2'. Found: v3",
-        ),
-    ]);
+        )],
+    );
     no_warnings(&result);
 }
 
@@ -487,25 +498,39 @@ fn wrong_version_in_version_dir() {
 fn no_manifest() {
     let result = official_bad_test("E041_no_manifest");
 
-    has_errors(&result, &vec![
-        root_error(
+    has_errors(
+        &result,
+        &vec![root_error(
             ErrorCode::E041,
             "Inventory is missing required key 'manifest'",
-        ),
-    ]);
-    no_warnings(&result);
+        )],
+    );
+    has_warnings(
+        &result,
+        &vec![
+            root_warning(
+                WarnCode::W007,
+                "Inventory version 'v1' is missing recommended key 'message'",
+            ),
+            root_warning(
+                WarnCode::W007,
+                "Inventory version 'v1' is missing recommended key 'user'",
+            ),
+        ],
+    );
 }
 
 #[test]
 fn root_no_most_recent() {
     let result = official_bad_test("E046_root_not_most_recent");
 
-    has_errors(&result, &vec![
-        root_error(
+    has_errors(
+        &result,
+        &vec![root_error(
             ErrorCode::E001,
             "Unexpected file in object root: v2",
-        ),
-    ]);
+        )],
+    );
     no_warnings(&result);
 }
 
@@ -557,12 +582,13 @@ fn created_not_to_seconds() {
 fn bad_version_block_values() {
     let result = official_bad_test("E049_E050_E054_bad_version_block_values");
 
-    has_errors(&result, &vec![
-        root_error(
+    has_errors(
+        &result,
+        &vec![root_error(
             ErrorCode::E049,
             "Inventory version v1 'created' must be a string",
-        ),
-    ]);
+        )],
+    );
     no_warnings(&result);
 }
 
@@ -580,12 +606,13 @@ fn manifest_digest_wrong_case() {
     let result = official_bad_test("E050_manifest_digest_wrong_case");
 
     // TODO this is supposed to be a case-sensitive match
-    has_errors(&result, &vec![
-        root_error(
+    has_errors(
+        &result,
+        &vec![root_error(
             ErrorCode::E050,
             "Inventory version v1 'created' must be a string",
-        ),
-    ]);
+        )],
+    );
     no_warnings(&result);
 }
 
@@ -596,15 +623,15 @@ fn invalid_logical_paths() {
     has_errors(&result, &vec![
         root_error(
             ErrorCode::E053,
-            "Inventory version v1 state key '07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1' contains a path with a leading/trailing '/'. Found: /file-1.txt",
+            "In inventory version v1, state key '07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1' contains a path with a leading/trailing '/'. Found: /file-1.txt",
         ),
         root_error(
             ErrorCode::E052,
-            "Inventory version v1 state key '9fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5' contains a path containing an illegal path part. Found: ../../file-2.txt",
+            "In inventory version v1, state key '9fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5' contains a path containing an illegal path part. Found: ../../file-2.txt",
         ),
         root_error(
             ErrorCode::E053,
-            "Inventory version v1 state key 'b3b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2' contains a path with a leading/trailing '/'. Found: //file-3.txt",
+            "In inventory version v1, state key 'b3b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2' contains a path with a leading/trailing '/'. Found: //file-3.txt",
         ),
     ]);
     no_warnings(&result);
@@ -614,12 +641,13 @@ fn invalid_logical_paths() {
 fn no_sidecar() {
     let result = official_bad_test("E058_no_sidecar");
 
-    has_errors(&result, &vec![
-        root_error(
+    has_errors(
+        &result,
+        &vec![root_error(
             ErrorCode::E058,
             "Inventory sidecar inventory.json.sha512 does not exist",
-        ),
-    ]);
+        )],
+    );
     no_warnings(&result);
 }
 
@@ -647,25 +675,24 @@ fn version_inventory_digest_mismatch() {
             "Inventory does not match expected digest. Expected: cb7a451c595050e0e50d979b79bce86e28728b8557a3cf4ea430114278b5411c7bad6a7ecc1f4d0250e94f9d8add3b648194d75a74c0cb14c4439f427829569e; Found: 5bf08b6519f6692cc83f3d275de1f02414a41972d069ac167c5cf34468fad82ae621c67e1ff58a8ef15d5f58a193aa1f037f588372bdfc33ae6c38a2b349d846",
         ),
     ]);
-    has_warnings(&result, &vec![
-        version_warning(
+    has_warnings(
+        &result,
+        &vec![version_warning(
             "v1",
             WarnCode::W011,
             "Inventory version v1 'message' is inconsistent with the root inventory",
-        )
-    ]);
+        )],
+    );
 }
 
 #[test]
 fn invalid_sidecar() {
     let result = official_bad_test("E061_invalid_sidecar");
 
-    has_errors(&result, &vec![
-        root_error(
-            ErrorCode::E061,
-            "Inventory sidecar is invalid",
-        ),
-    ]);
+    has_errors(
+        &result,
+        &vec![root_error(ErrorCode::E061, "Inventory sidecar is invalid")],
+    );
     no_warnings(&result);
 }
 
@@ -673,12 +700,10 @@ fn invalid_sidecar() {
 fn no_inv() {
     let result = official_bad_test("E063_no_inv");
 
-    has_errors(&result, &vec![
-        root_error(
-            ErrorCode::E063,
-            "Inventory does not exist",
-        ),
-    ]);
+    has_errors(
+        &result,
+        &vec![root_error(ErrorCode::E063, "Inventory does not exist")],
+    );
     no_warnings(&result);
 }
 
@@ -686,13 +711,14 @@ fn no_inv() {
 fn different_root_and_latest_inventories() {
     let result = official_bad_test("E064_different_root_and_latest_inventories");
 
-    has_errors(&result, &vec![
-        version_error(
+    has_errors(
+        &result,
+        &vec![version_error(
             "v1",
             ErrorCode::E064,
             "Inventory file must be identical to the root inventory",
-        ),
-    ]);
+        )],
+    );
     no_warnings(&result);
 }
 
@@ -704,9 +730,318 @@ fn algorithm_change_state_mismatch() {
         version_error(
             "v1",
             ErrorCode::E066,
-            "Inventory file must be identical to the root inventory",
+            "In inventory version v1, path 'file-3.txt' maps to different content paths than it does in later inventories. Expected: [v1/content/file-2.txt]; Found: [v1/content/file-3.txt]",
+        ),
+        version_error(
+            "v1",
+            ErrorCode::E066,
+            "Inventory version v1 state is missing a path that exists in later inventories: changed",
+        ),
+        version_error(
+            "v1",
+            ErrorCode::E066,
+            "In inventory version v1, path 'file-2.txt' maps to different content paths than it does in later inventories. Expected: [v1/content/file-3.txt]; Found: [v1/content/file-2.txt]",
+        ),
+        version_error(
+            "v1",
+            ErrorCode::E066,
+            "Inventory version v1 state contains a path not in later inventories: file-1.txt",
         ),
     ]);
+    has_warnings(
+        &result,
+        &vec![root_warning(
+            WarnCode::W004,
+            "Inventory 'digestAlgorithm' should be 'sha512'. Found: sha256",
+        )],
+    )
+}
+
+#[test]
+fn old_manifest_digest_incorrect() {
+    let result = official_bad_test("E066_E092_old_manifest_digest_incorrect");
+
+    has_errors(&result, &vec![
+        version_error(
+            "v1",
+            ErrorCode::E066,
+            "In inventory version v1, path 'file-1.txt' does not match the digest in later inventories. Expected: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1; Found: 17e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
+        ),
+        version_error(
+            "v1",
+            ErrorCode::E092,
+            "Inventory manifest entry for content path 'v1/content/file-1.txt' differs from later versions. Expected: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1; Found: 17e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
+        ),
+        root_error(
+            ErrorCode::E092,
+            "Content file v1/content/file-1.txt failed sha512 fixity check. Expected: 17e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1; Found: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
+        ),
+    ]);
+    no_warnings(&result);
+}
+
+#[test]
+fn inconsistent_version_state() {
+    let result = official_bad_test("E066_inconsistent_version_state");
+
+    has_errors(
+        &result,
+        &vec![
+            version_error(
+                "v1",
+                ErrorCode::E066,
+                "Inventory version v1 state contains a path not in later inventories: 2.txt",
+            ),
+            version_error(
+                "v1",
+                ErrorCode::E066,
+                "Inventory version v1 state contains a path not in later inventories: 1.txt",
+            ),
+            version_error(
+                "v1",
+                ErrorCode::E066,
+                "Inventory version v1 state contains a path not in later inventories: 3.txt",
+            ),
+        ],
+    );
+    no_warnings(&result);
+}
+
+#[test]
+fn file_in_extensions_dir() {
+    let result = official_bad_test("E067_file_in_extensions_dir");
+
+    has_errors(
+        &result,
+        &vec![root_error(
+            ErrorCode::E067,
+            "Object extensions directory contains an illegal file: extra_file",
+        )],
+    );
+    has_warnings(
+        &result,
+        &vec![
+            root_warning(
+                WarnCode::W007,
+                "Inventory version 'v1' is missing recommended key 'message'",
+            ),
+            root_warning(
+                WarnCode::W007,
+                "Inventory version 'v1' is missing recommended key 'user'",
+            ),
+            root_warning(
+                WarnCode::W013,
+                "Object extensions directory contains unknown extension: unregistered",
+            ),
+        ],
+    );
+}
+
+#[test]
+fn algorithm_change_incorrect_digest() {
+    let result = official_bad_test("E092_algorithm_change_incorrect_digest");
+
+    has_errors(&result, &vec![
+        root_error(
+            ErrorCode::E092,
+            "Content file v1/content/file-3.txt failed sha512 fixity check. Expected: 13b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2; Found: b3b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2",
+        ),
+        root_error(
+            ErrorCode::E092,
+            "Content file v1/content/file-1.txt failed sha512 fixity check. Expected: 17e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1; Found: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
+        ),
+        root_error(
+            ErrorCode::E092,
+            "Content file v1/content/file-2.txt failed sha512 fixity check. Expected: 1fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5; Found: 9fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5",
+        ),
+    ]);
+    has_warnings(
+        &result,
+        &vec![root_warning(
+            WarnCode::W004,
+            "Inventory 'digestAlgorithm' should be 'sha512'. Found: sha256",
+        )],
+    );
+}
+
+#[test]
+fn content_file_digest_mismatch() {
+    let result = official_bad_test("E092_content_file_digest_mismatch");
+
+    has_errors(&result, &vec![
+        root_error(
+            ErrorCode::E092,
+            "Content file v1/content/test.txt failed sha512 fixity check. Expected: 24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7cacfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28; Found: 1277a792c8196a2504007a40f31ed93bf826e71f16273d8503f7d3e46503d00b8d8cda0a59d6a33b9c1aebc84ea6a79f7062ee080f4a9587055a7b6fb92f5fa8",
+        ),
+    ]);
+    no_warnings(&result);
+}
+
+#[test]
+fn content_path_does_not_exist() {
+    let result = official_bad_test("E092_E093_content_path_does_not_exist");
+
+    has_errors(&result, &vec![
+        root_error(
+            ErrorCode::E092,
+            "Inventory manifest references a file that does not exist in a content directory: v1/content/bonus.txt",
+        ),
+        root_error(
+            ErrorCode::E093,
+            "Inventory fixity references a file that does not exist in a content directory: v1/content/bonus.txt",
+        ),
+    ]);
+    no_warnings(&result);
+}
+
+#[test]
+fn fixity_digest_mismatch() {
+    let result = official_bad_test("E093_fixity_digest_mismatch");
+
+    has_errors(&result, &vec![
+        root_error(
+            ErrorCode::E093,
+            "Content file v1/content/test.txt failed md5 fixity check. Expected: 9eacfb9289073dd9c9a8c4cdf820ac71; Found: eb1a3227cdc3fedbaec2fe38bf6c044a",
+        ),
+    ]);
+    no_warnings(&result);
+}
+
+#[test]
+fn conflicting_logical_paths() {
+    let result = official_bad_test("E095_conflicting_logical_paths");
+
+    has_errors(&result, &vec![
+        root_error(
+            ErrorCode::E095,
+            "In inventory version v1, state contains a path, 'sub-path/a_file.txt', that conflicts with another path, 'sub-path'",
+        ),
+    ]);
+    no_warnings(&result);
+}
+
+#[test]
+fn non_unique_logical_paths() {
+    let result = official_bad_test("E095_non_unique_logical_paths");
+
+    has_errors(
+        &result,
+        &vec![
+            root_error(
+                ErrorCode::E095,
+                "In inventory version v1, state contains duplicate path 'file-1.txt'",
+            ),
+            root_error(
+                ErrorCode::E095,
+                "In inventory version v1, state contains duplicate path 'file-3.txt'",
+            ),
+        ],
+    );
+    no_warnings(&result);
+}
+
+#[test]
+fn manifest_duplicate_digests() {
+    let result = official_bad_test("E096_manifest_duplicate_digests");
+
+    has_errors(&result, &vec![
+        root_error(
+            ErrorCode::E101,
+            "Inventory manifest contains duplicate path 'v1/content/test.txt'",
+        ),
+        root_error(
+            ErrorCode::E096,
+            "Inventory manifest contains a duplicate key '24F950AAC7B9EA9B3CB728228A0C82B67C39E96B4B344798870D5DAEE93E3AE5931BAAE8C7CACFEA4B629452C38026A81D138BC7AAD1AF3EF7BFD5EC646D6C28'",
+        ),
+    ]);
+    no_warnings(&result);
+}
+
+#[test]
+fn fixity_duplicate_digests() {
+    let result = official_bad_test("E097_fixity_duplicate_digests");
+
+    has_errors(&result, &vec![
+        root_error(
+            ErrorCode::E101,
+            "Inventory fixity block 'md5' contains duplicate path 'v1/content/test.txt'",
+        ),
+        // TODO need to check fixity for duplicate digests
+        root_error(
+            ErrorCode::E097,
+            "Inventory manifest contains a duplicate key '24F950AAC7B9EA9B3CB728228A0C82B67C39E96B4B344798870D5DAEE93E3AE5931BAAE8C7CACFEA4B629452C38026A81D138BC7AAD1AF3EF7BFD5EC646D6C28'",
+        ),
+    ]);
+    no_warnings(&result);
+}
+
+#[test]
+fn fixity_invalid_content_paths() {
+    let result = official_bad_test("E100_E099_fixity_invalid_content_paths");
+
+    has_errors(&result, &vec![
+        root_error(
+            ErrorCode::E099,
+            "Inventory fixity block 'md5' contains a path containing an illegal path part. Found: v1/content/../content/file-1.txt",
+        ),
+        // TODO technically this should be 100
+        root_error(
+            ErrorCode::E099,
+            "Inventory fixity block 'md5' contains a path containing an illegal path part. Found: /v1/content/file-3.txt",
+        ),
+        root_error(
+            ErrorCode::E099,
+            "Inventory fixity block 'md5' contains a path containing an illegal path part. Found: v1/content//file-2.txt",
+        ),
+    ]);
+    no_warnings(&result);
+}
+
+#[test]
+fn manifest_invalid_content_paths() {
+    let result = official_bad_test("E100_E099_manifest_invalid_content_paths");
+
+    has_errors(&result, &vec![
+        root_error(
+            ErrorCode::E100,
+            "Inventory manifest key 'b3b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2' contains a path with a leading/trailing '/'. Found: /v1/content/file-3.txt",
+        ),
+        root_error(
+            ErrorCode::E099,
+            "Inventory manifest key '07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1' contains a path containing an illegal path part. Found: v1/content/../content/file-1.txt",
+        ),
+        root_error(
+            ErrorCode::E099,
+            "Inventory manifest key '9fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5' contains a path containing an illegal path part. Found: v1/content//file-2.txt",
+        ),
+        // TODO ideally, these wouldn't be here
+        root_error(
+            ErrorCode::E050,
+            "Inventory version v1 state contains a digest not present in the manifest. Found: 9fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5",
+        ),
+        root_error(
+            ErrorCode::E050,
+            "Inventory version v1 state contains a digest not present in the manifest. Found: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
+        ),
+        root_error(
+            ErrorCode::E050,
+            "Inventory version v1 state contains a digest not present in the manifest. Found: b3b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2",
+        ),
+    ]);
+    no_warnings(&result);
+}
+
+#[test]
+fn non_unique_content_paths() {
+    let result = official_bad_test("E101_non_unique_content_paths");
+
+    has_errors(
+        &result,
+        &vec![root_error(
+            ErrorCode::E101,
+            "Inventory manifest contains duplicate path 'v1/content/test.txt'",
+        )],
+    );
     no_warnings(&result);
 }
 

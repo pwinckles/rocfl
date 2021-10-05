@@ -867,64 +867,68 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
                 loop {
                     match map.next_key()? {
                         None => break,
-                        Some(digest) => match map.next_value::<Vec<&str>>() {
-                            Ok(paths) => {
-                                let mut content_paths = Vec::with_capacity(paths.len());
+                        Some(digest) => {
+                            match map.next_value::<Vec<&str>>() {
+                                Ok(paths) => {
+                                    let mut content_paths = Vec::with_capacity(paths.len());
 
-                                for path in paths {
-                                    if path.starts_with('/') || path.ends_with('/') {
-                                        self.result.error(ErrorCode::E100,
+                                    for path in paths {
+                                        if path.starts_with('/') || path.ends_with('/') {
+                                            self.result.error(ErrorCode::E100,
                                                               format!("Inventory manifest key '{}' contains a path with a leading/trailing '/'. Found: {}",
                                                                       digest, path));
-                                    } else {
-                                        match ContentPath::try_from(path) {
-                                            Ok(content_path) => content_paths.push(content_path),
-                                            Err(_) => {
-                                                self.result.error(ErrorCode::E099,
+                                        } else {
+                                            match ContentPath::try_from(path) {
+                                                Ok(content_path) => {
+                                                    content_paths.push(content_path)
+                                                }
+                                                Err(_) => {
+                                                    self.result.error(ErrorCode::E099,
                                                                       format!("Inventory manifest key '{}' contains a path containing an illegal path part. Found: {}",
                                                                               digest, path));
+                                                }
                                             }
+                                        }
+
+                                        if all_paths.contains(path) {
+                                            self.result.error(ErrorCode::E101,
+                                                          format!("Inventory manifest contains duplicate path '{}'",
+                                                                  path));
+                                        } else {
+                                            all_paths.insert(path);
                                         }
                                     }
 
-                                    if all_paths.contains(path) {
-                                        self.result.error(ErrorCode::E101,
-                                                          format!("Inventory manifest contains a duplicate path. Found: {}",
-                                                                  path));
-                                    } else {
-                                        all_paths.insert(path);
+                                    let path_refs: Vec<Rc<ContentPath>> =
+                                        content_paths.into_iter().map(Rc::new).collect();
+                                    let digest_ref = self.data.insert_digest(digest);
+
+                                    if manifest.contains_id(&digest_ref) {
+                                        self.result.error(
+                                            ErrorCode::E096,
+                                            format!(
+                                                "Inventory manifest contains a duplicate key '{}'",
+                                                digest
+                                            ),
+                                        );
                                     }
+
+                                    manifest.insert_multiple_rc(digest_ref, path_refs);
                                 }
-
-                                let path_refs: Vec<Rc<ContentPath>> =
-                                    content_paths.into_iter().map(Rc::new).collect();
-                                let digest_ref = self.data.insert_digest(digest);
-
-                                if manifest.contains_id(&digest_ref) {
-                                    self.result.error(
-                                        ErrorCode::E096,
-                                        format!(
-                                            "Inventory manifest contains a duplicate key '{}'",
-                                            digest
-                                        ),
-                                    );
-                                }
-
-                                manifest.insert_multiple_rc(digest_ref, path_refs);
-                            }
-                            Err(e) => {
-                                self.result.error(ErrorCode::E092,
+                                Err(e) => {
+                                    self.result.error(ErrorCode::E092,
                                                       format!("Inventory manifest key '{}' must reference an array of strings", digest));
-                                return Err(e);
+                                    return Err(e);
+                                }
                             }
-                        },
+                        }
                     }
                 }
 
                 validate_non_conflicting(&all_paths, |path, part| {
                     self.result.error(
                         ErrorCode::E101,
-                        format!("Inventory manifest contains a path, '{}', that conflicts with another path '{}'",
+                        format!("Inventory manifest contains a path, '{}', that conflicts with another path, '{}'",
                                 path, part));
                 });
 
@@ -983,14 +987,14 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
                                 for path in paths {
                                     if path.starts_with('/') || path.ends_with('/') {
                                         self.result.error(ErrorCode::E053,
-                                                              format!("Inventory version {} state key '{}' contains a path with a leading/trailing '/'. Found: {}",
+                                                              format!("In inventory version {}, state key '{}' contains a path with a leading/trailing '/'. Found: {}",
                                                                       self.version, digest, path));
                                     } else {
                                         match self.data.insert_path::<A::Error>(path) {
                                             Ok(logical_path) => path_refs.push(logical_path),
                                             Err(_) => {
                                                 self.result.error(ErrorCode::E052,
-                                                                      format!("Inventory version {} state key '{}' contains a path containing an illegal path part. Found: {}",
+                                                                      format!("In inventory version {}, state key '{}' contains a path containing an illegal path part. Found: {}",
                                                                               self.version, digest, path));
                                             }
                                         }
@@ -998,7 +1002,7 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
 
                                     if all_paths.contains(path) {
                                         self.result.error(ErrorCode::E095,
-                                                          format!("Inventory version {} state contains a duplicate path. Found: {}",
+                                                          format!("In inventory version {}, state contains duplicate path '{}'",
                                                                   self.version, path));
                                     } else {
                                         all_paths.insert(path);
@@ -1009,7 +1013,7 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
                             }
                             Err(e) => {
                                 self.result.error(ErrorCode::E051,
-                                                      format!("Inventory version {} state key '{}' must reference an array of strings",
+                                                      format!("In inventory version {}, state key '{}' must reference an array of strings",
                                                               self.version, digest));
                                 return Err(e);
                             }
@@ -1020,7 +1024,7 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for StateSeed<'a, 'b, 'c> {
                 validate_non_conflicting(&all_paths, |path, part| {
                     self.result.error(
                         ErrorCode::E095,
-                        format!("Inventory version {} state contains a path, '{}', that conflicts with another path '{}'",
+                        format!("In inventory version {}, state contains a path, '{}', that conflicts with another path, '{}'",
                                 self.version, path, part));
                 });
 
@@ -1323,8 +1327,10 @@ fn validate_fixity(
                     if all_digests.contains(&digest) {
                         result.error(
                             ErrorCode::E097,
-                            format!("Inventory fixity block '{}' contains a duplicate digest. Found: {}",
-                                    algorithm, digest),
+                            format!(
+                                "Inventory fixity block '{}' contains duplicate digest '{}'",
+                                algorithm, digest
+                            ),
                         );
                     } else {
                         all_digests.push(digest);
@@ -1334,8 +1340,10 @@ fn validate_fixity(
                         if all_paths.contains(&path) {
                             result.error(
                                 ErrorCode::E101,
-                                format!("Inventory fixity block '{}' contains a duplicate path. Found: {}",
-                                        algorithm, path),
+                                format!(
+                                    "Inventory fixity block '{}' contains duplicate path '{}'",
+                                    algorithm, path
+                                ),
                             );
 
                             continue;
@@ -1864,7 +1872,7 @@ mod tests {
         match parse(json.as_bytes()) {
             ParseResult::Ok(_, _) => panic!("Expected parse failure"),
             ParseResult::Error(result) => {
-                has_error(ErrorCode::E051, "Inventory version v1 state key 'fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455' must reference an array of strings", &result);
+                has_error(ErrorCode::E051, "In inventory version v1, state key 'fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455' must reference an array of strings", &result);
                 error_count(1, &result);
                 warning_count(0, &result);
             }
