@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use rocfl::ocfl::{
-    ErrorCode, OcflRepo, ProblemLocation, ValidationError, ValidationResult, ValidationWarning,
-    VersionNum, WarnCode,
+    ErrorCode, ObjectValidationResult, OcflRepo, ProblemLocation, ValidationError,
+    ValidationWarning, VersionNum, WarnCode,
 };
 
 #[test]
@@ -1320,7 +1320,7 @@ fn root_warning(code: WarnCode, text: &str) -> ValidationWarning {
     ValidationWarning::new(ProblemLocation::ObjectRoot, code, text.to_string())
 }
 
-fn has_errors(result: &ValidationResult, expected_errors: &[ValidationError]) {
+fn has_errors(result: &ObjectValidationResult, expected_errors: &[ValidationError]) {
     for expected in expected_errors {
         assert!(
             result.errors.contains(expected),
@@ -1339,7 +1339,7 @@ fn has_errors(result: &ValidationResult, expected_errors: &[ValidationError]) {
     )
 }
 
-fn has_warnings(result: &ValidationResult, expected_warnings: &[ValidationWarning]) {
+fn has_warnings(result: &ObjectValidationResult, expected_warnings: &[ValidationWarning]) {
     for expected in expected_warnings {
         assert!(
             result.warnings.contains(expected),
@@ -1358,7 +1358,7 @@ fn has_warnings(result: &ValidationResult, expected_warnings: &[ValidationWarnin
     )
 }
 
-fn no_warnings(result: &ValidationResult) {
+fn no_warnings(result: &ObjectValidationResult) {
     assert!(
         result.warnings.is_empty(),
         "Expected no warnings; found: {:?}",
@@ -1366,7 +1366,7 @@ fn no_warnings(result: &ValidationResult) {
     )
 }
 
-fn no_errors(result: &ValidationResult) {
+fn no_errors(result: &ObjectValidationResult) {
     assert!(
         result.errors.is_empty(),
         "Expected no errors; found: {:?}",
@@ -1374,17 +1374,17 @@ fn no_errors(result: &ValidationResult) {
     )
 }
 
-fn official_valid_test(name: &str) -> ValidationResult {
+fn official_valid_test(name: &str) -> ObjectValidationResult {
     let repo = new_repo(official_valid_root());
     repo.validate_object_at(name, true).unwrap()
 }
 
-fn official_error_test(name: &str) -> ValidationResult {
+fn official_error_test(name: &str) -> ObjectValidationResult {
     let repo = new_repo(official_error_root());
     repo.validate_object_at(name, true).unwrap()
 }
 
-fn official_warn_test(name: &str) -> ValidationResult {
+fn official_warn_test(name: &str) -> ObjectValidationResult {
     let repo = new_repo(official_warn_root());
     repo.validate_object_at(name, true).unwrap()
 }

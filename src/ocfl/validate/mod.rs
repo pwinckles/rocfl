@@ -188,9 +188,18 @@ pub enum WarnCode {
     W015,
 }
 
+/// The the results of validating the structure of an OCFL repository
+#[derive(Debug)]
+pub struct StorageValidationResult {
+    /// Any errors identified in the storage hierarchy
+    pub errors: Vec<ValidationError>,
+    /// Any warning identified in the storage hierarchy
+    pub warnings: Vec<ValidationWarning>,
+}
+
 /// The the results of validating an OCFL object
 #[derive(Debug)]
-pub struct ValidationResult {
+pub struct ObjectValidationResult {
     /// The id of the object, if known
     pub object_id: Option<String>,
     /// The path to the object's root directory, relative the repository root
@@ -235,6 +244,14 @@ pub struct Validator<S: Storage> {
     storage: S,
 }
 
+// TODO
+pub struct IncrementalValidator<'a, S: Storage> {
+    pub storage_root_result: StorageValidationResult,
+    validator: &'a Validator<S>,
+    storage: &'a S,
+    fixity_check: bool,
+}
+
 /// The result of deserializing an inventory
 #[derive(Debug)]
 enum ParseResult {
@@ -264,7 +281,22 @@ struct ContentPathsIter<'a> {
     path_map: &'a HashMap<VersionNum, Vec<ContentPath>>,
 }
 
-impl ValidationResult {
+impl StorageValidationResult {
+    pub fn new() -> Self {
+        Self {
+            errors: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
+}
+
+impl Default for StorageValidationResult {
+    fn default() -> Self {
+        StorageValidationResult::new()
+    }
+}
+
+impl ObjectValidationResult {
     pub fn new(object_id: Option<&str>, storage_path: String) -> Self {
         Self {
             object_id: object_id.map(String::from),
@@ -361,8 +393,8 @@ impl<S: Storage> Validator<S> {
         object_id: Option<&str>,
         object_root: &str,
         fixity_check: bool,
-    ) -> Result<ValidationResult> {
-        let mut result = ValidationResult::new(
+    ) -> Result<ObjectValidationResult> {
+        let mut result = ObjectValidationResult::new(
             object_id,
             util::convert_backslash_to_forward(object_root).to_string(),
         );
@@ -441,8 +473,18 @@ impl<S: Storage> Validator<S> {
         Ok(result)
     }
 
-    pub fn validate_repo(&self, fixity_check: bool) {
-        todo!()
+    /// Validates the structure of an OCFL repository as well as all of the objects in the repository
+    /// When `fixity_check` is `false`, then the digests of object content files are not validated.
+    ///
+    /// The storage root is validated immediately, and an incremental validator is returned that
+    /// is used to lazily validate the rest of the repository.
+    pub fn validate_repo(&self, fixity_check: bool) -> Result<IncrementalValidator<S>> {
+        Ok(IncrementalValidator::new(
+            StorageValidationResult::new(),
+            self,
+            &self.storage,
+            fixity_check,
+        ))
     }
 
     // TODO this should resolve the OCFL object version
@@ -450,7 +492,7 @@ impl<S: Storage> Validator<S> {
         &self,
         object_root: &str,
         root_files: &[Listing],
-        result: &mut ValidationResult,
+        result: &mut ObjectValidationResult,
     ) {
         if root_files.contains(&Listing::file(OBJECT_NAMASTE_FILE)) {
             // TODO only valid for 1.0
@@ -501,7 +543,7 @@ impl<S: Storage> Validator<S> {
         version_num: Option<VersionNum>,
         path: &str,
         files: &[Listing],
-        result: &mut ValidationResult,
+        result: &mut ObjectValidationResult,
     ) -> Result<(Option<Inventory>, Option<String>, Option<HexDigest>)> {
         let mut inventory = None;
         let mut sidecar_file = None;
@@ -591,7 +633,7 @@ impl<S: Storage> Validator<S> {
         inventory_path: &str,
         version: Option<VersionNum>,
         algorithms: &[DigestAlgorithm],
-        result: &mut ValidationResult,
+        result: &mut ObjectValidationResult,
     ) -> Result<(Option<Inventory>, Option<HexDigest>)> {
         let mut inventory = None;
         let mut digest = None;
@@ -652,7 +694,7 @@ impl<S: Storage> Validator<S> {
         sidecar_path: &str,
         version: Option<VersionNum>,
         digest: &HexDigest,
-        result: &mut ValidationResult,
+        result: &mut ObjectValidationResult,
     ) -> Result<()> {
         let mut bytes = Vec::new();
         self.storage.read(sidecar_path, &mut bytes)?;
@@ -695,7 +737,7 @@ impl<S: Storage> Validator<S> {
         files: &[Listing],
         inventory: &Option<Inventory>,
         sidecar_file: &Option<String>,
-        result: &mut ValidationResult,
+        result: &mut ObjectValidationResult,
     ) -> Result<()> {
         let mut expected_files = Vec::with_capacity(5);
 
@@ -765,7 +807,7 @@ impl<S: Storage> Validator<S> {
     fn validate_extension_contents(
         &self,
         object_root: &str,
-        result: &mut ValidationResult,
+        result: &mut ObjectValidationResult,
     ) -> Result<()> {
         let extensions = paths::join(object_root, EXTENSIONS_DIR);
         let files = self.storage.list(&extensions, false)?;
@@ -804,7 +846,7 @@ impl<S: Storage> Validator<S> {
         &self,
         object_root: &str,
         root_inventory: &Inventory,
-        result: &mut ValidationResult,
+        result: &mut ObjectValidationResult,
     ) -> Result<ContentPaths> {
         let mut content_paths = ContentPaths::new();
 
@@ -852,7 +894,7 @@ impl<S: Storage> Validator<S> {
         content_files: &ContentPaths,
         root_inventory: &Inventory,
         inventories: &HashMap<DigestAlgorithm, Inventory>,
-        result: &mut ValidationResult,
+        result: &mut ObjectValidationResult,
     ) {
         let mut manifest_paths = inventory.manifest_paths();
         let mut fixity_paths = inventory.fixity_paths();
@@ -928,7 +970,7 @@ impl<S: Storage> Validator<S> {
         version_dir: &str,
         inventory: &Inventory,
         root_digest: &HexDigest,
-        result: &mut ValidationResult,
+        result: &mut ObjectValidationResult,
     ) -> Result<()> {
         let files = self.storage.list(version_dir, false)?;
 
@@ -985,7 +1027,7 @@ impl<S: Storage> Validator<S> {
         root_inventory: &Inventory,
         inventories: &HashMap<DigestAlgorithm, Inventory>,
         content_files: &ContentPaths,
-        result: &mut ValidationResult,
+        result: &mut ObjectValidationResult,
     ) -> Result<Option<Inventory>> {
         let mut inventory_opt = None;
         let files = self.storage.list(version_dir, false)?;
@@ -1081,7 +1123,7 @@ impl<S: Storage> Validator<S> {
         root_inventory: &Inventory,
         other_inventory: &Inventory,
         inventories: &HashMap<DigestAlgorithm, Inventory>,
-        result: &mut ValidationResult,
+        result: &mut ObjectValidationResult,
     ) {
         let mut current_num = version_num;
         let comparing_inventory =
@@ -1163,7 +1205,7 @@ impl<S: Storage> Validator<S> {
         comparing_inventory: &Inventory,
         inventory: &Inventory,
         compare_digests: bool,
-        result: &mut ValidationResult,
+        result: &mut ObjectValidationResult,
     ) {
         let comparing_version = comparing_inventory.get_version(current_version).unwrap();
         let version = inventory.get_version(current_version).unwrap();
@@ -1257,7 +1299,7 @@ impl<S: Storage> Validator<S> {
         version_num: VersionNum,
         content_dir: &str,
         digest_algorithm: DigestAlgorithm,
-        result: &mut ValidationResult,
+        result: &mut ObjectValidationResult,
     ) -> Result<()> {
         if files.contains(&Listing::dir(content_dir))
             && self
@@ -1317,7 +1359,7 @@ impl<S: Storage> Validator<S> {
         content_files: &ContentPaths,
         root_inventory: &Inventory,
         inventories: &HashMap<DigestAlgorithm, Inventory>,
-        result: &mut ValidationResult,
+        result: &mut ObjectValidationResult,
     ) -> Result<()> {
         let root_algorithm = root_inventory.digest_algorithm;
         let mut fixity = root_inventory.invert_fixity();
@@ -1374,6 +1416,24 @@ impl<S: Storage> Validator<S> {
 
         Ok(())
     }
+}
+
+impl<'a, S: Storage> IncrementalValidator<'a, S> {
+    fn new(
+        storage_root_result: StorageValidationResult,
+        validator: &'a Validator<S>,
+        storage: &'a S,
+        fixity_check: bool,
+    ) -> Self {
+        Self {
+            storage_root_result,
+            validator,
+            storage,
+            fixity_check,
+        }
+    }
+
+    // TODO
 }
 
 impl ParseValidationResult {

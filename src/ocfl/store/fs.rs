@@ -25,7 +25,7 @@ use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::validate::store::fs::FsStorage;
-use crate::ocfl::validate::{ValidationResult, Validator};
+use crate::ocfl::validate::{ObjectValidationResult, Validator};
 use crate::ocfl::{paths, specs, util, ContentPath, InventoryPath, LogicalPath, VersionRef};
 
 static OBJECT_ID_MATCHER: Lazy<RegexMatcher> =
@@ -446,7 +446,11 @@ impl OcflStore for FsOcflStore {
 
     /// Validates the specified object and returns any problems found. Err will only be returned
     /// if a non-validation problem was encountered.
-    fn validate_object(&self, object_id: &str, fixity_check: bool) -> Result<ValidationResult> {
+    fn validate_object(
+        &self,
+        object_id: &str,
+        fixity_check: bool,
+    ) -> Result<ObjectValidationResult> {
         let object_root = self.lookup_or_find_object_root_path(object_id)?;
 
         self.validator
@@ -460,7 +464,7 @@ impl OcflStore for FsOcflStore {
         &self,
         object_root: &str,
         fixity_check: bool,
-    ) -> Result<ValidationResult> {
+    ) -> Result<ObjectValidationResult> {
         self.validator
             .validate_object(None, object_root, fixity_check)
     }

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::ocfl::error::Result;
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::store::layout::LayoutExtensionName;
-use crate::ocfl::validate::ValidationResult;
+use crate::ocfl::validate::{ObjectValidationResult, IncrementalValidator};
 use crate::ocfl::{ContentPath, LogicalPath, VersionRef};
 
 pub mod fs;
@@ -69,13 +69,27 @@ pub trait OcflStore {
 
     /// Validates the specified object and returns any problems found. Err will only be returned
     /// if a non-validation problem was encountered.
-    fn validate_object(&self, object_id: &str, fixity_check: bool) -> Result<ValidationResult>;
+    fn validate_object(
+        &self,
+        object_id: &str,
+        fixity_check: bool,
+    ) -> Result<ObjectValidationResult>;
 
     /// Validates the specified object at the specified path, relative the storage root, and
     /// returns any problems found. Err will only be returned if a non-validation problem was
     /// encountered.
-    fn validate_object_at(&self, object_root: &str, fixity_check: bool)
-        -> Result<ValidationResult>;
+    fn validate_object_at(
+        &self,
+        object_root: &str,
+        fixity_check: bool,
+    ) -> Result<ObjectValidationResult>;
+
+    /// Validates the structure of an OCFL repository as well as all of the objects in the repository
+    /// When `fixity_check` is `false`, then the digests of object content files are not validated.
+    ///
+    /// The storage root is validated immediately, and an incremental validator is returned that
+    /// is used to lazily validate the rest of the repository.
+    fn validate_repo(&self, fixity_check: bool) -> Result<IncrementalValidator<>>;
 
     /// Instructs the store to gracefully stop any in-flight work and not accept any additional
     /// requests.

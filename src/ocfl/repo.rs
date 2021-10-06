@@ -25,7 +25,7 @@ use crate::ocfl::store::layout::{LayoutExtensionName, StorageLayout};
 #[cfg(feature = "s3")]
 use crate::ocfl::store::s3::S3OcflStore;
 use crate::ocfl::store::{OcflStore, StagingStore};
-use crate::ocfl::validate::ValidationResult;
+use crate::ocfl::validate::ObjectValidationResult;
 use crate::ocfl::{
     paths, util, validate, CommitMeta, ContentPath, Diff, DigestAlgorithm, InventoryPath,
     LogicalPath, ObjectVersion, ObjectVersionDetails, VersionDetails, VersionNum, VersionRef,
@@ -141,7 +141,11 @@ impl OcflRepo {
 
     /// Validates the specified object and returns any problems found. Err will only be returned
     /// if a non-validation problem was encountered.
-    pub fn validate_object(&self, object_id: &str, fixity_check: bool) -> Result<ValidationResult> {
+    pub fn validate_object(
+        &self,
+        object_id: &str,
+        fixity_check: bool,
+    ) -> Result<ObjectValidationResult> {
         self.ensure_open()?;
         self.store.validate_object(object_id, fixity_check)
     }
@@ -149,7 +153,11 @@ impl OcflRepo {
     /// Validates the specified object at the specified path, relative the storage root, and
     /// returns any problems found. Err will only be returned if a non-validation problem was
     /// encountered.
-    pub fn validate_object_at(&self, path: &str, fixity_check: bool) -> Result<ValidationResult> {
+    pub fn validate_object_at(
+        &self,
+        path: &str,
+        fixity_check: bool,
+    ) -> Result<ObjectValidationResult> {
         self.ensure_open()?;
         self.store.validate_object_at(path, fixity_check)
     }

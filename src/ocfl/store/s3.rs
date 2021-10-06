@@ -32,7 +32,7 @@ use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::paths::{join, join_with_trailing_slash};
-use crate::ocfl::validate::ValidationResult;
+use crate::ocfl::validate::ObjectValidationResult;
 use crate::ocfl::{
     paths, specs, util, InventoryPath, LayoutExtensionName, LogicalPath, VersionRef,
 };
@@ -524,7 +524,11 @@ impl OcflStore for S3OcflStore {
 
     /// Validates the specified object and returns any problems found. Err will only be returned
     /// if a non-validation problem was encountered.
-    fn validate_object(&self, object_id: &str, fixity_check: bool) -> Result<ValidationResult> {
+    fn validate_object(
+        &self,
+        object_id: &str,
+        fixity_check: bool,
+    ) -> Result<ObjectValidationResult> {
         todo!()
     }
 
@@ -535,7 +539,7 @@ impl OcflStore for S3OcflStore {
         &self,
         object_root: &str,
         fixity_check: bool,
-    ) -> Result<ValidationResult> {
+    ) -> Result<ObjectValidationResult> {
         todo!()
     }
 
