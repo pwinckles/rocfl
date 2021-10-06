@@ -17,7 +17,7 @@ use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::validate::store::{Listing, Storage};
 use crate::ocfl::{
-    paths, ContentPath, ContentPathVersion, DigestAlgorithm, InventoryPath, PrettyPrintSet,
+    paths, util, ContentPath, ContentPathVersion, DigestAlgorithm, InventoryPath, PrettyPrintSet,
     VersionNum,
 };
 
@@ -28,152 +28,7 @@ const ROOT: &str = "root";
 static SIDECAR_SPLIT: Lazy<Regex> = Lazy::new(|| Regex::new(r#"[\t ]+"#).unwrap());
 static EMPTY_PATHS: Vec<ContentPath> = vec![];
 
-// TODO
-pub struct Validator<S: Storage> {
-    storage: S,
-}
-
-// TODO move
-#[derive(Debug)]
-enum ParseResult {
-    Ok(ParseValidationResult, Inventory),
-    Error(ParseValidationResult),
-}
-
-#[derive(Debug)]
-struct ParseValidationResult {
-    errors: RefCell<Vec<ValidationError>>,
-    warnings: RefCell<Vec<ValidationWarning>>,
-}
-
-#[derive(Debug)]
-pub struct ValidationResult {
-    pub object_id: Option<String>,
-    pub errors: Vec<ValidationError>,
-    pub warnings: Vec<ValidationWarning>,
-}
-
-// TODO move
-
-impl Default for ValidationResult {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ValidationResult {
-    pub fn new() -> Self {
-        Self {
-            object_id: None,
-            errors: Vec::new(),
-            warnings: Vec::new(),
-        }
-    }
-
-    pub fn with_id(object_id: Option<&str>) -> Self {
-        Self {
-            object_id: object_id.map(String::from),
-            errors: Vec::new(),
-            warnings: Vec::new(),
-        }
-    }
-
-    pub fn has_errors(&self) -> bool {
-        !self.errors.is_empty()
-    }
-
-    pub fn has_warnings(&self) -> bool {
-        !self.warnings.is_empty()
-    }
-
-    fn object_id(&mut self, object_id: &str) {
-        if self.object_id.is_none() {
-            self.object_id = Some(object_id.to_string());
-        }
-    }
-
-    fn add_parse_result(&mut self, version: &str, result: ParseValidationResult) {
-        self.errors
-            .extend(result.errors.take().into_iter().map(|mut e| {
-                e.context = Some(version.to_string());
-                e
-            }));
-        self.warnings
-            .extend(result.warnings.take().into_iter().map(|mut w| {
-                w.context = Some(version.to_string());
-                w
-            }));
-    }
-
-    fn error(&mut self, version_num: Option<VersionNum>, code: ErrorCode, message: String) {
-        self.errors.push(ValidationError::with_context(
-            version_str(version_num),
-            code,
-            message,
-        ));
-    }
-
-    fn warn(&mut self, version_num: Option<VersionNum>, code: WarnCode, message: String) {
-        self.warnings.push(ValidationWarning::with_context(
-            version_str(version_num),
-            code,
-            message,
-        ));
-    }
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub struct ValidationError {
-    pub context: Option<String>,
-    pub code: ErrorCode,
-    pub text: String,
-}
-
-// TODO move
-impl ValidationError {
-    pub fn new(code: ErrorCode, text: String) -> Self {
-        Self {
-            context: None,
-            code,
-            text,
-        }
-    }
-
-    pub fn with_context(context: String, code: ErrorCode, text: String) -> Self {
-        Self {
-            context: Some(context),
-            code,
-            text,
-        }
-    }
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub struct ValidationWarning {
-    pub context: Option<String>,
-    pub code: WarnCode,
-    pub text: String,
-}
-
-// TODO move
-impl ValidationWarning {
-    pub fn new(code: WarnCode, text: String) -> Self {
-        Self {
-            context: None,
-            code,
-            text,
-        }
-    }
-
-    pub fn with_context(context: String, code: WarnCode, text: String) -> Self {
-        Self {
-            context: Some(context),
-            code,
-            text,
-        }
-    }
-}
-
+/// OCFL validation codes for errors: https://ocfl.io/1.0/spec/validation-codes.html
 #[allow(dead_code)]
 #[derive(Debug, EnumDisplay, Copy, Clone, Eq, PartialEq)]
 pub enum ErrorCode {
@@ -280,6 +135,7 @@ pub enum ErrorCode {
     E102,
 }
 
+/// OCFL validation codes for warnings: https://ocfl.io/1.0/spec/validation-codes.html
 #[allow(dead_code)]
 #[derive(Debug, EnumDisplay, Copy, Clone, Eq, PartialEq)]
 pub enum WarnCode {
@@ -298,6 +154,159 @@ pub enum WarnCode {
     W013,
     W014,
     W015,
+}
+
+/// The the results of validating an OCFL object
+#[derive(Debug)]
+pub struct ValidationResult {
+    /// The id of the object, if known
+    pub object_id: Option<String>,
+    /// The path to the object's root directory, relative the repository root
+    pub storage_path: String,
+    /// Any errors identified in the object
+    pub errors: Vec<ValidationError>,
+    /// Any warning identified in the object
+    pub warnings: Vec<ValidationWarning>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct ValidationError {
+    /// Indicates where the problem occurred. This is usually a version number, eg `v2`, which
+    /// indicates the problem was within an object's version directory, or `root`, which indicates
+    /// the problem was within the object's root.
+    pub context: Option<String>,
+    /// The validation code the error maps to
+    pub code: ErrorCode,
+    /// A specific description of the problem
+    pub text: String,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct ValidationWarning {
+    /// Indicates where the problem occurred. This is usually a version number, eg `v2`, which
+    /// indicates the problem was within an object's version directory, or `root`, which indicates
+    /// the problem was within the object's root.
+    pub context: Option<String>,
+    /// The validation code the warning maps to
+    pub code: WarnCode,
+    /// A specific description of the problem
+    pub text: String,
+}
+
+/// A validator that's able to validate OCFL objects and repositories against the OCFL spec
+pub struct Validator<S: Storage> {
+    /// Storage abstraction used to access files in any backend
+    storage: S,
+}
+
+/// The result of deserializing an inventory
+#[derive(Debug)]
+enum ParseResult {
+    /// Indicates the inventory was successfully deserialized and no errors were detected. The
+    /// `ParseValidationResult` may still contain warnings.
+    Ok(ParseValidationResult, Inventory),
+    /// Indicates the inventory either could not be deserialized or errors were detected during
+    /// validation. The `ParseValidationResult` will contain at least one error.
+    Error(ParseValidationResult),
+}
+
+/// Errors or warnings identified while deserializing an inventory
+#[derive(Debug)]
+struct ParseValidationResult {
+    errors: RefCell<Vec<ValidationError>>,
+    warnings: RefCell<Vec<ValidationWarning>>,
+}
+
+impl ValidationResult {
+    pub fn new(object_id: Option<&str>, storage_path: String) -> Self {
+        Self {
+            object_id: object_id.map(String::from),
+            storage_path,
+            errors: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
+
+    pub fn has_errors(&self) -> bool {
+        !self.errors.is_empty()
+    }
+
+    pub fn has_warnings(&self) -> bool {
+        !self.warnings.is_empty()
+    }
+
+    fn object_id(&mut self, object_id: &str) {
+        if self.object_id.is_none() {
+            self.object_id = Some(object_id.to_string());
+        }
+    }
+
+    fn add_parse_result(&mut self, version: &str, result: ParseValidationResult) {
+        self.errors
+            .extend(result.errors.take().into_iter().map(|mut e| {
+                e.context = Some(version.to_string());
+                e
+            }));
+        self.warnings
+            .extend(result.warnings.take().into_iter().map(|mut w| {
+                w.context = Some(version.to_string());
+                w
+            }));
+    }
+
+    fn error(&mut self, version_num: Option<VersionNum>, code: ErrorCode, message: String) {
+        self.errors.push(ValidationError::with_context(
+            version_str(version_num),
+            code,
+            message,
+        ));
+    }
+
+    fn warn(&mut self, version_num: Option<VersionNum>, code: WarnCode, message: String) {
+        self.warnings.push(ValidationWarning::with_context(
+            version_str(version_num),
+            code,
+            message,
+        ));
+    }
+}
+
+// TODO move
+impl ValidationError {
+    pub fn new(code: ErrorCode, text: String) -> Self {
+        Self {
+            context: None,
+            code,
+            text,
+        }
+    }
+
+    pub fn with_context(context: String, code: ErrorCode, text: String) -> Self {
+        Self {
+            context: Some(context),
+            code,
+            text,
+        }
+    }
+}
+
+// TODO move
+impl ValidationWarning {
+    pub fn new(code: WarnCode, text: String) -> Self {
+        Self {
+            context: None,
+            code,
+            text,
+        }
+    }
+
+    pub fn with_context(context: String, code: WarnCode, text: String) -> Self {
+        Self {
+            context: Some(context),
+            code,
+            text,
+        }
+    }
 }
 
 struct ContentPaths {
@@ -322,7 +331,10 @@ impl<S: Storage> Validator<S> {
         object_root: &str,
         fixity_check: bool,
     ) -> Result<ValidationResult> {
-        let mut result = ValidationResult::with_id(object_id);
+        let mut result = ValidationResult::new(
+            object_id,
+            util::convert_backslash_to_forward(object_root).to_string(),
+        );
 
         // TODO error handling ?
 
@@ -339,7 +351,6 @@ impl<S: Storage> Validator<S> {
         )?;
 
         // TODO I think the parse result should return an id if possible -- this is not useful without an id
-        // TODO It is likely also worth including the path in the validation result
         if let Some(inventory) = &inventory {
             result.object_id(&inventory.id);
         }
@@ -481,12 +492,10 @@ impl<S: Storage> Validator<S> {
         let mut manifest_paths = inventory.manifest_paths();
         let mut fixity_paths = inventory.fixity_paths();
         let comparing_inventory = if root_inventory.digest_algorithm == inventory.digest_algorithm {
-            root_inventory
+            Some(root_inventory)
         } else {
-            // TODO no need to compare digests when first version after algo change
-            inventories
-                .get(&inventory.digest_algorithm)
-                .unwrap_or(inventory)
+            // this will be the case for the first inventory after an algorithm change
+            inventories.get(&inventory.digest_algorithm)
         };
         let context_version = if inventory.head == root_inventory.head {
             None
@@ -497,17 +506,21 @@ impl<S: Storage> Validator<S> {
         for content_file in content_files.iter(inventory.head) {
             fixity_paths.remove(content_file.as_str());
             if manifest_paths.remove(content_file) {
-                if let Some(expected) = comparing_inventory.digest_for_content_path(content_file) {
-                    let digest = inventory.digest_for_content_path(content_file).unwrap();
-                    if expected != digest {
-                        result.error(
-                            context_version,
-                            ErrorCode::E092,
-                            format!(
-                                "Inventory manifest entry for content path '{}' differs from later versions. Expected: {}; Found: {}",
-                                content_file, expected, digest
-                            ),
-                        );
+                if let Some(comparing_inventory) = comparing_inventory {
+                    if let Some(expected) =
+                        comparing_inventory.digest_for_content_path(content_file)
+                    {
+                        let digest = inventory.digest_for_content_path(content_file).unwrap();
+                        if expected != digest {
+                            result.error(
+                                context_version,
+                                ErrorCode::E092,
+                                format!(
+                                    "Inventory manifest entry for content path '{}' differs from later versions. Expected: {}; Found: {}",
+                                    content_file, expected, digest
+                                ),
+                            );
+                        }
                     }
                 }
             } else {
