@@ -24,7 +24,6 @@ use crate::ocfl::{
 mod serde;
 pub mod store;
 
-const ROOT: &str = "root";
 static SIDECAR_SPLIT: Lazy<Regex> = Lazy::new(|| Regex::new(r#"[\t ]+"#).unwrap());
 static EMPTY_PATHS: Vec<ContentPath> = vec![];
 
@@ -202,13 +201,18 @@ pub struct ValidationResult {
     pub warnings: Vec<ValidationWarning>,
 }
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+pub enum ProblemLocation {
+    StorageRoot,
+    StorageHierarchy,
+    ObjectRoot,
+    ObjectVersion(VersionNum),
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct ValidationError {
-    /// Indicates where the problem occurred. This is usually a version number, eg `v2`, which
-    /// indicates the problem was within an object's version directory, or `root`, which indicates
-    /// the problem was within the object's root.
-    // TODO this shouldn't be an option
-    pub context: Option<String>,
+    /// Indicates where the problem occurred
+    pub location: ProblemLocation,
     /// The validation code the error maps to
     pub code: ErrorCode,
     /// A specific description of the problem
@@ -217,11 +221,8 @@ pub struct ValidationError {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ValidationWarning {
-    /// Indicates where the problem occurred. This is usually a version number, eg `v2`, which
-    /// indicates the problem was within an object's version directory, or `root`, which indicates
-    /// the problem was within the object's root.
-    // TODO this shouldn't be an option
-    pub context: Option<String>,
+    /// Indicates where the problem occurred
+    pub location: ProblemLocation,
     /// The validation code the warning maps to
     pub code: WarnCode,
     /// A specific description of the problem
@@ -289,48 +290,49 @@ impl ValidationResult {
         }
     }
 
-    fn add_parse_result(&mut self, version: &str, result: ParseValidationResult) {
+    fn add_parse_result(&mut self, version_num: Option<VersionNum>, result: ParseValidationResult) {
         self.errors
             .extend(result.errors.take().into_iter().map(|mut e| {
-                e.context = Some(version.to_string());
+                e.location = version_num.into();
                 e
             }));
         self.warnings
             .extend(result.warnings.take().into_iter().map(|mut w| {
-                w.context = Some(version.to_string());
+                w.location = version_num.into();
                 w
             }));
     }
 
-    fn error(&mut self, version_num: Option<VersionNum>, code: ErrorCode, message: String) {
-        self.errors.push(ValidationError::with_context(
-            version_str(version_num),
-            code,
-            message,
-        ));
+    fn error(&mut self, location: ProblemLocation, code: ErrorCode, message: String) {
+        self.errors
+            .push(ValidationError::new(location, code, message));
     }
 
-    fn warn(&mut self, version_num: Option<VersionNum>, code: WarnCode, message: String) {
-        self.warnings.push(ValidationWarning::with_context(
-            version_str(version_num),
-            code,
-            message,
-        ));
+    fn warn(&mut self, location: ProblemLocation, code: WarnCode, message: String) {
+        self.warnings
+            .push(ValidationWarning::new(location, code, message));
+    }
+}
+
+impl From<Option<VersionNum>> for ProblemLocation {
+    fn from(version_num: Option<VersionNum>) -> Self {
+        version_num.map_or_else(
+            || ProblemLocation::ObjectRoot,
+            ProblemLocation::ObjectVersion,
+        )
+    }
+}
+
+impl From<VersionNum> for ProblemLocation {
+    fn from(version_num: VersionNum) -> Self {
+        ProblemLocation::ObjectVersion(version_num)
     }
 }
 
 impl ValidationError {
-    pub fn new(code: ErrorCode, text: String) -> Self {
+    pub fn new(location: ProblemLocation, code: ErrorCode, text: String) -> Self {
         Self {
-            context: None,
-            code,
-            text,
-        }
-    }
-
-    pub fn with_context(context: String, code: ErrorCode, text: String) -> Self {
-        Self {
-            context: Some(context),
+            location,
             code,
             text,
         }
@@ -338,17 +340,9 @@ impl ValidationError {
 }
 
 impl ValidationWarning {
-    pub fn new(code: WarnCode, text: String) -> Self {
+    pub fn new(location: ProblemLocation, code: WarnCode, text: String) -> Self {
         Self {
-            context: None,
-            code,
-            text,
-        }
-    }
-
-    pub fn with_context(context: String, code: WarnCode, text: String) -> Self {
-        Self {
-            context: Some(context),
+            location,
             code,
             text,
         }
@@ -388,8 +382,6 @@ impl<S: Storage> Validator<S> {
             &root_files,
             &mut result,
         )?;
-
-        // TODO replace HashSet -> Vec where appropriate
 
         // If the root inventory is not valid, then we don't have a fixed point to use to validate
         // anything else in the object.
@@ -470,7 +462,7 @@ impl<S: Storage> Validator<S> {
                         // TODO only valid for 1.0
                         if contents != OBJECT_NAMASTE_CONTENTS_1_0 {
                             result.error(
-                                None,
+                                ProblemLocation::ObjectRoot,
                                 ErrorCode::E007,
                                 format!(
                                     "Object version declaration is invalid. Expected: {}; Found: {}",
@@ -481,7 +473,7 @@ impl<S: Storage> Validator<S> {
                     }
                     Err(_) => {
                         result.error(
-                            None,
+                            ProblemLocation::ObjectRoot,
                             ErrorCode::E007,
                             "Object version declaration contains invalid UTF-8 content".to_string(),
                         );
@@ -489,14 +481,14 @@ impl<S: Storage> Validator<S> {
                 }
             } else {
                 result.error(
-                    None,
+                    ProblemLocation::ObjectRoot,
                     ErrorCode::E003,
                     "Object version declaration does not exist".to_string(),
                 );
             }
         } else {
             result.error(
-                None,
+                ProblemLocation::ObjectRoot,
                 ErrorCode::E003,
                 "Object version declaration does not exist".to_string(),
             );
@@ -541,7 +533,7 @@ impl<S: Storage> Validator<S> {
                 if let (Some(inventory), Some(object_id)) = (&inventory, object_id) {
                     if object_id != inventory.id {
                         result.error(
-                            version_num,
+                            ProblemLocation::ObjectRoot,
                             ErrorCode::E083,
                             format!(
                                 "Inventory 'id' must equal '{}'. Found: {}",
@@ -576,7 +568,7 @@ impl<S: Storage> Validator<S> {
                     }
                 } else {
                     result.error(
-                        version_num,
+                        version_num.into(),
                         ErrorCode::E058,
                         format!("Inventory sidecar {} does not exist", sidecar),
                     );
@@ -585,7 +577,7 @@ impl<S: Storage> Validator<S> {
             }
         } else {
             result.error(
-                version_num,
+                version_num.into(),
                 ErrorCode::E063,
                 "Inventory does not exist".to_string(),
             );
@@ -638,7 +630,7 @@ impl<S: Storage> Validator<S> {
 
                 let has_errors = parse_result.has_errors();
 
-                result.add_parse_result(&version_str(version), parse_result);
+                result.add_parse_result(version, parse_result);
 
                 digest = writer.finalize_hex().remove(&inv.digest_algorithm);
                 if !has_errors {
@@ -648,7 +640,7 @@ impl<S: Storage> Validator<S> {
             ParseResult::Error(mut parse_result) => {
                 result.object_id =
                     std::mem::replace(&mut parse_result.object_id, RefCell::new(None)).take();
-                result.add_parse_result(&version_str(version), parse_result)
+                result.add_parse_result(version, parse_result)
             }
         }
 
@@ -669,7 +661,7 @@ impl<S: Storage> Validator<S> {
                 let parts: Vec<&str> = SIDECAR_SPLIT.split(&contents).collect();
                 if parts.len() != 2 || parts[1].trim_end() != INVENTORY_FILE {
                     result.error(
-                        version,
+                        version.into(),
                         ErrorCode::E061,
                         "Inventory sidecar is invalid".to_string(),
                     )
@@ -677,7 +669,7 @@ impl<S: Storage> Validator<S> {
                     let expected_digest = HexDigest::from(parts[0]);
                     if expected_digest != *digest {
                         result.error(
-                            version,
+                            version.into(),
                             ErrorCode::E060,
                             format!(
                                 "Inventory does not match expected digest. Expected: {}; Found: {}",
@@ -688,7 +680,7 @@ impl<S: Storage> Validator<S> {
                 }
             }
             Err(_) => result.error(
-                version,
+                version.into(),
                 ErrorCode::E061,
                 "Inventory sidecar is invalid".to_string(),
             ),
@@ -736,13 +728,13 @@ impl<S: Storage> Validator<S> {
             if !found && !expected_files.contains(entry) {
                 if let Listing::Other(path) = entry {
                     result.error(
-                        None,
+                        ProblemLocation::ObjectRoot,
                         ErrorCode::E090,
                         format!("Object root contains an illegal file: {}", path),
                     );
                 } else {
                     result.error(
-                        None,
+                        ProblemLocation::ObjectRoot,
                         ErrorCode::E001,
                         format!("Unexpected file in object root: {}", entry.path()),
                     );
@@ -753,7 +745,7 @@ impl<S: Storage> Validator<S> {
         if let Some(expected_versions) = expected_versions {
             expected_versions.iter().for_each(|v| {
                 result.error(
-                    None,
+                    ProblemLocation::ObjectRoot,
                     ErrorCode::E010,
                     format!(
                         "Object root does not contain version directory '{}'",
@@ -783,7 +775,7 @@ impl<S: Storage> Validator<S> {
                 Listing::Directory(path) => {
                     if !SUPPORTED_EXTENSIONS.contains(path.as_ref()) {
                         result.warn(
-                            None,
+                            ProblemLocation::ObjectRoot,
                             WarnCode::W013,
                             format!(
                                 "Object extensions directory contains unknown extension: {}",
@@ -794,7 +786,7 @@ impl<S: Storage> Validator<S> {
                 }
                 Listing::File(path) | Listing::Other(path) => {
                     result.error(
-                        None,
+                        ProblemLocation::ObjectRoot,
                         ErrorCode::E067,
                         format!(
                             "Object extensions directory contains an illegal file: {}",
@@ -832,7 +824,7 @@ impl<S: Storage> Validator<S> {
                     }
                     Listing::Directory(_) => {
                         result.error(
-                            Some(*version),
+                            ProblemLocation::from(*version),
                             ErrorCode::E024,
                             format!(
                                 "An empty directory exists within the content directory: {}",
@@ -842,7 +834,7 @@ impl<S: Storage> Validator<S> {
                     }
                     Listing::Other(_) => {
                         result.error(
-                            Some(*version),
+                            ProblemLocation::from(*version),
                             ErrorCode::E090,
                             format!("Content directory contains an illegal file: {}", full_path),
                         );
@@ -886,7 +878,7 @@ impl<S: Storage> Validator<S> {
                         let digest = inventory.digest_for_content_path(content_file).unwrap();
                         if expected != digest {
                             result.error(
-                                context_version,
+                                context_version.into(),
                                 ErrorCode::E092,
                                 format!(
                                     "Inventory manifest entry for content path '{}' differs from later versions. Expected: {}; Found: {}",
@@ -898,7 +890,7 @@ impl<S: Storage> Validator<S> {
                 }
             } else {
                 result.error(
-                    context_version,
+                    context_version.into(),
                     ErrorCode::E023,
                     format!(
                         "A content file exists that is not referenced in the manifest: {}",
@@ -910,7 +902,7 @@ impl<S: Storage> Validator<S> {
 
         for path in manifest_paths {
             result.error(
-                context_version,
+                context_version.into(),
                 ErrorCode::E092,
                 format!(
                     "Inventory manifest references a file that does not exist in a content directory: {}",
@@ -921,7 +913,7 @@ impl<S: Storage> Validator<S> {
 
         for path in fixity_paths {
             result.error(
-                context_version,
+                context_version.into(),
                 ErrorCode::E093,
                 format!(
                     "Inventory fixity references a file that does not exist in a content directory: {}",
@@ -948,7 +940,7 @@ impl<S: Storage> Validator<S> {
             let digest = digester.finalize_hex();
             if digest != *root_digest {
                 result.error(
-                    Some(inventory.head),
+                    inventory.head.into(),
                     ErrorCode::E064,
                     "Inventory file must be identical to the root inventory".to_string(),
                 );
@@ -961,14 +953,14 @@ impl<S: Storage> Validator<S> {
                 self.validate_sidecar(&sidecar_path, Some(inventory.head), &digest, result)?;
             } else {
                 result.error(
-                    Some(inventory.head),
+                    inventory.head.into(),
                     ErrorCode::E058,
                     format!("Inventory sidecar {} does not exist", sidecar_name),
                 );
             }
         } else {
             result.warn(
-                Some(inventory.head),
+                inventory.head.into(),
                 WarnCode::W010,
                 "Inventory file does not exist".to_string(),
             );
@@ -1014,7 +1006,7 @@ impl<S: Storage> Validator<S> {
 
                 if inventory.id != root_inventory.id {
                     result.error(
-                        Some(version_num),
+                        version_num.into(),
                         ErrorCode::E037,
                         format!(
                             "Inventory 'id' is inconsistent. Expected: {}; Found: {}",
@@ -1024,7 +1016,7 @@ impl<S: Storage> Validator<S> {
                 }
                 if inventory.defaulted_content_dir() != root_inventory.defaulted_content_dir() {
                     result.error(
-                        Some(version_num),
+                        version_num.into(),
                         ErrorCode::E019,
                         format!(
                             "Inventory 'contentDirectory' is inconsistent. Expected: {}; Found: {}",
@@ -1035,7 +1027,7 @@ impl<S: Storage> Validator<S> {
                 }
                 if inventory.head.to_string() != version_num.to_string() {
                     result.error(
-                        Some(version_num),
+                        version_num.into(),
                         // TODO suspect code
                         ErrorCode::E040,
                         format!(
@@ -1065,7 +1057,7 @@ impl<S: Storage> Validator<S> {
             }
         } else {
             result.warn(
-                Some(version_num),
+                version_num.into(),
                 WarnCode::W010,
                 "Inventory file does not exist".to_string(),
             );
@@ -1125,7 +1117,7 @@ impl<S: Storage> Validator<S> {
 
             if root_version.message != other_version.message {
                 result.warn(
-                    Some(version_num),
+                    version_num.into(),
                     WarnCode::W011,
                     format!(
                         "Inventory version {} 'message' is inconsistent with the root inventory",
@@ -1136,7 +1128,7 @@ impl<S: Storage> Validator<S> {
 
             if root_version.created != other_version.created {
                 result.warn(
-                    Some(version_num),
+                    version_num.into(),
                     WarnCode::W011,
                     format!(
                         "Inventory version {} 'created' is inconsistent with the root inventory",
@@ -1147,7 +1139,7 @@ impl<S: Storage> Validator<S> {
 
             if root_version.user != other_version.user {
                 result.warn(
-                    Some(version_num),
+                    version_num.into(),
                     WarnCode::W011,
                     format!(
                         "Inventory version {} 'user' is inconsistent with the root inventory",
@@ -1183,7 +1175,7 @@ impl<S: Storage> Validator<S> {
             match version.lookup_digest(comparing_path) {
                 None => {
                     result.error(
-                        Some(version_num),
+                        version_num.into(),
                         ErrorCode::E066,
                         format!(
                             "Inventory version {} state is missing a path that exists in later inventories: {}",
@@ -1195,7 +1187,7 @@ impl<S: Storage> Validator<S> {
                     if compare_digests {
                         if comparing_digest != digest {
                             result.error(
-                                Some(version_num),
+                                version_num.into(),
                                 ErrorCode::E066,
                                 format!(
                                     "In inventory version {}, path '{}' does not match the digest in later inventories. Expected: {}; Found: {}",
@@ -1211,7 +1203,7 @@ impl<S: Storage> Validator<S> {
                         if comparing_content_paths.len() == 1 {
                             if comparing_content_paths != content_paths {
                                 result.error(
-                                    Some(version_num),
+                                    version_num.into(),
                                     ErrorCode::E066,
                                     format!(
                                         "In inventory version {}, path '{}' maps to different content paths than it does in later inventories. Expected: {}; Found: {}",
@@ -1232,7 +1224,7 @@ impl<S: Storage> Validator<S> {
 
                             if filtered_paths != *content_paths {
                                 result.error(
-                                    Some(version_num),
+                                    version_num.into(),
                                     ErrorCode::E066,
                                     format!(
                                         "In inventory version {}, path '{}' maps to different content paths than it does in later inventories. Expected: {}; Found: {}",
@@ -1248,7 +1240,7 @@ impl<S: Storage> Validator<S> {
 
         for path in paths {
             result.error(
-                Some(version_num),
+                version_num.into(),
                 ErrorCode::E066,
                 format!(
                     "Inventory version {} state contains a path not in later inventories: {}",
@@ -1274,7 +1266,7 @@ impl<S: Storage> Validator<S> {
                 .is_empty()
         {
             result.warn(
-                Some(version_num),
+                version_num.into(),
                 WarnCode::W003,
                 "Content directory exists but is empty".to_string(),
             );
@@ -1294,21 +1286,21 @@ impl<S: Storage> Validator<S> {
             match file {
                 Listing::File(name) => {
                     result.error(
-                        Some(version_num),
+                        version_num.into(),
                         ErrorCode::E015,
                         format!("Version directory contains unexpected file: {}", name),
                     );
                 }
                 Listing::Directory(name) => {
                     result.warn(
-                        Some(version_num),
+                        version_num.into(),
                         WarnCode::W002,
                         format!("Version directory contains unexpected directory: {}", name),
                     );
                 }
                 Listing::Other(name) => {
                     result.error(
-                        Some(version_num),
+                        version_num.into(),
                         ErrorCode::E090,
                         format!("Version directory contains an illegal file: {}", name),
                     );
@@ -1368,7 +1360,7 @@ impl<S: Storage> Validator<S> {
                         };
 
                         result.error(
-                            None,
+                            ProblemLocation::ObjectRoot,
                             code,
                             format!(
                                 "Content file {} failed {} fixity check. Expected: {}; Found: {}",
@@ -1394,15 +1386,19 @@ impl ParseValidationResult {
     }
 
     pub fn error(&self, code: ErrorCode, message: String) {
-        self.errors
-            .borrow_mut()
-            .push(ValidationError::new(code, message));
+        self.errors.borrow_mut().push(ValidationError::new(
+            ProblemLocation::ObjectRoot,
+            code,
+            message,
+        ));
     }
 
     pub fn warn(&self, code: WarnCode, message: String) {
-        self.warnings
-            .borrow_mut()
-            .push(ValidationWarning::new(code, message));
+        self.warnings.borrow_mut().push(ValidationWarning::new(
+            ProblemLocation::ObjectRoot,
+            code,
+            message,
+        ));
     }
 
     pub fn object_id(&self, object_id: &str) {
@@ -1468,12 +1464,5 @@ impl<'a> Iterator for ContentPathsIter<'a> {
                 None
             }
         }
-    }
-}
-
-fn version_str(version: Option<VersionNum>) -> String {
-    match version {
-        Some(version) => version.to_string(),
-        None => ROOT.to_string(),
     }
 }

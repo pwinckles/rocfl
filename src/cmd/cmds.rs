@@ -10,7 +10,7 @@ use crate::cmd::opts::{
 };
 use crate::cmd::{print, println, Cmd, GlobalArgs};
 use crate::config::Config;
-use crate::ocfl::{CommitMeta, DigestAlgorithm, OcflRepo, Result};
+use crate::ocfl::{CommitMeta, DigestAlgorithm, OcflRepo, ProblemLocation, Result};
 
 impl Cmd for CatCmd {
     fn exec(
@@ -257,10 +257,12 @@ impl Cmd for ValidateCmd {
                     repo.validate_object(object_id, !self.no_fixity_check)?
                 };
 
-                fn format_version(version: &Option<String>) -> String {
-                    match version {
-                        Some(version) => format!(" ({})", version),
-                        None => "".to_string(),
+                fn format_version(location: ProblemLocation) -> String {
+                    match location {
+                        ProblemLocation::StorageRoot => "storage-root".to_string(),
+                        ProblemLocation::StorageHierarchy => "hierarchy".to_string(),
+                        ProblemLocation::ObjectRoot => "object-root".to_string(),
+                        ProblemLocation::ObjectVersion(num) => num.to_string(),
                     }
                 }
 
@@ -288,10 +290,10 @@ impl Cmd for ValidateCmd {
                     result.errors.iter().enumerate().for_each(|(i, error)| {
                         // TODO this should probably have Display
                         println(format!(
-                            "  {}. [{}]{} {}",
+                            "  {}. [{}] ({}) {}",
                             i + 1,
                             error.code,
-                            format_version(&error.context),
+                            format_version(error.location),
                             error.text
                         ));
                     });
@@ -302,10 +304,10 @@ impl Cmd for ValidateCmd {
                     result.warnings.iter().enumerate().for_each(|(i, warning)| {
                         // TODO this should probably have Display
                         println(format!(
-                            "  {}. [{}]{} {}",
+                            "  {}. [{}] ({}) {}",
                             i + 1,
                             warning.code,
-                            format_version(&warning.context),
+                            format_version(warning.location),
                             warning.text
                         ));
                     });

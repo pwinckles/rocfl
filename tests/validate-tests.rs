@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use rocfl::ocfl::{
-    ErrorCode, OcflRepo, ValidationError, ValidationResult, ValidationWarning, WarnCode,
+    ErrorCode, OcflRepo, ProblemLocation, ValidationError, ValidationResult, ValidationWarning,
+    VersionNum, WarnCode,
 };
-
-const ROOT: &str = "root";
 
 #[test]
 fn extra_dir_in_root() {
@@ -1297,19 +1297,27 @@ fn official_valid() {
 }
 
 fn version_error(num: &str, code: ErrorCode, text: &str) -> ValidationError {
-    ValidationError::with_context(num.to_string(), code, text.to_string())
+    ValidationError::new(
+        VersionNum::from_str(num).unwrap().into(),
+        code,
+        text.to_string(),
+    )
 }
 
 fn root_error(code: ErrorCode, text: &str) -> ValidationError {
-    ValidationError::with_context(ROOT.to_string(), code, text.to_string())
+    ValidationError::new(ProblemLocation::ObjectRoot, code, text.to_string())
 }
 
 fn version_warning(num: &str, code: WarnCode, text: &str) -> ValidationWarning {
-    ValidationWarning::with_context(num.to_string(), code, text.to_string())
+    ValidationWarning::new(
+        VersionNum::from_str(num).unwrap().into(),
+        code,
+        text.to_string(),
+    )
 }
 
 fn root_warning(code: WarnCode, text: &str) -> ValidationWarning {
-    ValidationWarning::with_context(ROOT.to_string(), code, text.to_string())
+    ValidationWarning::new(ProblemLocation::ObjectRoot, code, text.to_string())
 }
 
 fn has_errors(result: &ValidationResult, expected_errors: &[ValidationError]) {
