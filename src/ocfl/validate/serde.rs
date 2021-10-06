@@ -841,7 +841,7 @@ impl<'de: 'b, 'a, 'b, 'c> DeserializeSeed<'de> for VersionSeed<'a, 'b, 'c> {
 
 struct ManifestResult<'a> {
     manifest: PathBiMap<ContentPath>,
-    digests: Vec<&'a str>,
+    digests: HashSet<&'a str>,
 }
 
 struct ManifestSeed<'a, 'b> {
@@ -874,13 +874,13 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
             {
                 let mut manifest = PathBiMap::with_capacity(map.size_hint().unwrap_or(0));
                 let mut all_paths = HashSet::with_capacity(map.size_hint().unwrap_or(0));
-                let mut digests = Vec::with_capacity(map.size_hint().unwrap_or(0));
+                let mut digests = HashSet::with_capacity(map.size_hint().unwrap_or(0));
 
                 loop {
                     match map.next_key()? {
                         None => break,
                         Some(digest) => {
-                            digests.push(digest);
+                            digests.insert(digest);
                             match map.next_value::<Vec<&str>>() {
                                 Ok(paths) => {
                                     let mut content_paths = Vec::with_capacity(paths.len());
@@ -1337,8 +1337,8 @@ fn validate_fixity(
                 }
             }
 
-            let mut all_paths = Vec::with_capacity(fixity_manifest.len());
-            let mut all_digests = Vec::with_capacity(fixity_manifest.len());
+            let mut all_paths = HashSet::with_capacity(fixity_manifest.len());
+            let mut all_digests = HashSet::with_capacity(fixity_manifest.len());
 
             if let Some(manifest) = manifest {
                 for (digest, paths) in fixity_manifest {
@@ -1352,7 +1352,7 @@ fn validate_fixity(
                             ),
                         );
                     } else {
-                        all_digests.push(digest);
+                        all_digests.insert(digest);
                     }
 
                     for path in paths {
@@ -1368,7 +1368,7 @@ fn validate_fixity(
                             continue;
                         }
 
-                        all_paths.push(path);
+                        all_paths.insert(path);
 
                         if path.starts_with('/') || path.ends_with('/') {
                             result.error(ErrorCode::E100,
