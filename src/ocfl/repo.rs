@@ -27,14 +27,14 @@ use crate::ocfl::store::s3::S3OcflStore;
 use crate::ocfl::store::{OcflStore, StagingStore};
 use crate::ocfl::validate::ObjectValidationResult;
 use crate::ocfl::{
-    paths, util, validate, CommitMeta, ContentPath, Diff, DigestAlgorithm, InventoryPath,
-    LogicalPath, ObjectVersion, ObjectVersionDetails, VersionDetails, VersionNum, VersionRef,
+    paths, util, validate, CommitMeta, ContentPath, Diff, DigestAlgorithm, IncrementalValidator,
+    InventoryPath, LogicalPath, ObjectVersion, ObjectVersionDetails, VersionDetails, VersionNum,
+    VersionRef,
 };
 
-/// Interface for interacting with an OCFL repository
+/// OCFL repository
 pub struct OcflRepo {
-    /// For local filesystem repos, this is the storage root. TBD for S3.
-    // TODO experiment changing this to a generic
+    /// Interfaces with the files on disk or in S3
     store: Box<dyn OcflStore + Sync + Send>,
     /// The OCFL repo that stores staged objects
     staging: OnceCell<FsOcflStore>,
@@ -160,6 +160,19 @@ impl OcflRepo {
     ) -> Result<ObjectValidationResult> {
         self.ensure_open()?;
         self.store.validate_object_at(path, fixity_check)
+    }
+
+    /// Validates the structure of an OCFL repository as well as all of the objects in the repository
+    /// When `fixity_check` is `false`, then the digests of object content files are not validated.
+    ///
+    /// The storage root is validated immediately, and an incremental validator is returned that
+    /// is used to lazily validate the rest of the repository.
+    pub fn validate_repo<'a>(
+        &'a self,
+        fixity_check: bool,
+    ) -> Result<Box<dyn IncrementalValidator + 'a>> {
+        self.ensure_open()?;
+        self.store.validate_repo(fixity_check)
     }
 
     /// Returns an iterator that iterate through all of the objects in an OCFL repository.

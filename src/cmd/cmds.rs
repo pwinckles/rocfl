@@ -319,7 +319,9 @@ impl Cmd for ValidateCmd {
                 }
             }
         } else {
-            todo!()
+            let validator = repo.validate_repo(!self.no_fixity_check)?;
+            println!("{:?}", validator.storage_root_result());
+            // TODO
         }
 
         Ok(())

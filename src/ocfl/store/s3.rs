@@ -32,7 +32,7 @@ use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::paths::{join, join_with_trailing_slash};
-use crate::ocfl::validate::ObjectValidationResult;
+use crate::ocfl::validate::{IncrementalValidator, ObjectValidationResult};
 use crate::ocfl::{
     paths, specs, util, InventoryPath, LayoutExtensionName, LogicalPath, VersionRef,
 };
@@ -540,6 +540,18 @@ impl OcflStore for S3OcflStore {
         object_root: &str,
         fixity_check: bool,
     ) -> Result<ObjectValidationResult> {
+        todo!()
+    }
+
+    /// Validates the structure of an OCFL repository as well as all of the objects in the repository
+    /// When `fixity_check` is `false`, then the digests of object content files are not validated.
+    ///
+    /// The storage root is validated immediately, and an incremental validator is returned that
+    /// is used to lazily validate the rest of the repository.
+    fn validate_repo<'a>(
+        &'a self,
+        fixity_check: bool,
+    ) -> Result<Box<dyn IncrementalValidator + 'a>> {
         todo!()
     }
 

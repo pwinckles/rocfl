@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::ocfl::error::Result;
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::store::layout::LayoutExtensionName;
-use crate::ocfl::validate::{ObjectValidationResult, IncrementalValidator};
+use crate::ocfl::validate::{IncrementalValidator, ObjectValidationResult};
 use crate::ocfl::{ContentPath, LogicalPath, VersionRef};
 
 pub mod fs;
@@ -89,7 +89,10 @@ pub trait OcflStore {
     ///
     /// The storage root is validated immediately, and an incremental validator is returned that
     /// is used to lazily validate the rest of the repository.
-    fn validate_repo(&self, fixity_check: bool) -> Result<IncrementalValidator<>>;
+    fn validate_repo<'a>(
+        &'a self,
+        fixity_check: bool,
+    ) -> Result<Box<dyn IncrementalValidator + 'a>>;
 
     /// Instructs the store to gracefully stop any in-flight work and not accept any additional
     /// requests.

@@ -244,9 +244,14 @@ pub struct Validator<S: Storage> {
     storage: S,
 }
 
+pub trait IncrementalValidator {
+    fn storage_root_result(&self) -> &StorageValidationResult;
+    // TODO
+}
+
 // TODO
-pub struct IncrementalValidator<'a, S: Storage> {
-    pub storage_root_result: StorageValidationResult,
+pub struct IncrementalValidatorImpl<'a, S: Storage> {
+    storage_root_result: StorageValidationResult,
     validator: &'a Validator<S>,
     storage: &'a S,
     fixity_check: bool,
@@ -478,8 +483,8 @@ impl<S: Storage> Validator<S> {
     ///
     /// The storage root is validated immediately, and an incremental validator is returned that
     /// is used to lazily validate the rest of the repository.
-    pub fn validate_repo(&self, fixity_check: bool) -> Result<IncrementalValidator<S>> {
-        Ok(IncrementalValidator::new(
+    pub fn validate_repo(&self, fixity_check: bool) -> Result<IncrementalValidatorImpl<S>> {
+        Ok(IncrementalValidatorImpl::new(
             StorageValidationResult::new(),
             self,
             &self.storage,
@@ -1418,7 +1423,7 @@ impl<S: Storage> Validator<S> {
     }
 }
 
-impl<'a, S: Storage> IncrementalValidator<'a, S> {
+impl<'a, S: Storage> IncrementalValidatorImpl<'a, S> {
     fn new(
         storage_root_result: StorageValidationResult,
         validator: &'a Validator<S>,
@@ -1434,6 +1439,12 @@ impl<'a, S: Storage> IncrementalValidator<'a, S> {
     }
 
     // TODO
+}
+
+impl<'a, S: Storage> IncrementalValidator for IncrementalValidatorImpl<'a, S> {
+    fn storage_root_result(&self) -> &StorageValidationResult {
+        &self.storage_root_result
+    }
 }
 
 impl ParseValidationResult {

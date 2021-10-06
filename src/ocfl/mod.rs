@@ -14,8 +14,8 @@ pub use self::repo::OcflRepo;
 pub use self::store::layout::{LayoutExtensionName, StorageLayout};
 pub use self::types::*;
 pub use self::validate::{
-    ErrorCode, ObjectValidationResult, ProblemLocation, ValidationError, ValidationWarning,
-    WarnCode,
+    ErrorCode, IncrementalValidator, IncrementalValidatorImpl, ObjectValidationResult,
+    ProblemLocation, ValidationError, ValidationWarning, WarnCode,
 };
 
 mod bimap;
