@@ -248,6 +248,7 @@ enum ParseResult {
 /// Errors or warnings identified while deserializing an inventory
 #[derive(Debug)]
 struct ParseValidationResult {
+    object_id: RefCell<Option<String>>,
     errors: RefCell<Vec<ValidationError>>,
     warnings: RefCell<Vec<ValidationWarning>>,
 }
@@ -387,11 +388,6 @@ impl<S: Storage> Validator<S> {
             &root_files,
             &mut result,
         )?;
-
-        // TODO I think the parse result should return an id if possible -- this is not useful without an id
-        if let Some(inventory) = &inventory {
-            result.object_id(&inventory.id);
-        }
 
         // TODO replace HashSet -> Vec where appropriate
 
@@ -614,6 +610,8 @@ impl<S: Storage> Validator<S> {
 
         match serde::parse(writer.inner()) {
             ParseResult::Ok(parse_result, inv) => {
+                result.object_id(&inv.id);
+
                 // TODO this is only valid for 1.0
                 if inv.type_declaration != INVENTORY_TYPE {
                     parse_result.error(
@@ -647,7 +645,9 @@ impl<S: Storage> Validator<S> {
                     inventory = Some(inv);
                 }
             }
-            ParseResult::Error(parse_result) => {
+            ParseResult::Error(mut parse_result) => {
+                result.object_id =
+                    std::mem::replace(&mut parse_result.object_id, RefCell::new(None)).take();
                 result.add_parse_result(&version_str(version), parse_result)
             }
         }
@@ -1387,6 +1387,7 @@ impl<S: Storage> Validator<S> {
 impl ParseValidationResult {
     pub fn new() -> Self {
         Self {
+            object_id: RefCell::new(None),
             errors: RefCell::new(Vec::new()),
             warnings: RefCell::new(Vec::new()),
         }
@@ -1402,6 +1403,10 @@ impl ParseValidationResult {
         self.warnings
             .borrow_mut()
             .push(ValidationWarning::new(code, message));
+    }
+
+    pub fn object_id(&self, object_id: &str) {
+        self.object_id.replace(Some(object_id.to_string()));
     }
 
     pub fn has_errors(&self) -> bool {

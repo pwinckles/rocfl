@@ -178,6 +178,7 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                                             );
                                         }
                                         id = Some(value.to_string());
+                                        self.result.object_id(id.as_ref().unwrap())
                                     }
                                     Err(e) => {
                                         self.result.error(
