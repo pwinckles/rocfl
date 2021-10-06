@@ -582,6 +582,7 @@ fn bad_version_block_values() {
 
 // TODO this is _not_ a 1.0 requirement
 // #[test]
+#[allow(dead_code)]
 fn file_in_manifest_not_used() {
     let result = official_error_test("E050_file_in_manifest_not_used");
 
