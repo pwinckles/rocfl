@@ -10,7 +10,8 @@ use strum_macros::Display as EnumDisplay;
 
 use crate::ocfl::consts::{
     EXTENSIONS_DIR, INVENTORY_FILE, INVENTORY_SIDECAR_PREFIX, INVENTORY_TYPE, LOGS_DIR,
-    OBJECT_NAMASTE_CONTENTS_1_0, OBJECT_NAMASTE_FILE, OCFL_OBJECT_VERSION, SUPPORTED_EXTENSIONS,
+    OBJECT_NAMASTE_CONTENTS_1_0, OBJECT_NAMASTE_FILE, OCFL_OBJECT_VERSION, OCFL_VERSION,
+    REPO_NAMASTE_CONTENTS_1_0, REPO_NAMASTE_FILE, SUPPORTED_EXTENSIONS,
 };
 use crate::ocfl::digest::{HexDigest, MultiDigestWriter};
 use crate::ocfl::error::{Result, RocflError};
@@ -188,13 +189,28 @@ pub enum WarnCode {
     W015,
 }
 
+// TODO
+pub trait ValidationResult {
+    fn has_errors(&self) -> bool;
+
+    fn has_warnings(&self) -> bool;
+
+    fn errors(&self) -> &[ValidationError];
+
+    fn warnings(&self) -> &[ValidationWarning];
+
+    fn error(&mut self, location: ProblemLocation, code: ErrorCode, message: String);
+
+    fn warn(&mut self, location: ProblemLocation, code: WarnCode, message: String);
+}
+
 /// The the results of validating the structure of an OCFL repository
 #[derive(Debug)]
 pub struct StorageValidationResult {
     /// Any errors identified in the storage hierarchy
-    pub errors: Vec<ValidationError>,
+    errors: Vec<ValidationError>,
     /// Any warning identified in the storage hierarchy
-    pub warnings: Vec<ValidationWarning>,
+    warnings: Vec<ValidationWarning>,
 }
 
 /// The the results of validating an OCFL object
@@ -205,9 +221,9 @@ pub struct ObjectValidationResult {
     /// The path to the object's root directory, relative the repository root
     pub storage_path: String,
     /// Any errors identified in the object
-    pub errors: Vec<ValidationError>,
+    errors: Vec<ValidationError>,
     /// Any warning identified in the object
-    pub warnings: Vec<ValidationWarning>,
+    warnings: Vec<ValidationWarning>,
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -295,6 +311,36 @@ impl StorageValidationResult {
     }
 }
 
+impl ValidationResult for StorageValidationResult {
+    /// True if any errors were identified
+    fn has_errors(&self) -> bool {
+        !self.errors.is_empty()
+    }
+
+    /// True if any warnings were identified
+    fn has_warnings(&self) -> bool {
+        !self.warnings.is_empty()
+    }
+
+    fn errors(&self) -> &[ValidationError] {
+        &self.errors
+    }
+
+    fn warnings(&self) -> &[ValidationWarning] {
+        &self.warnings
+    }
+
+    fn error(&mut self, location: ProblemLocation, code: ErrorCode, message: String) {
+        self.errors
+            .push(ValidationError::new(location, code, message));
+    }
+
+    fn warn(&mut self, location: ProblemLocation, code: WarnCode, message: String) {
+        self.warnings
+            .push(ValidationWarning::new(location, code, message));
+    }
+}
+
 impl Default for StorageValidationResult {
     fn default() -> Self {
         StorageValidationResult::new()
@@ -309,16 +355,6 @@ impl ObjectValidationResult {
             errors: Vec::new(),
             warnings: Vec::new(),
         }
-    }
-
-    /// True if any errors were identified
-    pub fn has_errors(&self) -> bool {
-        !self.errors.is_empty()
-    }
-
-    /// True if any warnings were identified
-    pub fn has_warnings(&self) -> bool {
-        !self.warnings.is_empty()
     }
 
     fn object_id(&mut self, object_id: &str) {
@@ -338,6 +374,26 @@ impl ObjectValidationResult {
                 w.location = version_num.into();
                 w
             }));
+    }
+}
+
+impl ValidationResult for ObjectValidationResult {
+    /// True if any errors were identified
+    fn has_errors(&self) -> bool {
+        !self.errors.is_empty()
+    }
+
+    /// True if any warnings were identified
+    fn has_warnings(&self) -> bool {
+        !self.warnings.is_empty()
+    }
+
+    fn errors(&self) -> &[ValidationError] {
+        &self.errors
+    }
+
+    fn warnings(&self) -> &[ValidationWarning] {
+        &self.warnings
     }
 
     fn error(&mut self, location: ProblemLocation, code: ErrorCode, message: String) {
@@ -385,6 +441,8 @@ impl ValidationWarning {
         }
     }
 }
+
+// TODO need to hookup ctrl+c
 
 impl<S: Storage> Validator<S> {
     pub fn new(storage: S) -> Self {
@@ -484,8 +542,29 @@ impl<S: Storage> Validator<S> {
     /// The storage root is validated immediately, and an incremental validator is returned that
     /// is used to lazily validate the rest of the repository.
     pub fn validate_repo(&self, fixity_check: bool) -> Result<IncrementalValidatorImpl<S>> {
+        let mut root_result = StorageValidationResult::new();
+        let files = self.storage.list("", false)?;
+
+        self.validate_root_namaste(&files, &mut root_result);
+
+        if files.contains(&Listing::dir(EXTENSIONS_DIR)) {
+            let ext_files = self.storage.list(EXTENSIONS_DIR, false)?;
+            self.validate_extension_contents(&ext_files, &mut root_result)?;
+        }
+
+        // TODO E070 ocfl_layout.json contents
+
+        // TODO W015 should either be direct children or hierarchy; not both
+
+        // TODO E072 no files
+        // TODO E073 no emtpy dirs in hierarchy
+        // TODO E090 no links
+
+        // TODO E037 object id unique
+        // TODO E081 object ocfl versions must be same or earlier
+
         Ok(IncrementalValidatorImpl::new(
-            StorageValidationResult::new(),
+            root_result,
             self,
             &self.storage,
             fixity_check,
@@ -493,13 +572,57 @@ impl<S: Storage> Validator<S> {
     }
 
     // TODO this should resolve the OCFL object version
+    fn validate_root_namaste(&self, files: &[Listing], result: &mut StorageValidationResult) {
+        if files.contains(&Listing::file(REPO_NAMASTE_FILE)) {
+            // TODO only valid for 1.0
+            let mut bytes: Vec<u8> = Vec::new();
+            if self.storage.read(REPO_NAMASTE_FILE, &mut bytes).is_ok() {
+                match String::from_utf8(bytes) {
+                    Ok(contents) => {
+                        // TODO only valid for 1.0
+                        if contents != REPO_NAMASTE_CONTENTS_1_0 {
+                            result.error(
+                                ProblemLocation::StorageRoot,
+                                ErrorCode::E080,
+                                format!(
+                                    "Root version declaration is invalid. Expected: {}; Found: {}",
+                                    OCFL_VERSION, contents
+                                ),
+                            );
+                        }
+                    }
+                    Err(_) => {
+                        result.error(
+                            ProblemLocation::StorageRoot,
+                            ErrorCode::E080,
+                            "Root version declaration contains invalid UTF-8 content".to_string(),
+                        );
+                    }
+                }
+            } else {
+                result.error(
+                    ProblemLocation::StorageRoot,
+                    ErrorCode::E069,
+                    "Root version declaration does not exist".to_string(),
+                );
+            }
+        } else {
+            result.error(
+                ProblemLocation::StorageRoot,
+                ErrorCode::E069,
+                "Root version declaration does not exist".to_string(),
+            );
+        }
+    }
+
+    // TODO this should resolve the OCFL object version
     fn validate_object_namaste(
         &self,
         object_root: &str,
-        root_files: &[Listing],
+        files: &[Listing],
         result: &mut ObjectValidationResult,
     ) {
-        if root_files.contains(&Listing::file(OBJECT_NAMASTE_FILE)) {
+        if files.contains(&Listing::file(OBJECT_NAMASTE_FILE)) {
             // TODO only valid for 1.0
             let path = paths::join(object_root, OBJECT_NAMASTE_FILE);
             let mut bytes: Vec<u8> = Vec::new();
@@ -803,21 +926,20 @@ impl<S: Storage> Validator<S> {
         }
 
         if files.contains(&Listing::dir(EXTENSIONS_DIR)) {
-            self.validate_extension_contents(object_root, result)?;
+            let extensions = paths::join(object_root, EXTENSIONS_DIR);
+            let ext_files = self.storage.list(&extensions, false)?;
+            self.validate_extension_contents(&ext_files, result)?;
         }
 
         Ok(())
     }
 
-    fn validate_extension_contents(
+    fn validate_extension_contents<V: ValidationResult>(
         &self,
-        object_root: &str,
-        result: &mut ObjectValidationResult,
+        ext_files: &[Listing],
+        result: &mut V,
     ) -> Result<()> {
-        let extensions = paths::join(object_root, EXTENSIONS_DIR);
-        let files = self.storage.list(&extensions, false)?;
-
-        for file in files {
+        for file in ext_files {
             match file {
                 Listing::Directory(path) => {
                     if !SUPPORTED_EXTENSIONS.contains(path.as_ref()) {

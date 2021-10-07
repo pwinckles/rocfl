@@ -10,7 +10,9 @@ use crate::cmd::opts::{
 };
 use crate::cmd::{print, println, Cmd, GlobalArgs};
 use crate::config::Config;
-use crate::ocfl::{CommitMeta, DigestAlgorithm, OcflRepo, ProblemLocation, Result};
+use crate::ocfl::{
+    CommitMeta, DigestAlgorithm, OcflRepo, ProblemLocation, Result, ValidationResult,
+};
 
 impl Cmd for CatCmd {
     fn exec(
@@ -273,21 +275,21 @@ impl Cmd for ValidateCmd {
                         println(format!(
                             "Object {} has {} warnings",
                             result.object_id.as_ref().unwrap_or(&"Unknown".to_string()),
-                            result.warnings.len()
+                            result.warnings().len()
                         ));
                     } else {
                         println(format!(
                             "Object {} has {} errors and {} warnings",
                             result.object_id.as_ref().unwrap_or(&"Unknown".to_string()),
-                            result.errors.len(),
-                            result.warnings.len()
+                            result.errors().len(),
+                            result.warnings().len()
                         ));
                     }
 
                     if result.has_errors() {
                         println("Errors:");
                     }
-                    result.errors.iter().enumerate().for_each(|(i, error)| {
+                    result.errors().iter().enumerate().for_each(|(i, error)| {
                         // TODO this should probably have Display
                         println(format!(
                             "  {}. [{}] ({}) {}",
@@ -301,16 +303,20 @@ impl Cmd for ValidateCmd {
                     if result.has_warnings() {
                         println("Warnings:");
                     }
-                    result.warnings.iter().enumerate().for_each(|(i, warning)| {
-                        // TODO this should probably have Display
-                        println(format!(
-                            "  {}. [{}] ({}) {}",
-                            i + 1,
-                            warning.code,
-                            format_version(warning.location),
-                            warning.text
-                        ));
-                    });
+                    result
+                        .warnings()
+                        .iter()
+                        .enumerate()
+                        .for_each(|(i, warning)| {
+                            // TODO this should probably have Display
+                            println(format!(
+                                "  {}. [{}] ({}) {}",
+                                i + 1,
+                                warning.code,
+                                format_version(warning.location),
+                                warning.text
+                            ));
+                        });
 
                     // TODO different return code?
                 } else {
