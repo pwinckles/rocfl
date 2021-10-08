@@ -3,19 +3,17 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::slice::Iter;
 use std::str::FromStr;
+use std::vec::IntoIter;
 
 use once_cell::sync::Lazy;
 use regex::Regex;
 use strum_macros::Display as EnumDisplay;
 
-use crate::ocfl::consts::{
-    EXTENSIONS_DIR, INVENTORY_FILE, INVENTORY_SIDECAR_PREFIX, INVENTORY_TYPE, LOGS_DIR,
-    OBJECT_NAMASTE_CONTENTS_1_0, OBJECT_NAMASTE_FILE, OCFL_OBJECT_VERSION, OCFL_VERSION,
-    REPO_NAMASTE_CONTENTS_1_0, REPO_NAMASTE_FILE, SUPPORTED_EXTENSIONS,
-};
+use crate::ocfl::consts::*;
 use crate::ocfl::digest::{HexDigest, MultiDigestWriter};
 use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::Inventory;
+use crate::ocfl::store::OcflLayout;
 use crate::ocfl::validate::store::{Listing, Storage};
 use crate::ocfl::{
     paths, util, ContentPath, ContentPathVersion, DigestAlgorithm, InventoryPath, PrettyPrintSet,
@@ -260,7 +258,7 @@ pub struct Validator<S: Storage> {
     storage: S,
 }
 
-pub trait IncrementalValidator {
+pub trait IncrementalValidator: Iterator<Item = Result<ObjectValidationResult>> {
     fn storage_root_result(&self) -> &StorageValidationResult;
     // TODO
 }
@@ -271,6 +269,8 @@ pub struct IncrementalValidatorImpl<'a, S: Storage> {
     validator: &'a Validator<S>,
     storage: &'a S,
     fixity_check: bool,
+    dir_iters: Vec<IntoIter<Listing<'a>>>,
+    current_iter: RefCell<Option<IntoIter<Listing<'a>>>>,
 }
 
 /// The result of deserializing an inventory
@@ -549,25 +549,23 @@ impl<S: Storage> Validator<S> {
 
         if files.contains(&Listing::dir(EXTENSIONS_DIR)) {
             let ext_files = self.storage.list(EXTENSIONS_DIR, false)?;
-            self.validate_extension_contents(&ext_files, &mut root_result)?;
+            self.validate_extension_contents(
+                &ext_files,
+                ProblemLocation::StorageRoot,
+                &mut root_result,
+            )?;
         }
 
-        // TODO E070 ocfl_layout.json contents
+        self.validate_ocfl_layout(&files, &mut root_result);
 
         // TODO W015 should either be direct children or hierarchy; not both
-
-        // TODO E072 no files
-        // TODO E073 no emtpy dirs in hierarchy
-        // TODO E090 no links
-
-        // TODO E037 object id unique
-        // TODO E081 object ocfl versions must be same or earlier
 
         Ok(IncrementalValidatorImpl::new(
             root_result,
             self,
             &self.storage,
             fixity_check,
+            files,
         ))
     }
 
@@ -612,6 +610,27 @@ impl<S: Storage> Validator<S> {
                 ErrorCode::E069,
                 "Root version declaration does not exist".to_string(),
             );
+        }
+    }
+
+    fn validate_ocfl_layout(&self, files: &[Listing], result: &mut StorageValidationResult) {
+        if files.contains(&Listing::dir(OCFL_LAYOUT_FILE)) {
+            let mut bytes: Vec<u8> = Vec::new();
+            if self.storage.read(OCFL_LAYOUT_FILE, &mut bytes).is_ok() {
+                match serde_json::from_slice::<OcflLayout>(&bytes) {
+                    Ok(_layout) => {
+                        // TODO https://github.com/OCFL/spec/issues/565
+                    }
+                    Err(_) => {
+                        result.error(
+                            ProblemLocation::StorageRoot,
+                            ErrorCode::E070,
+                            "ocfl_layout.json does not contain a JSON object with keys 'extension' and 'description'".to_string());
+                    }
+                }
+            } else {
+                // TODO we should probably log that we couldn't read it -- not a validation error
+            }
         }
     }
 
@@ -928,7 +947,7 @@ impl<S: Storage> Validator<S> {
         if files.contains(&Listing::dir(EXTENSIONS_DIR)) {
             let extensions = paths::join(object_root, EXTENSIONS_DIR);
             let ext_files = self.storage.list(&extensions, false)?;
-            self.validate_extension_contents(&ext_files, result)?;
+            self.validate_extension_contents(&ext_files, ProblemLocation::ObjectRoot, result)?;
         }
 
         Ok(())
@@ -937,6 +956,7 @@ impl<S: Storage> Validator<S> {
     fn validate_extension_contents<V: ValidationResult>(
         &self,
         ext_files: &[Listing],
+        location: ProblemLocation,
         result: &mut V,
     ) -> Result<()> {
         for file in ext_files {
@@ -944,23 +964,17 @@ impl<S: Storage> Validator<S> {
                 Listing::Directory(path) => {
                     if !SUPPORTED_EXTENSIONS.contains(path.as_ref()) {
                         result.warn(
-                            ProblemLocation::ObjectRoot,
+                            location,
                             WarnCode::W013,
-                            format!(
-                                "Object extensions directory contains unknown extension: {}",
-                                path
-                            ),
+                            format!("Extensions directory contains unknown extension: {}", path),
                         );
                     }
                 }
                 Listing::File(path) | Listing::Other(path) => {
                     result.error(
-                        ProblemLocation::ObjectRoot,
+                        location,
                         ErrorCode::E067,
-                        format!(
-                            "Object extensions directory contains an illegal file: {}",
-                            path
-                        ),
+                        format!("Extensions directory contains an illegal file: {}", path),
                     );
                 }
             }
@@ -1551,21 +1565,39 @@ impl<'a, S: Storage> IncrementalValidatorImpl<'a, S> {
         validator: &'a Validator<S>,
         storage: &'a S,
         fixity_check: bool,
+        root_files: Vec<Listing<'a>>,
     ) -> Self {
         Self {
             storage_root_result,
             validator,
             storage,
             fixity_check,
+            dir_iters: vec![root_files.into_iter()],
+            current_iter: RefCell::new(None),
         }
     }
-
-    // TODO
 }
 
 impl<'a, S: Storage> IncrementalValidator for IncrementalValidatorImpl<'a, S> {
     fn storage_root_result(&self) -> &StorageValidationResult {
         &self.storage_root_result
+    }
+}
+
+impl<'a, S: Storage> Iterator for IncrementalValidatorImpl<'a, S> {
+    type Item = Result<ObjectValidationResult>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // TODO check for close
+
+        // TODO E072 no files
+        // TODO E073 no emtpy dirs in hierarchy
+        // TODO E090 no links
+
+        // TODO E037 object id unique
+        // TODO E081 object ocfl versions must be same or earlier
+
+        todo!()
     }
 }
 
