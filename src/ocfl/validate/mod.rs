@@ -418,6 +418,7 @@ impl ValidationResult for ObjectValidationResult {
         &self.warnings
     }
 
+    // TODO I think there's a clever way around the string formatting issue in the book
     fn error(&mut self, location: ProblemLocation, code: ErrorCode, message: String) {
         self.errors
             .push(ValidationError::new(location, code, message));
@@ -1663,7 +1664,7 @@ impl<'a, S: Storage> Iterator for IncrementalValidatorImpl<'a, S> {
 
                             let path = self.full_path(&name);
 
-                            match self.storage.list(name.as_ref(), false) {
+                            match self.storage.list(&path, false) {
                                 Ok(listing) => {
                                     if listing.is_empty() {
                                         self.storage_hierarchy_result.error(

@@ -93,9 +93,9 @@ impl<'a> TableView<'a> {
     }
 
     pub fn write_stdio(&self) -> Result<()> {
-        let mut writer = io::stdout();
-        writer.lock();
-        if let Err(e) = self.write(&mut writer) {
+        let writer = io::stdout();
+        let mut lock = writer.lock();
+        if let Err(e) = self.write(&mut lock) {
             match e.kind() {
                 ErrorKind::BrokenPipe => Ok(()),
                 _ => Err(e),

@@ -20,6 +20,7 @@ mod list;
 pub mod opts;
 mod style;
 mod table;
+mod validate;
 
 const DATE_FORMAT: &str = "%Y-%m-%d %H:%M";
 
