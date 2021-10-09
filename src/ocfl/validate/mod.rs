@@ -5,6 +5,7 @@ use std::slice::Iter;
 use std::str::FromStr;
 use std::vec::IntoIter;
 
+use log::error;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use strum_macros::Display as EnumDisplay;
@@ -258,7 +259,7 @@ pub struct Validator<S: Storage> {
     storage: S,
 }
 
-pub trait IncrementalValidator: Iterator<Item = Result<ObjectValidationResult>> {
+pub trait IncrementalValidator: Iterator<Item = ObjectValidationResult> {
     fn storage_root_result(&self) -> &StorageValidationResult;
     // TODO
 }
@@ -269,8 +270,14 @@ pub struct IncrementalValidatorImpl<'a, S: Storage> {
     validator: &'a Validator<S>,
     storage: &'a S,
     fixity_check: bool,
-    dir_iters: Vec<IntoIter<Listing<'a>>>,
-    current_iter: RefCell<Option<IntoIter<Listing<'a>>>>,
+    dir_iters: Vec<Dir<'a>>,
+    current_iter: Option<Dir<'a>>,
+}
+
+struct Dir<'a> {
+    path: String,
+    iter: IntoIter<Listing<'a>>,
+    has_descendent_obj: bool,
 }
 
 /// The result of deserializing an inventory
@@ -1572,8 +1579,17 @@ impl<'a, S: Storage> IncrementalValidatorImpl<'a, S> {
             validator,
             storage,
             fixity_check,
-            dir_iters: vec![root_files.into_iter()],
-            current_iter: RefCell::new(None),
+            dir_iters: vec![Dir::new("".to_string(), root_files.into_iter())],
+            current_iter: None,
+        }
+    }
+
+    fn is_object_root(&self, path: &Listing) -> bool {
+        if let Listing::File(name) = path {
+            // TODO only true for 1.0
+            name == OBJECT_NAMASTE_FILE
+        } else {
+            false
         }
     }
 }
@@ -1585,19 +1601,96 @@ impl<'a, S: Storage> IncrementalValidator for IncrementalValidatorImpl<'a, S> {
 }
 
 impl<'a, S: Storage> Iterator for IncrementalValidatorImpl<'a, S> {
-    type Item = Result<ObjectValidationResult>;
+    type Item = ObjectValidationResult;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // TODO check for close
+        loop {
+            // TODO check for close
 
-        // TODO E072 no files
-        // TODO E073 no emtpy dirs in hierarchy
-        // TODO E090 no links
+            // TODO E072 no files
+            // TODO E073 no emtpy dirs in hierarchy
+            // TODO E090 no links
 
-        // TODO E037 object id unique
-        // TODO E081 object ocfl versions must be same or earlier
+            // TODO E037 object id unique
+            // TODO E081 object ocfl versions must be same or earlier
 
-        todo!()
+            if self.current_iter.is_none() && self.dir_iters.is_empty() {
+                return None;
+            } else if self.current_iter.is_none() {
+                self.current_iter = self.dir_iters.pop();
+            }
+
+            match self.current_iter.as_mut().unwrap().next() {
+                Some(listing) => match listing {
+                    Listing::Directory(name) => {
+                        if name == EXTENSIONS_DIR {
+                            continue;
+                        }
+
+                        let path = paths::join(&self.current_iter.as_ref().unwrap().path, &name);
+
+                        match self.storage.list(name.as_ref(), false) {
+                            Ok(listing) => {
+                                let mut found_obj = false;
+
+                                for entry in &listing {
+                                    if self.is_object_root(entry) {
+                                        found_obj = true;
+                                        self.current_iter.as_mut().unwrap().has_descendent_obj =
+                                            true;
+                                        match self.validator.validate_object(
+                                            None,
+                                            &path,
+                                            self.fixity_check,
+                                        ) {
+                                            Ok(result) => return Some(result),
+                                            Err(e) => {
+                                                error!("{:#}", e);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if found_obj {
+                                    let dir = Dir::new(path, listing.into_iter());
+                                    self.dir_iters.push(self.current_iter.replace(dir).unwrap());
+                                }
+                            }
+                            Err(e) => error!("{:#}", e),
+                        }
+                    }
+                    Listing::File(_) => {
+                        // TODO record error
+                    }
+                    Listing::Other(_) => {
+                        // TODO record error
+                    }
+                },
+                None => {
+                    // TODO record error if no objects found in branch
+                    self.current_iter = None;
+                }
+            }
+        }
+    }
+}
+
+impl<'a> Dir<'a> {
+    fn new(path: String, iter: IntoIter<Listing<'a>>) -> Self {
+        Self {
+            path,
+            iter,
+            has_descendent_obj: false,
+        }
+    }
+}
+
+impl<'a> Iterator for Dir<'a> {
+    type Item = Listing<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
     }
 }
 

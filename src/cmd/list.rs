@@ -21,6 +21,7 @@ impl Cmd for ListCmd {
         _config: &Config,
         terminate: &AtomicBool,
     ) -> Result<()> {
+        // TODO disable table output when no tty
         if self.objects || self.object_id.is_none() {
             self.list_objects(repo, args, terminate)
         } else {
