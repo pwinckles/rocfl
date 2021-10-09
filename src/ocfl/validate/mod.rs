@@ -1670,7 +1670,7 @@ impl<'a, S: Storage> Iterator for IncrementalValidatorImpl<'a, S> {
                                         self.storage_hierarchy_result.error(
                                             ProblemLocation::StorageHierarchy,
                                             ErrorCode::E073,
-                                            format!("Found an empty directory at {}", path),
+                                            format!("Found an empty directory: {}", path),
                                         )
                                     }
 
@@ -1721,7 +1721,7 @@ impl<'a, S: Storage> Iterator for IncrementalValidatorImpl<'a, S> {
                             self.storage_hierarchy_result.error(
                                 ProblemLocation::StorageHierarchy,
                                 ErrorCode::E072,
-                                format!("Found a file in the storage hierarchy at {}", path),
+                                format!("Found a file in the storage hierarchy: {}", path),
                             )
                         }
                         Listing::Other(name) => {
@@ -1730,7 +1730,7 @@ impl<'a, S: Storage> Iterator for IncrementalValidatorImpl<'a, S> {
                             self.storage_hierarchy_result.error(
                                 ProblemLocation::StorageHierarchy,
                                 ErrorCode::E090,
-                                format!("Found a link in the storage hierarchy at {}", path),
+                                format!("Found a link in the storage hierarchy: {}", path),
                             )
                         }
                     }

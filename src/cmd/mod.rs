@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::io::{self, Read, Write};
 use std::path::Path;
@@ -5,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::{fs, process};
 
+use ansi_term::{ANSIGenericString, Style};
 use enum_dispatch::enum_dispatch;
 use log::{error, info};
 #[cfg(feature = "s3")]
@@ -52,7 +54,7 @@ pub fn exec_command(args: &RocflArgs, config: Config) -> Result<()> {
                     error!("Force quitting. If a write operation was in progress, it is possible the resource was left in an inconsistent state.");
                     process::exit(1);
                 } else {
-                    println!("Stopping rocfl. If in the middle of a write operation, please wait for it to gracefully complete.");
+                    println("Stopping rocfl. If in the middle of a write operation, please wait for it to gracefully complete.");
                     terminate_ref.store(true, Ordering::Release);
                     repo_ref.close();
                 }
@@ -103,6 +105,22 @@ fn println(value: impl Display) {
 
 fn print(value: impl Display) {
     let _ = write!(io::stdout(), "{}", value);
+}
+
+fn paint<'b, I, S: 'b + ToOwned + ?Sized>(
+    no_styles: bool,
+    style: Style,
+    text: I,
+) -> ANSIGenericString<'b, S>
+where
+    I: Into<Cow<'b, S>>,
+    <S as ToOwned>::Owned: std::fmt::Debug,
+{
+    if no_styles {
+        style::DEFAULT.paint(text)
+    } else {
+        style.paint(text)
+    }
 }
 
 pub fn init_repo(cmd: &InitCmd, args: &RocflArgs, config: &Config) -> Result<()> {
