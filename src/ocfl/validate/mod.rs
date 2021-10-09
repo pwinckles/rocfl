@@ -188,22 +188,28 @@ pub enum WarnCode {
     W015,
 }
 
-// TODO
+// OCFL validation results for an object or structural element
 pub trait ValidationResult {
+    /// `true` if errors were identified
     fn has_errors(&self) -> bool;
 
+    /// `true` if warnings were identified
     fn has_warnings(&self) -> bool;
 
+    /// The list of identified errors
     fn errors(&self) -> &[ValidationError];
 
+    /// The list of identified warnings
     fn warnings(&self) -> &[ValidationWarning];
 
+    /// Adds a new error
     fn error(&mut self, location: ProblemLocation, code: ErrorCode, message: String);
 
+    /// Adds a new warning
     fn warn(&mut self, location: ProblemLocation, code: WarnCode, message: String);
 }
 
-/// The the results of validating the structure of an OCFL repository
+/// The results of validating the structure of an OCFL repository
 #[derive(Debug)]
 pub struct StorageValidationResult {
     /// Any errors identified in the storage hierarchy
@@ -212,7 +218,7 @@ pub struct StorageValidationResult {
     warnings: Vec<ValidationWarning>,
 }
 
-/// The the results of validating an OCFL object
+/// The results of validating an OCFL object
 #[derive(Debug)]
 pub struct ObjectValidationResult {
     /// The id of the object, if known
@@ -259,25 +265,34 @@ pub struct Validator<S: Storage> {
     storage: S,
 }
 
+/// Lazily validates every object in the repository. Each call to `next()` validates another object.
 pub trait IncrementalValidator: Iterator<Item = ObjectValidationResult> {
+    /// The validation results for the repository's storage root. This is available immediately.
     fn storage_root_result(&self) -> &StorageValidationResult;
-    // TODO
+
+    /// The validation results for the repository's hierarchy. This is available _after_ every
+    /// object has been validated.
+    fn storage_hierarchy_result(&self) -> &StorageValidationResult;
 }
 
-// TODO
+/// Lazily validates every object in the repository. Each call to `next()` validates another object.
 pub struct IncrementalValidatorImpl<'a, S: Storage> {
     storage_root_result: StorageValidationResult,
+    storage_hierarchy_result: StorageValidationResult,
     validator: &'a Validator<S>,
     storage: &'a S,
     fixity_check: bool,
     dir_iters: Vec<Dir<'a>>,
     current_iter: Option<Dir<'a>>,
+    seen_ids: HashSet<String>,
 }
 
+/// Wraps a directory iterator with the path to the directory
 struct Dir<'a> {
+    /// Path to the directory that was listed
     path: String,
+    /// Iterator of the directory's contents
     iter: IntoIter<Listing<'a>>,
-    has_descendent_obj: bool,
 }
 
 /// The result of deserializing an inventory
@@ -565,6 +580,12 @@ impl<S: Storage> Validator<S> {
 
         self.validate_ocfl_layout(&files, &mut root_result);
 
+        // remove all files in the root as they are allowed
+        let files: Vec<Listing> = files
+            .into_iter()
+            .filter(|file| !matches!(file, Listing::File(_)))
+            .collect();
+
         // TODO W015 should either be direct children or hierarchy; not both
 
         Ok(IncrementalValidatorImpl::new(
@@ -636,7 +657,11 @@ impl<S: Storage> Validator<S> {
                     }
                 }
             } else {
-                // TODO we should probably log that we couldn't read it -- not a validation error
+                result.error(
+                    ProblemLocation::StorageRoot,
+                    ErrorCode::E070,
+                    "ocfl_layout.json exists but could not be read".to_string(),
+                );
             }
         }
     }
@@ -1576,11 +1601,13 @@ impl<'a, S: Storage> IncrementalValidatorImpl<'a, S> {
     ) -> Self {
         Self {
             storage_root_result,
+            storage_hierarchy_result: StorageValidationResult::new(),
             validator,
             storage,
             fixity_check,
             dir_iters: vec![Dir::new("".to_string(), root_files.into_iter())],
             current_iter: None,
+            seen_ids: HashSet::new(),
         }
     }
 
@@ -1592,27 +1619,33 @@ impl<'a, S: Storage> IncrementalValidatorImpl<'a, S> {
             false
         }
     }
+
+    fn full_path(&self, name: &str) -> String {
+        paths::join(&self.current_iter.as_ref().unwrap().path, name)
+    }
 }
 
+/// Lazily validates every object in the repository. Each call to `next()` validates another object.
 impl<'a, S: Storage> IncrementalValidator for IncrementalValidatorImpl<'a, S> {
+    /// The validation results for the repository's storage root. This is available immediately.
     fn storage_root_result(&self) -> &StorageValidationResult {
         &self.storage_root_result
+    }
+
+    /// The validation results for the repository's hierarchy. This is available _after_ every
+    /// object has been validated.
+    fn storage_hierarchy_result(&self) -> &StorageValidationResult {
+        &self.storage_hierarchy_result
     }
 }
 
 impl<'a, S: Storage> Iterator for IncrementalValidatorImpl<'a, S> {
     type Item = ObjectValidationResult;
 
+    /// Finds the next object in the repository and validates it
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             // TODO check for close
-
-            // TODO E072 no files
-            // TODO E073 no emtpy dirs in hierarchy
-            // TODO E090 no links
-
-            // TODO E037 object id unique
-            // TODO E081 object ocfl versions must be same or earlier
 
             if self.current_iter.is_none() && self.dir_iters.is_empty() {
                 return None;
@@ -1621,54 +1654,87 @@ impl<'a, S: Storage> Iterator for IncrementalValidatorImpl<'a, S> {
             }
 
             match self.current_iter.as_mut().unwrap().next() {
-                Some(listing) => match listing {
-                    Listing::Directory(name) => {
-                        if name == EXTENSIONS_DIR {
-                            continue;
-                        }
+                Some(listing) => {
+                    match listing {
+                        Listing::Directory(name) => {
+                            if name == EXTENSIONS_DIR {
+                                continue;
+                            }
 
-                        let path = paths::join(&self.current_iter.as_ref().unwrap().path, &name);
+                            let path = self.full_path(&name);
 
-                        match self.storage.list(name.as_ref(), false) {
-                            Ok(listing) => {
-                                let mut found_obj = false;
+                            match self.storage.list(name.as_ref(), false) {
+                                Ok(listing) => {
+                                    if listing.is_empty() {
+                                        self.storage_hierarchy_result.error(
+                                            ProblemLocation::StorageHierarchy,
+                                            ErrorCode::E073,
+                                            format!("Found an empty directory at {}", path),
+                                        )
+                                    }
 
-                                for entry in &listing {
-                                    if self.is_object_root(entry) {
-                                        found_obj = true;
-                                        self.current_iter.as_mut().unwrap().has_descendent_obj =
-                                            true;
-                                        match self.validator.validate_object(
-                                            None,
-                                            &path,
-                                            self.fixity_check,
-                                        ) {
-                                            Ok(result) => return Some(result),
-                                            Err(e) => {
-                                                error!("{:#}", e);
-                                                break;
+                                    let mut found_obj = false;
+
+                                    for entry in &listing {
+                                        if self.is_object_root(entry) {
+                                            found_obj = true;
+                                            // TODO E081 object ocfl versions must be same or earlier
+                                            match self.validator.validate_object(
+                                                None,
+                                                &path,
+                                                self.fixity_check,
+                                            ) {
+                                                Ok(result) => {
+                                                    if let Some(id) = &result.object_id {
+                                                        if self.seen_ids.contains(id) {
+                                                            self.storage_hierarchy_result.error(
+                                                            ProblemLocation::StorageHierarchy,
+                                                            ErrorCode::E037,
+                                                            format!("Found duplicate object {} at {}", id, path));
+                                                        } else {
+                                                            self.seen_ids.insert(id.clone());
+                                                        }
+                                                    }
+                                                    return Some(result);
+                                                }
+                                                Err(e) => {
+                                                    error!("{:#}", e);
+                                                    break;
+                                                }
                                             }
                                         }
                                     }
-                                }
 
-                                if found_obj {
-                                    let dir = Dir::new(path, listing.into_iter());
-                                    self.dir_iters.push(self.current_iter.replace(dir).unwrap());
+                                    if !found_obj {
+                                        let dir = Dir::new(path, listing.into_iter());
+                                        self.dir_iters
+                                            .push(self.current_iter.replace(dir).unwrap());
+                                    }
                                 }
+                                Err(e) => error!("{:#}", e),
                             }
-                            Err(e) => error!("{:#}", e),
+                        }
+                        Listing::File(name) => {
+                            let path = self.full_path(&name);
+
+                            self.storage_hierarchy_result.error(
+                                ProblemLocation::StorageHierarchy,
+                                ErrorCode::E072,
+                                format!("Found a file in the storage hierarchy at {}", path),
+                            )
+                        }
+                        Listing::Other(name) => {
+                            let path = self.full_path(&name);
+
+                            self.storage_hierarchy_result.error(
+                                ProblemLocation::StorageHierarchy,
+                                ErrorCode::E090,
+                                format!("Found a link in the storage hierarchy at {}", path),
+                            )
                         }
                     }
-                    Listing::File(_) => {
-                        // TODO record error
-                    }
-                    Listing::Other(_) => {
-                        // TODO record error
-                    }
-                },
+                }
                 None => {
-                    // TODO record error if no objects found in branch
                     self.current_iter = None;
                 }
             }
@@ -1678,11 +1744,7 @@ impl<'a, S: Storage> Iterator for IncrementalValidatorImpl<'a, S> {
 
 impl<'a> Dir<'a> {
     fn new(path: String, iter: IntoIter<Listing<'a>>) -> Self {
-        Self {
-            path,
-            iter,
-            has_descendent_obj: false,
-        }
+        Self { path, iter }
     }
 }
 

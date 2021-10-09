@@ -393,7 +393,10 @@ impl Cmd for ValidateCmd {
                     // TODO different return code?
                 } else {
                     // TODO I think there's a clever way around the string formatting issue in the book
-                    println(format!("Object {} is valid", result.object_id.unwrap_or_else(|| "Unknown".to_string())));
+                    println(format!(
+                        "Object {} is valid",
+                        result.object_id.unwrap_or_else(|| "Unknown".to_string())
+                    ));
                 }
             }
         }

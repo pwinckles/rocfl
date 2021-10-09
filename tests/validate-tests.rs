@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use rocfl::ocfl::{
     ErrorCode, ObjectValidationResult, OcflRepo, ProblemLocation, ValidationError,
-    ValidationWarning, VersionNum, WarnCode,
+    ValidationResult, ValidationWarning, VersionNum, WarnCode,
 };
 
 #[test]
@@ -803,7 +803,7 @@ fn file_in_extensions_dir() {
         &result,
         &[root_error(
             ErrorCode::E067,
-            "Object extensions directory contains an illegal file: extra_file",
+            "Extensions directory contains an illegal file: extra_file",
         )],
     );
     has_warnings(
@@ -819,7 +819,7 @@ fn file_in_extensions_dir() {
             ),
             root_warning(
                 WarnCode::W013,
-                "Object extensions directory contains unknown extension: unregistered",
+                "Extensions directory contains unknown extension: unregistered",
             ),
         ],
     );
@@ -1260,7 +1260,7 @@ fn unregistered_extension() {
         &result,
         &[root_warning(
             WarnCode::W013,
-            "Object extensions directory contains unknown extension: unregistered",
+            "Extensions directory contains unknown extension: unregistered",
         )],
     );
 }
@@ -1285,13 +1285,13 @@ fn official_valid() {
             !result.has_errors(),
             "{} should have no errors; found: {:?}",
             name,
-            result.errors
+            result.errors()
         );
         assert!(
             !result.has_warnings(),
             "{} should have no warnings; found: {:?}",
             name,
-            result.warnings
+            result.warnings()
         );
     }
 }
@@ -1323,54 +1323,54 @@ fn root_warning(code: WarnCode, text: &str) -> ValidationWarning {
 fn has_errors(result: &ObjectValidationResult, expected_errors: &[ValidationError]) {
     for expected in expected_errors {
         assert!(
-            result.errors.contains(expected),
+            result.errors().contains(expected),
             "Expected errors to contain {:?}. Found: {:?}",
             expected,
-            result.errors
+            result.errors()
         );
     }
     assert_eq!(
         expected_errors.len(),
-        result.errors.len(),
+        result.errors().len(),
         "Expected {} errors; found {}: {:?}",
         expected_errors.len(),
-        result.errors.len(),
-        result.errors
+        result.errors().len(),
+        result.errors()
     )
 }
 
 fn has_warnings(result: &ObjectValidationResult, expected_warnings: &[ValidationWarning]) {
     for expected in expected_warnings {
         assert!(
-            result.warnings.contains(expected),
+            result.warnings().contains(expected),
             "Expected warnings to contain {:?}. Found: {:?}",
             expected,
-            result.warnings
+            result.warnings()
         );
     }
     assert_eq!(
         expected_warnings.len(),
-        result.warnings.len(),
+        result.warnings().len(),
         "Expected {} warnings; found {}: {:?}",
         expected_warnings.len(),
-        result.warnings.len(),
-        result.warnings
+        result.warnings().len(),
+        result.warnings()
     )
 }
 
 fn no_warnings(result: &ObjectValidationResult) {
     assert!(
-        result.warnings.is_empty(),
+        result.warnings().is_empty(),
         "Expected no warnings; found: {:?}",
-        result.warnings
+        result.warnings()
     )
 }
 
 fn no_errors(result: &ObjectValidationResult) {
     assert!(
-        result.errors.is_empty(),
+        result.errors().is_empty(),
         "Expected no errors; found: {:?}",
-        result.errors
+        result.errors()
     )
 }
 

@@ -1498,7 +1498,7 @@ fn missing_version_field_warn(field: &str, version: &str, result: &ParseValidati
 mod tests {
     use crate::ocfl::validate::serde::parse;
     use crate::ocfl::validate::{ParseResult, ParseValidationResult};
-    use crate::ocfl::{ErrorCode, ValidationError, ValidationWarning, WarnCode};
+    use crate::ocfl::{ErrorCode, ProblemLocation, ValidationError, ValidationWarning, WarnCode};
 
     #[test]
     fn head_wrong_type() {
@@ -2243,7 +2243,11 @@ mod tests {
     fn has_error(code: ErrorCode, message: &str, result: &ParseValidationResult) {
         let errors = result.errors.borrow();
         assert!(
-            errors.contains(&ValidationError::new(code, message.to_string())),
+            errors.contains(&ValidationError::new(
+                ProblemLocation::ObjectRoot,
+                code,
+                message.to_string()
+            )),
             "Expected errors to contain code={}; msg='{}'. Found: {:?}",
             code,
             message,
@@ -2266,7 +2270,11 @@ mod tests {
     fn has_warning(code: WarnCode, message: &str, result: &ParseValidationResult) {
         let warnings = result.warnings.borrow();
         assert!(
-            warnings.contains(&ValidationWarning::new(code, message.to_string())),
+            warnings.contains(&ValidationWarning::new(
+                ProblemLocation::ObjectRoot,
+                code,
+                message.to_string()
+            )),
             "Expected warnings to contain code={}; msg='{}'. Found: {:?}",
             code,
             message,
