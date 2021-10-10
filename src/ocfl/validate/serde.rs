@@ -1658,14 +1658,51 @@ mod tests {
         let json = r###"{
             "id": "urn:example:test",
             "type": "https://ocfl.io/1.0/spec/#inventory",
+            "type": "https://ocfl.io/1.0/spec/#inventory",
             "id": "urn:example:test",
             "digestAlgorithm": "sha512",
+            "digestAlgorithm": "sha512",
             "head": "v1",
+            "head": "v1",
+            "contentDirectory": "content",
             "contentDirectory": "content",
             "manifest": {
                 "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
                     "v1/content/file1.txt"
                 ]
+            },
+            "manifest": {
+                "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                    "v1/content/file1.txt"
+                ]
+            },
+            "versions": {
+                "v1": {
+                    "created": "2021-09-05T20:36:50.923505656-05:00",
+                    "created": "2021-09-05T20:36:50.923505656-05:00",
+                    "state": {
+                        "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                            "file1.txt"
+                        ]
+                    },
+                    "state": {
+                        "fb0d38126bb990e2fd0edae87bf58e7a69e85a652b67cb9db30b32c138750377f6c3e1bb2f45588aeb0db1509f3562107f896b47d5b2c8972809e42e6bb68455": [
+                            "file1.txt"
+                        ]
+                    },
+                    "message": "initial commit",
+                    "message": "initial commit",
+                    "user": {
+                        "name": "Peter Winckles",
+                        "name": "Peter Winckles",
+                        "address": "mailto:me@example.com",
+                        "address": "mailto:me@example.com"
+                    },
+                    "user": {
+                        "name": "Peter Winckles",
+                        "address": "mailto:me@example.com"
+                    }
+                }
             },
             "versions": {
                 "v1": {
@@ -1688,6 +1725,13 @@ mod tests {
                         "v1/content/file1.txt"
                     ]
                 }
+            },
+            "fixity": {
+                "md5": {
+                    "184f84e28cbe75e050e9c25ea7f2e939": [
+                        "v1/content/file1.txt"
+                    ]
+                }
             }
         }"###;
 
@@ -1699,7 +1743,72 @@ mod tests {
                     "Inventory contains duplicate key 'id'",
                     &result,
                 );
-                error_count(1, &result);
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory contains duplicate key 'type'",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory contains duplicate key 'digestAlgorithm'",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory contains duplicate key 'head'",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory contains duplicate key 'contentDirectory'",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory contains duplicate key 'manifest'",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory contains duplicate key 'versions'",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory contains duplicate key 'fixity'",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory version 'v1' contains duplicate key 'created'",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory version 'v1' contains duplicate key 'state'",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory version 'v1' contains duplicate key 'message'",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory version 'v1' contains duplicate key 'name'",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory version 'v1' contains duplicate key 'address'",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E033,
+                    "Inventory version 'v1' contains duplicate key 'user'",
+                    &result,
+                );
+                error_count(14, &result);
                 warning_count(0, &result);
             }
         }
@@ -2223,6 +2332,49 @@ mod tests {
                     &result,
                 );
                 error_count(1, &result);
+                warning_count(0, &result);
+            }
+        }
+    }
+
+    #[test]
+    fn empty_json() {
+        let json = r###"{}"###;
+
+        match parse(json.as_bytes()) {
+            ParseResult::Ok(_, _) => panic!("Expected parse failure"),
+            ParseResult::Error(result) => {
+                has_error(
+                    ErrorCode::E036,
+                    "Inventory is missing required key 'id'",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E036,
+                    "Inventory is missing required key 'type'",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E036,
+                    "Inventory is missing required key 'digestAlgorithm'",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E036,
+                    "Inventory is missing required key 'head'",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E041,
+                    "Inventory is missing required key 'manifest'",
+                    &result,
+                );
+                has_error(
+                    ErrorCode::E041,
+                    "Inventory is missing required key 'versions'",
+                    &result,
+                );
+                error_count(6, &result);
                 warning_count(0, &result);
             }
         }

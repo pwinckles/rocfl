@@ -23,7 +23,8 @@ impl Cmd for ValidateCmd {
         _config: &Config,
         terminate: &AtomicBool,
     ) -> Result<()> {
-        // TODO itest
+        // TODO perhaps use something like https://crates.io/crates/console to update the display
+
         if !self.object_ids.is_empty() {
             self.validate_objects(repo, args, terminate)?;
         } else {
