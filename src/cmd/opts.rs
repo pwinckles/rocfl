@@ -72,7 +72,7 @@ pub struct RocflArgs {
     #[structopt(short, long, value_name = "PROFILE")]
     pub profile: Option<String>,
 
-    /// Suppress error messages
+    /// Suppress error messages and other command specific logging
     #[structopt(short, long)]
     pub quiet: bool,
 
@@ -549,6 +549,8 @@ pub struct PurgeCmd {
 /// When run on a specific object, the object is validated against the OCFL spec, and any issues
 /// are reported. When run against the entire repository, the repository structure is validated,
 /// in addition to validating all of the objects in the repository.
+///
+/// Use '--quiet' to suppress output for valid objects. For example: 'rocfl --quiet validate'
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct ValidateCmd {

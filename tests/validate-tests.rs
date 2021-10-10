@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use rocfl::ocfl::{
-    ErrorCode, IncrementalValidator, ObjectValidationResult, OcflRepo, ProblemLocation,
+    ErrorCode, ObjectValidationResult, OcflRepo, ProblemLocation,
     StorageValidationResult, ValidationError, ValidationResult, ValidationWarning, VersionNum,
     WarnCode,
 };

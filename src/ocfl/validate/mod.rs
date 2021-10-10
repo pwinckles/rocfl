@@ -196,6 +196,11 @@ pub trait ValidationResult {
     /// `true` if warnings were identified
     fn has_warnings(&self) -> bool;
 
+    /// `true` if errors or warnings were identified
+    fn has_errors_or_warnings(&self) -> bool {
+        self.has_errors() || self.has_warnings()
+    }
+
     /// The list of identified errors
     fn errors(&self) -> &[ValidationError];
 

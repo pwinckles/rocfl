@@ -43,8 +43,7 @@ impl ValidateCmd {
         args: GlobalArgs,
         _terminate: &AtomicBool,
     ) -> Result<()> {
-        let mut first = true;
-
+        let mut has_printed = false;
         let mut obj_count = 0;
         let mut invalid_count = 0;
 
@@ -72,20 +71,26 @@ impl ValidateCmd {
                 invalid_count += 1;
             }
 
-            if first {
-                first = false;
-            } else {
-                println("");
-            }
+            if !args.quiet || result.has_errors_or_warnings() {
+                if has_printed {
+                    println("");
+                } else {
+                    has_printed = true;
+                }
 
-            print(DisplayObjectValidationResult {
-                result: &result,
-                no_styles: args.no_styles,
-            })
+                print(DisplayObjectValidationResult {
+                    result: &result,
+                    no_styles: args.no_styles,
+                })
+            }
+        }
+
+        if has_printed {
+            println("");
         }
 
         if self.object_ids.len() > 1 {
-            println(paint(args.no_styles, *style::BOLD, "\nSummary:"));
+            println(paint(args.no_styles, *style::BOLD, "Summary:"));
             println(format!("  Total objects:   {}", obj_count));
             println(format!("  Invalid objects: {}", invalid_count));
         }
@@ -103,12 +108,16 @@ impl ValidateCmd {
 
         let mut obj_count = 0;
         let mut invalid_count = 0;
+        let mut has_printed = false;
 
-        print(DisplayStorageValidationResult {
-            result: validator.storage_root_result(),
-            location: "root",
-            no_styles: args.no_styles,
-        });
+        if !args.quiet || validator.storage_root_result().has_errors_or_warnings() {
+            has_printed = true;
+            print(DisplayStorageValidationResult {
+                result: validator.storage_root_result(),
+                location: "root",
+                no_styles: args.no_styles,
+            });
+        }
 
         for result in &mut validator {
             obj_count += 1;
@@ -116,26 +125,46 @@ impl ValidateCmd {
                 invalid_count += 1;
             }
 
-            println("");
+            if !args.quiet || result.has_errors_or_warnings() {
+                if has_printed {
+                    println("");
+                } else {
+                    has_printed = true;
+                }
 
-            print(DisplayObjectValidationResult {
-                result: &result,
-                no_styles: args.no_styles,
-            })
+                print(DisplayObjectValidationResult {
+                    result: &result,
+                    no_styles: args.no_styles,
+                })
+            }
         }
 
-        println("");
+        if !args.quiet
+            || validator
+                .storage_hierarchy_result()
+                .has_errors_or_warnings()
+        {
+            if has_printed {
+                println("");
+            } else {
+                has_printed = true;
+            }
 
-        print(DisplayStorageValidationResult {
-            result: validator.storage_hierarchy_result(),
-            location: "hierarchy",
-            no_styles: args.no_styles,
-        });
+            print(DisplayStorageValidationResult {
+                result: validator.storage_hierarchy_result(),
+                location: "hierarchy",
+                no_styles: args.no_styles,
+            });
+        }
 
         let storage_errors = validator.storage_root_result().errors().len()
             + validator.storage_hierarchy_result().errors().len();
 
-        println(paint(args.no_styles, *style::BOLD, "\nSummary:"));
+        if has_printed {
+            println("");
+        }
+
+        println(paint(args.no_styles, *style::BOLD, "Summary:"));
         println(format!("  Total objects:   {}", obj_count));
         println(format!("  Invalid objects: {}", invalid_count));
         println(format!("  Storage issues:  {}", storage_errors));
