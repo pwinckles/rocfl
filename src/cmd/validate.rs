@@ -223,8 +223,9 @@ impl<'a> Display for DisplayStorageValidationResult<'a> {
         } else {
             writeln!(
                 f,
-                "Storage {} is {}",
-                self.location,
+                "{} {} is {}",
+                self.paint(*style::BOLD, "Storage"),
+                self.paint(*style::BOLD, self.location),
                 self.paint(*style::GREEN, "valid")
             )?;
         }

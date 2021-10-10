@@ -3,19 +3,26 @@ use std::io::Write;
 
 use crate::ocfl::error::Result;
 
-// TODO trait leak problem if I restrict to super
+/// Abstraction over reading files and listing directory contents. `/` _must_ be used as the file
+/// path separator.
 pub trait Storage {
+    /// Reads the file at the specified path and writes its contents to the provided sink.
     fn read<W: Write>(&self, path: &str, sink: &mut W) -> Result<()>;
 
-    fn exists(&self, path: &str) -> Result<bool>;
-
+    /// Lists the contents of the specified directory. If `recursive` is `true`, then all leaf-nodes
+    /// are returned. If the directory does not exist, or is empty, then an empty vector is returned.
+    /// The returned paths are all relative the directory that was listed.
     fn list(&self, path: &str, recursive: bool) -> Result<Vec<Listing>>;
 }
 
+/// Represents filesystem entity
 #[derive(Debug, Hash, Eq, PartialEq)]
 pub enum Listing<'a> {
+    /// A regular file
     File(Cow<'a, str>),
+    /// A directory
     Directory(Cow<'a, str>),
+    /// Anything that is not a regular file or directory, eg a symbolic link
     Other(Cow<'a, str>),
 }
 
@@ -46,19 +53,16 @@ pub mod fs {
     }
 
     impl Storage for FsStorage {
+        /// Reads the file at the specified path and writes its contents to the provided sink.
         fn read<W: Write>(&self, path: &str, sink: &mut W) -> Result<()> {
-            // TODO error handling?
             io::copy(&mut File::open(self.storage_root.join(path))?, sink)?;
             Ok(())
         }
 
-        fn exists(&self, path: &str) -> Result<bool> {
-            Ok(self.storage_root.join(path).exists())
-        }
-
+        /// Lists the contents of the specified directory. If `recursive` is `true`, then all leaf-nodes
+        /// are returned. If the directory does not exist, or is empty, then an empty vector is returned.
+        /// The returned paths are all relative the directory that was listed.
         fn list(&self, path: &str, recursive: bool) -> Result<Vec<Listing>> {
-            // TODO error handling
-
             let mut listings = Vec::new();
             let root = self.storage_root.join(path);
 

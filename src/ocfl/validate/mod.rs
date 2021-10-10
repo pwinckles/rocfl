@@ -480,16 +480,23 @@ impl<S: Storage> Validator<S> {
         object_root: &str,
         fixity_check: bool,
     ) -> Result<ObjectValidationResult> {
+        let root_files = self.storage.list(object_root, false)?;
+
+        if root_files.is_empty() {
+            return if let Some(id) = object_id {
+                Err(RocflError::NotFound(format!("Object {}", id)))
+            } else {
+                Err(RocflError::NotFound(format!(
+                    "Object at path {}",
+                    object_root
+                )))
+            };
+        }
+
         let mut result = ObjectValidationResult::new(
             object_id,
             util::convert_backslash_to_forward(object_root).to_string(),
         );
-
-        // TODO path does not exist
-
-        // TODO error handling ?
-
-        let root_files = self.storage.list(object_root, false)?;
 
         self.validate_object_namaste(object_root, &root_files, &mut result);
 
@@ -1035,7 +1042,6 @@ impl<S: Storage> Validator<S> {
 
                 match path {
                     Listing::File(_) => {
-                        // TODO error handling
                         content_paths.add_path(ContentPath::try_from(full_path)?);
                     }
                     Listing::Directory(_) => {

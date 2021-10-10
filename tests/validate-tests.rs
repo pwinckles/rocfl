@@ -2,8 +2,9 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use rocfl::ocfl::{
-    ErrorCode, ObjectValidationResult, OcflRepo, ProblemLocation, ValidationError,
-    ValidationResult, ValidationWarning, VersionNum, WarnCode,
+    ErrorCode, IncrementalValidator, ObjectValidationResult, OcflRepo, ProblemLocation,
+    StorageValidationResult, ValidationError, ValidationResult, ValidationWarning, VersionNum,
+    WarnCode,
 };
 
 #[test]
@@ -1296,6 +1297,87 @@ fn official_valid() {
     }
 }
 
+#[test]
+#[should_panic(expected = "Not found: Object at path bogus")]
+fn validate_object_does_not_exist() {
+    official_warn_test("bogus");
+}
+
+#[test]
+fn validate_valid_repo() {
+    let repo = new_repo(&repo_test_path("valid"));
+    let mut validator = repo.validate_repo(true).unwrap();
+
+    no_errors_storage(validator.storage_root_result());
+    no_warnings_storage(validator.storage_root_result());
+
+    for result in &mut validator {
+        no_errors(&result);
+        no_warnings(&result);
+    }
+
+    no_errors_storage(validator.storage_hierarchy_result());
+    no_warnings_storage(validator.storage_hierarchy_result());
+}
+
+#[test]
+fn validate_invalid_repo() {
+    let repo = new_repo(&repo_test_path("invalid"));
+    let mut validator = repo.validate_repo(true).unwrap();
+
+    has_errors_storage(
+        &validator.storage_root_result(),
+        &[
+            ValidationError::new(
+                ProblemLocation::StorageRoot,
+                ErrorCode::E069,
+                "Root version declaration does not exist".to_string(),
+            ),
+            ValidationError::new(
+                ProblemLocation::StorageRoot,
+                ErrorCode::E067,
+                "Extensions directory contains an illegal file: file.txt".to_string(),
+            ),
+        ],
+    );
+    has_warnings_storage(
+        &validator.storage_root_result(),
+        &[ValidationWarning::new(
+            ProblemLocation::StorageRoot,
+            WarnCode::W013,
+            "Extensions directory contains unknown extension: bogus-ext".to_string(),
+        )],
+    );
+
+    for result in &mut validator {
+        match result.object_id.as_ref().unwrap().as_ref() {
+            "urn:example:rocfl:obj-2" => {
+                error_count(2, &result);
+                warning_count(0, &result);
+            }
+            "urn:example:rocfl:obj-1" => {
+                no_errors(&result);
+                no_warnings(&result);
+            }
+            id => {
+                panic!("Unexpected object: {}", id)
+            }
+        }
+    }
+
+    has_errors_storage(&validator.storage_hierarchy_result(), &[
+        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b01/0ba/world.txt".to_string()),
+        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/v1/content/dir/sub/file3.txt".to_string()),
+        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/v1/content/dir/file2.txt".to_string()),
+        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/v1/content/file1.txt".to_string()),
+        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/v1/inventory.json".to_string()),
+        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/v1/inventory.json.sha512".to_string()),
+        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/inventory.json".to_string()),
+        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/inventory.json.sha512".to_string()),
+    ]);
+    no_warnings_storage(validator.storage_hierarchy_result());
+}
+
 fn version_error(num: &str, code: ErrorCode, text: &str) -> ValidationError {
     ValidationError::new(
         VersionNum::from_str(num).unwrap().into(),
@@ -1358,6 +1440,66 @@ fn has_warnings(result: &ObjectValidationResult, expected_warnings: &[Validation
     )
 }
 
+fn has_errors_storage(result: &StorageValidationResult, expected_errors: &[ValidationError]) {
+    for expected in expected_errors {
+        assert!(
+            result.errors().contains(expected),
+            "Expected errors to contain {:?}. Found: {:?}",
+            expected,
+            result.errors()
+        );
+    }
+    assert_eq!(
+        expected_errors.len(),
+        result.errors().len(),
+        "Expected {} errors; found {}: {:?}",
+        expected_errors.len(),
+        result.errors().len(),
+        result.errors()
+    )
+}
+
+fn has_warnings_storage(result: &StorageValidationResult, expected_warnings: &[ValidationWarning]) {
+    for expected in expected_warnings {
+        assert!(
+            result.warnings().contains(expected),
+            "Expected warnings to contain {:?}. Found: {:?}",
+            expected,
+            result.warnings()
+        );
+    }
+    assert_eq!(
+        expected_warnings.len(),
+        result.warnings().len(),
+        "Expected {} warnings; found {}: {:?}",
+        expected_warnings.len(),
+        result.warnings().len(),
+        result.warnings()
+    )
+}
+
+fn error_count(expected: usize, result: &ObjectValidationResult) {
+    assert_eq!(
+        expected,
+        result.errors().len(),
+        "Expected {} errors; found {}: {:?}",
+        expected,
+        result.errors().len(),
+        result.errors()
+    )
+}
+
+fn warning_count(expected: usize, result: &ObjectValidationResult) {
+    assert_eq!(
+        expected,
+        result.warnings().len(),
+        "Expected {} warnings; found {}: {:?}",
+        expected,
+        result.warnings().len(),
+        result.warnings()
+    )
+}
+
 fn no_warnings(result: &ObjectValidationResult) {
     assert!(
         result.warnings().is_empty(),
@@ -1367,6 +1509,22 @@ fn no_warnings(result: &ObjectValidationResult) {
 }
 
 fn no_errors(result: &ObjectValidationResult) {
+    assert!(
+        result.errors().is_empty(),
+        "Expected no errors; found: {:?}",
+        result.errors()
+    )
+}
+
+fn no_warnings_storage(result: &StorageValidationResult) {
+    assert!(
+        result.warnings().is_empty(),
+        "Expected no warnings; found: {:?}",
+        result.warnings()
+    )
+}
+
+fn no_errors_storage(result: &StorageValidationResult) {
     assert!(
         result.errors().is_empty(),
         "Expected no errors; found: {:?}",
@@ -1387,6 +1545,14 @@ fn official_error_test(name: &str) -> ObjectValidationResult {
 fn official_warn_test(name: &str) -> ObjectValidationResult {
     let repo = new_repo(official_warn_root());
     repo.validate_object_at(name, true).unwrap()
+}
+
+fn repo_test_path(name: &str) -> PathBuf {
+    let mut path = validate_repo_root();
+    path.push("custom");
+    path.push("repos");
+    path.push(name);
+    path
 }
 
 fn new_repo(root: impl AsRef<Path>) -> OcflRepo {
