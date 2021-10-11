@@ -236,13 +236,9 @@ fn validate_repo_sanity() {
     let _ = validate(&root)
         .assert()
         .stdout(contains_str("Storage root is invalid"))
-        .stdout(contains_str(
-            "Object urn:example:rocfl:obj-2 is invalid",
-        ))
+        .stdout(contains_str("Object urn:example:rocfl:obj-2 is invalid"))
         .stdout(contains_str("Object urn:example:rocfl:obj-1 is valid"))
-        .stdout(contains_str(
-            "Storage hierarchy is invalid",
-        ))
+        .stdout(contains_str("Storage hierarchy is invalid"))
         .stdout(contains_str("Total objects:   2"))
         .stdout(contains_str("Invalid objects: 1"))
         .stdout(contains_str("Storage issues:  10"));
@@ -263,13 +259,9 @@ fn validate_repo_quiet() {
     let _ = rocfl
         .assert()
         .stdout(contains_str("Storage root is invalid"))
-        .stdout(contains_str(
-            "urn:example:rocfl:obj-2 is invalid",
-        ))
+        .stdout(contains_str("urn:example:rocfl:obj-2 is invalid"))
         .stdout(contains_str("Object urn:example:rocfl:obj-1 is valid").not())
-        .stdout(contains_str(
-            "Storage hierarchy is invalid",
-        ))
+        .stdout(contains_str("Storage hierarchy is invalid"))
         .stdout(contains_str("Total objects:   2"))
         .stdout(contains_str("Invalid objects: 1"))
         .stdout(contains_str("Storage issues:  10"));

@@ -7,11 +7,18 @@ use globset::GlobBuilder;
 
 use crate::cmd::opts::{ListCmd, *};
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, Separator, TableView, TextCell};
-use crate::cmd::{style, Cmd, GlobalArgs, DATE_FORMAT};
+use crate::cmd::{paint, println, style, Cmd, GlobalArgs, DATE_FORMAT};
 use crate::config::Config;
 use crate::ocfl::{
     FileDetails, InventoryPath, LogicalPath, ObjectVersion, ObjectVersionDetails, OcflRepo, Result,
 };
+
+const VERSION: &str = "Version";
+const UPDATED: &str = "Updated";
+const OBJECT_ID: &str = "Object ID";
+const PHYSICAL_PATH: &str = "Physical Path";
+const LOGICAL_PATH: &str = "Logical Path";
+const DIGEST: &str = "Digest";
 
 impl Cmd for ListCmd {
     fn exec(
@@ -21,7 +28,6 @@ impl Cmd for ListCmd {
         _config: &Config,
         terminate: &AtomicBool,
     ) -> Result<()> {
-        // TODO disable table output when no tty
         if self.objects || self.object_id.is_none() {
             self.list_objects(repo, args, terminate)
         } else {
@@ -37,7 +43,6 @@ impl ListCmd {
         args: GlobalArgs,
         terminate: &AtomicBool,
     ) -> Result<()> {
-        // TODO this should really just print them if it's just the id w/ no ordering
         // TODO Option<Result<>> should be returned from the iter so that the return code can be changed
 
         let iter = if self.staged {
@@ -46,6 +51,91 @@ impl ListCmd {
             repo.list_objects(self.object_id.as_deref())?
         };
 
+        if (self.sort == Field::None || self.sort == Field::Default)
+            && ((!self.long && !self.physical) || self.tsv)
+        {
+            // It's safe to stream the results so long as they are not sorted and do not need
+            // to be displayed in a table
+            self.stream_objects(args, iter);
+            Ok(())
+        } else {
+            self.write_objects_to_table(args, terminate, iter)
+        }
+    }
+
+    fn stream_objects<'a>(
+        &self,
+        args: GlobalArgs,
+        iter: Box<dyn Iterator<Item = ObjectVersionDetails> + 'a>,
+    ) {
+        if self.header {
+            let mut header_line = "".to_string();
+
+            if self.long {
+                header_line
+                    .push_str(&paint(args.no_styles, *style::UNDERLINE, VERSION).to_string());
+                header_line.push('\t');
+                header_line
+                    .push_str(&paint(args.no_styles, *style::UNDERLINE, UPDATED).to_string());
+                header_line.push('\t');
+            }
+
+            header_line.push_str(&paint(args.no_styles, *style::UNDERLINE, OBJECT_ID).to_string());
+
+            if self.physical {
+                header_line.push('\t');
+                header_line
+                    .push_str(&paint(args.no_styles, *style::UNDERLINE, VERSION).to_string());
+            }
+
+            println(header_line);
+        }
+
+        for object in iter {
+            let mut line = "".to_string();
+
+            if self.long {
+                line.push_str(
+                    &paint(
+                        args.no_styles,
+                        *style::GREEN,
+                        object.version_details.version_num.to_string(),
+                    )
+                    .to_string(),
+                );
+                line.push('\t');
+                line.push_str(
+                    &paint(
+                        args.no_styles,
+                        *style::YELLOW,
+                        object
+                            .version_details
+                            .created
+                            .format(DATE_FORMAT)
+                            .to_string(),
+                    )
+                    .to_string(),
+                );
+                line.push('\t');
+            }
+
+            line.push_str(&paint(args.no_styles, *style::BOLD, &object.id).to_string());
+
+            if self.physical {
+                line.push('\t');
+                line.push_str(&object.object_root);
+            }
+
+            println(line);
+        }
+    }
+
+    fn write_objects_to_table<'a>(
+        &self,
+        args: GlobalArgs,
+        terminate: &AtomicBool,
+        iter: Box<dyn Iterator<Item = ObjectVersionDetails> + 'a>,
+    ) -> Result<()> {
         let mut objects = Vec::new();
 
         for object in iter {
@@ -112,20 +202,16 @@ impl ListCmd {
         let mut columns = Vec::new();
 
         if self.long {
-            columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
-            columns.push(Column::new(ColumnId::Created, "Updated", Alignment::Left));
+            columns.push(Column::new(ColumnId::Version, VERSION, Alignment::Right));
+            columns.push(Column::new(ColumnId::Created, UPDATED, Alignment::Left));
         }
 
-        columns.push(Column::new(
-            ColumnId::ObjectId,
-            "Object ID",
-            Alignment::Left,
-        ));
+        columns.push(Column::new(ColumnId::ObjectId, OBJECT_ID, Alignment::Left));
 
         if self.physical {
             columns.push(Column::new(
                 ColumnId::PhysicalPath,
-                "Physical Path",
+                PHYSICAL_PATH,
                 Alignment::Left,
             ));
         }
@@ -137,26 +223,26 @@ impl ListCmd {
         let mut columns = Vec::new();
 
         if self.long {
-            columns.push(Column::new(ColumnId::Version, "Version", Alignment::Right));
-            columns.push(Column::new(ColumnId::Created, "Updated", Alignment::Left));
+            columns.push(Column::new(ColumnId::Version, VERSION, Alignment::Right));
+            columns.push(Column::new(ColumnId::Created, UPDATED, Alignment::Left));
         }
 
         columns.push(Column::new(
             ColumnId::LogicalPath,
-            "Logical Path",
+            LOGICAL_PATH,
             Alignment::Left,
         ));
 
         if self.physical {
             columns.push(Column::new(
                 ColumnId::PhysicalPath,
-                "Physical Path",
+                PHYSICAL_PATH,
                 Alignment::Left,
             ));
         }
 
         if self.digest {
-            columns.push(Column::new(ColumnId::Digest, "Digest", Alignment::Left));
+            columns.push(Column::new(ColumnId::Digest, DIGEST, Alignment::Left));
         }
 
         TableView::new(columns, self.separator(), self.header, !args.no_styles)
@@ -277,14 +363,14 @@ fn cmp_objects(field: &Field, a: &ObjectVersionDetails, b: &ObjectVersionDetails
         Field::Updated => a.version_details.created.cmp(&b.version_details.created),
         Field::Physical => a.object_root.cmp(&b.object_root),
         Field::Digest => Ordering::Equal,
-        Field::None => Ordering::Equal,
+        Field::None | Field::Default => Ordering::Equal,
     }
 }
 
 fn cmp_listings(field: &Field, a: &Listing, b: &Listing) -> Ordering {
     match (a, b) {
         (Listing::File(a), Listing::File(b)) => match field {
-            Field::Name => natord::compare(&a.logical_path, &b.logical_path),
+            Field::Name | Field::Default => natord::compare(&a.logical_path, &b.logical_path),
             Field::Version => a
                 .details
                 .last_update

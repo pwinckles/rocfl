@@ -14,6 +14,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Disable output styling when there isn't a TTY
 - Custom deserialization implementation to reduce memory usage
 
+### Changed
+
+- `ls` now does _not_ sort object listings by default, and will
+  immediately display results so long as they do not need to be
+  displayed in a table, that is `-l` or `-p` are not specified or `-t`
+  is specified
+
 ## [1.5.2] - 2021-07-15
 
 ### Added

@@ -156,6 +156,11 @@ rocfl validate -p object-1/ object-2/
 The `ls` command either lists all of the objects in a repository or
 list the files in an OCFL object.
 
+`ls` will list objects as soon as they're found so long as it does not
+need to sort the objects or display them in a formatted table. Object
+lists are not sorted by default, and the formatted table can be
+disabled with `-t`.
+
 `rocfl` must scan the repository to locate objects. This can be slow
 when operating on large repositories. The scan can be avoided when
 listing an object's contents if the repository uses a supported

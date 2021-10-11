@@ -143,7 +143,9 @@ pub struct ConfigCmd {}
 /// List objects or files within objects
 ///
 /// When listing objects, rocfl must scan the entire repository, and can therefore be very slow
-/// when operating on large repositories or repositories in S3.
+/// when operating on large repositories or repositories in S3. Results will be printed as soon
+/// as they're found so long as the results do not need to be sorted or displayed in a formatted
+/// table. Use '-t' to disable the table formatting.
 ///
 /// This command supports glob expressions. When you use globs, it is usually a good idea to
 /// quote them so that your shell does not attempt to expand them.
@@ -188,11 +190,11 @@ pub struct ListCmd {
     #[structopt(short, long, value_name = "VERSION")]
     pub version: Option<VersionNum>,
 
-    /// Field to sort on
+    /// Field to sort on. By default, objects are unsorted and object contents are sorted on name.
     #[structopt(short, long,
     value_name = "FIELD",
     possible_values = &Field::variants(),
-    default_value = "Name",
+    default_value = "Default",
     case_insensitive = true)]
     pub sort: Field,
 
@@ -579,8 +581,9 @@ pub struct ValidateCmd {
 pub struct Num(pub usize);
 
 arg_enum! {
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, Eq, PartialEq)]
     pub enum Field {
+        Default,
         Name,
         Version,
         Updated,
