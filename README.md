@@ -116,10 +116,45 @@ the builtin help by executing `rocfl --help` or `rocfl <COMMAND> --help`.
 
 ### Read Commands
 
+#### Validate
+
+The `validate` command validates either an entire OCFL repository or
+specific objects within the repository. Any issues that are identified
+are reported with their corresponding [validation
+code](https://ocfl.io/1.0/spec/validation-codes.html).
+
+##### Examples
+
+Validate an entire repository:
+
+``` console
+rocfl validate
+```
+
+Validate an entire repository without performing content fixity checks
+and only reporting errors:
+
+``` console
+rocfl -q validate -n
+```
+
+Validate a specific object:
+
+``` console
+rocfl validate urn:example:rocfl:object-1
+```
+
+Validate multiple objects at specific paths relative the repository
+root:
+
+``` console
+rocfl validate -p object-1/ object-2/
+```
+
 #### List
 
-The `ls` command can be used to either list the objects in a
-repository or list the files in an OCFL object.
+The `ls` command either lists all of the objects in a repository or
+list the files in an OCFL object.
 
 `rocfl` must scan the repository to locate objects. This can be slow
 when operating on large repositories. The scan can be avoided when
@@ -168,7 +203,7 @@ The contents of an object's current state are displayed by invoking
 `ls` on a specific object ID:
 
 ```console
-rocfl ls uri:object-1
+rocfl ls urn:example:rocfl:object-1
 ```
 
 With the `-l` flag, additional details are displayed. In this case,
@@ -176,14 +211,14 @@ the version and date indicate when the individual file was last
 updated:
 
 ```console
-rocfl ls -l uri:object-1
+rocfl ls -l urn:example:rocfl:object-1
 ```
 
 The `-p` flag can also be used here to display the paths to the
 physical files on disk relative the storage root:
 
 ```console
-rocfl ls -p uri:object-1
+rocfl ls -p urn:example:rocfl:object-1
 ```
 
 The contents of previous versions are displayed by using the `-v`
@@ -191,21 +226,21 @@ option. The following command displays the files that were in the
 first version of the object:
 
 ```console
-rocfl ls -v1 uri:object-1
+rocfl ls -v1 urn:example:rocfl:object-1
 ```
 
 An object's contents can be filtered by specifying a glob pattern to
 match on:
 
 ```console
-rocfl ls uri:object-1 '*.txt'
+rocfl ls urn:example:rocfl:object-1 '*.txt'
 ```
 
 The output is sorted by name by default, but can also be sorted
 version or updated date:
 
 ```console
-rocfl ls -l -s version uri:object-1
+rocfl ls -l -s version urn:example:rocfl:object-1
 ```
 
 Paths within in an object can be interpreted as containing logical
@@ -214,7 +249,7 @@ list the logical files and logical directories that are direct
 children of the logical directory `sub/dir`:
 
 ``` console
-rocfl ls -D uri:object-1 sub/dir
+rocfl ls -D urn:example:rocfl:object-1 sub/dir
 ```
 
 #### Log
@@ -228,26 +263,26 @@ case only versions that affected the specified file are displayed.
 Show all of the versions of an object in ascending order:
 
 ```console
-rocfl log uri:object-1
+rocfl log urn:example:rocfl:object-1
 ```
 
 Only display the five most recent versions:
 
 ```console
-rocfl log -rn5 uri:object-1
+rocfl log -rn5 urn:example:rocfl:object-1
 ```
 
 Show all of the versions, but formatted so each version is on a single
 line:
 
 ```console
-rocfl log -c uri:object-1
+rocfl log -c urn:example:rocfl:object-1
 ```
 
 Show all of the versions that affected a specific file:
 
 ```console
-rocfl log uri:object-1 file1.txt
+rocfl log urn:example:rocfl:object-1 file1.txt
 ```
 
 #### Show
@@ -261,19 +296,19 @@ changes are shown.
 Show the changes in the most recent version:
 
 ```console
-rocfl show uri:object-1
+rocfl show urn:example:rocfl:object-1
 ```
 
 Show the changes in the first version:
 
 ```console
-rocfl show uri:object-1 v1
+rocfl show urn:example:rocfl:object-1 v1
 ```
 
 Don't show the version metadata; only show the files that changed:
 
 ```console
-rocfl show -m uri:object-1
+rocfl show -m urn:example:rocfl:object-1
 ```
 
 #### Diff
@@ -298,13 +333,13 @@ The `cat` command writes the contents of a file to `stdout`.
 Display the contents of the head version of a file:
 
 ```console
-rocfl cat uri:object-1 file1.txt
+rocfl cat urn:example:rocfl:object-1 file1.txt
 ```
 
 Display the contents of a file from a specific version of the object:
 
 ```console
-rocfl cat -v1 uri:object-1 file1.txt
+rocfl cat -v1 urn:example:rocfl:object-1 file1.txt
 ```
 
 #### Status
@@ -323,7 +358,7 @@ rocfl status
 List all of the file level changes to an object:
 
 ``` console
-rocfl status uri:object-1
+rocfl status urn:example:rocfl:object-1
 ```
 
 Staged changes can also be examined using the more featureful `ls`,
@@ -373,7 +408,7 @@ recommend values.
 Create a new object with non-standard settings:
 
 ``` console
-rocfl new uri:object-1 -d sha256 -c data -z 6
+rocfl new urn:example:rocfl:object-1 -d sha256 -c data -z 6
 ```
 
 #### Copy
@@ -388,26 +423,26 @@ behavior of GNU `cp` as closely as possible.
 Copy a directory into the object's root:
 
 ``` console
-rocfl cp -r uri:object-1 /path/to/src -- /
+rocfl cp -r urn:example:rocfl:object-1 /path/to/src -- /
 ```
 
 Copy several files into a logical directory within the object:
 
 ``` console
-rocfl cp uri:object-1 /path/to/files/* -- sub/dir
+rocfl cp urn:example:rocfl:object-1 /path/to/files/* -- sub/dir
 ```
 
 Copy several existing files internally to a new location:
 
 ``` console
-rocfl cp -i uri:object-1 'internal/*.txt' -- new-location
+rocfl cp -i urn:example:rocfl:object-1 'internal/*.txt' -- new-location
 ```
 
 Copy an entire logical directory from an old version to a new location
 in the staged version:
 
 ``` console
-rocfl cp -ir -v2 uri:object-1 src/dir -- dst/dir
+rocfl cp -ir -v2 urn:example:rocfl:object-1 src/dir -- dst/dir
 ```
 
 #### Move
@@ -422,19 +457,19 @@ GNU `mv` as closely as possible.
 Move a directory into the object's root:
 
 ``` console
-rocfl mv uri:object-1 /path/to/src -- /
+rocfl mv urn:example:rocfl:object-1 /path/to/src -- /
 ```
 
 Move several files into a logical directory within the object:
 
 ``` console
-rocfl mv uri:object-1 /path/to/files/* -- sub/dir
+rocfl mv urn:example:rocfl:object-1 /path/to/files/* -- sub/dir
 ```
 
 Move an existing file internally to a new location:
 
 ``` console
-rocfl mv -i uri:object-1 internal/file.txt -- new/location.txt
+rocfl mv -i urn:example:rocfl:object-1 internal/file.txt -- new/location.txt
 ```
 
 #### Remove
@@ -450,19 +485,19 @@ in prior versions.
 Recursively remove a logical directory:
 
 ``` console
-rocfl rm -r uri:object-1 path/to/dir
+rocfl rm -r urn:example:rocfl:object-1 path/to/dir
 ```
 
 Remove several individual files:
 
 ``` console
-rocfl rm uri:object-1 path/to/file1.txt path/to/file2.txt
+rocfl rm urn:example:rocfl:object-1 path/to/file1.txt path/to/file2.txt
 ```
 
 Or with a glob:
 
 ``` console
-rocfl rm uri:object-1 'path/to/*.txt'
+rocfl rm urn:example:rocfl:object-1 'path/to/*.txt'
 ```
 
 #### Reset
@@ -476,14 +511,14 @@ previous state.
 Reset a file to its previous state:
 
 ``` console
-rocfl reset uri:object-1 file.txt
+rocfl reset urn:example:rocfl:object-1 file.txt
 ```
 
 Reset an entire object to its previous state, removing all staged
 changes:
 
 ``` console
-rocfl reset uri:object-1
+rocfl reset urn:example:rocfl:object-1
 ```
 
 #### Commit
@@ -496,7 +531,7 @@ object as a new version.
 Commit changes to an object:
 
 ``` console
-rocfl commit uri:object-1 -n "My Name" -a "mailto:me@example.com" -m "commit
+rocfl commit urn:example:rocfl:object-1 -n "My Name" -a "mailto:me@example.com" -m "commit
 message"
 ```
 
@@ -504,7 +539,7 @@ This can be simplified if you define your name and address in [rocfl
 configuration](#configuration). In which case, you can simply execute:
 
 ``` console
-rocfl commit uri:object-1 -m "commit message"
+rocfl commit urn:example:rocfl:object-1 -m "commit message"
 ```
 
 And your name and address will be automatically added to the version
@@ -515,7 +550,7 @@ layout, the location to store the object with the repository must be
 manually specified as follows:
 
 ``` console
-rocfl commit uri:object-1 -m "commit message" -r relative/path/to/object/root
+rocfl commit urn:example:rocfl:object-1 -m "commit message" -r relative/path/to/object/root
 ```
 
 #### Purge
@@ -584,7 +619,5 @@ The following features are planned:
 
 1. Export objects to a location outside the repository
 2. Index objects when the storage layout is unknown
-3. Validate objects
-4. Validate repositories
-5. Unsafe mutating operations such as `squash`, `revert`, and
+3. Unsafe mutating operations such as `squash`, `revert`, and
    `rewrite` that can be used to change an object's history

@@ -232,17 +232,24 @@ impl<'a> Painter for DisplayStorageValidationResult<'a> {
 
 impl<'a> Display for DisplayStorageValidationResult<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if self.result.has_errors() || self.result.has_warnings() {
-            writeln!(
-                f,
-                "{} {} has {} {} and {} {}",
-                self.paint(*style::BOLD, "Storage"),
-                self.paint(*style::BOLD, self.location),
-                self.paint(*style::RED, self.result.errors().len().to_string()),
-                self.paint(*style::RED, pluralize("error", self.result.errors())),
-                self.paint(*style::YELLOW, self.result.warnings().len().to_string()),
-                self.paint(*style::YELLOW, pluralize("warning", self.result.warnings()))
-            )?;
+        if self.result.has_errors_or_warnings() {
+            if self.result.has_errors() {
+                writeln!(
+                    f,
+                    "{} {} is {}",
+                    self.paint(*style::BOLD, "Storage"),
+                    self.paint(*style::BOLD, self.location),
+                    self.paint(*style::RED, "invalid")
+                )?;
+            } else {
+                writeln!(
+                    f,
+                    "{} {} is {}",
+                    self.paint(*style::BOLD, "Storage"),
+                    self.paint(*style::BOLD, self.location),
+                    self.paint(*style::YELLOW, "valid with warnings")
+                )?;
+            }
 
             let error_width = count_digits(self.result.errors().len());
             let warning_width = count_digits(self.result.warnings().len());
@@ -314,16 +321,22 @@ impl<'a> Painter for DisplayObjectValidationResult<'a> {
 
 impl<'a> Display for DisplayObjectValidationResult<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if self.result.has_errors() || self.result.has_warnings() {
-            writeln!(
-                f,
-                "Object {} has {} {} and {} {}",
-                self.display_object_id(),
-                self.paint(*style::RED, self.result.errors().len().to_string()),
-                self.paint(*style::RED, pluralize("error", self.result.errors())),
-                self.paint(*style::YELLOW, self.result.warnings().len().to_string()),
-                self.paint(*style::YELLOW, pluralize("warning", self.result.warnings()))
-            )?;
+        if self.result.has_errors_or_warnings() {
+            if self.result.has_errors() {
+                writeln!(
+                    f,
+                    "Object {} is {}",
+                    self.display_object_id(),
+                    self.paint(*style::RED, "invalid")
+                )?;
+            } else {
+                writeln!(
+                    f,
+                    "Object {} is {}",
+                    self.display_object_id(),
+                    self.paint(*style::YELLOW, "valid with warnings")
+                )?;
+            }
 
             let error_width = count_digits(self.result.errors().len());
             let warning_width = count_digits(self.result.warnings().len());
@@ -376,14 +389,6 @@ fn display_location(location: ProblemLocation) -> String {
         ProblemLocation::ObjectVersion(num) => num.to_string(),
         ProblemLocation::StorageRoot => "storage-root".to_string(),
         ProblemLocation::StorageHierarchy => "hierarchy".to_string(),
-    }
-}
-
-fn pluralize<'a, 'b, T>(word: &'a str, list: &'b [T]) -> Cow<'a, str> {
-    if list.len() == 1 {
-        word.into()
-    } else {
-        format!("{}s", word).into()
     }
 }
 

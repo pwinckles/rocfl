@@ -544,6 +544,8 @@ pub struct PurgeCmd {
     pub object_id: String,
 }
 
+// TODO add examples to docs
+
 /// Validate an object or the entire repository
 ///
 /// When run on a specific object, the object is validated against the OCFL spec, and any issues
