@@ -1,0 +1,29 @@
+{
+    "digestAlgorithm": "sha512",
+    "head": "v1",
+    "id": "info:bad07",
+    "manifest": {
+	"e7c22b994c59d9cf2b48e549b1e24666636045930d3da7c1acb299d1c3b7f931f94aae41edda2c2b207a36e10f8bcb8d45223e54878f5b316e7ce3b6bc019629": [
+	    "v1/content/file.txt"
+	],
+        "dfe9a0bbfdaab7173036571a1d9e34e2465b1e3a52e8b707bbf6dea9239a9a55b0fc9e511fc24882d7f493cd950a9dbef1de13e08a007909b21cd5ba54dc4888": [
+	    "v1/content/file2.txt"
+        ]
+    },
+    "type": "https://ocfl.io/1.0/spec/#inventory",
+    "versions": {
+	"v1": {
+	    "created": "2018-10-31T12:54:57.688459Z",
+	    "message": "",
+	    "state": {
+		"e7c22b994c59d9cf2b48e549b1e24666636045930d3da7c1acb299d1c3b7f931f94aae41edda2c2b207a36e10f8bcb8d45223e54878f5b316e7ce3b6bc019629": [
+		    "file.txt"
+                ]
+	    },
+	    "user": {
+		"address": "somewhere",
+		"name": "someone"
+	    }
+	}
+    }
+}

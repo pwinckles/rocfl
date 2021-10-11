@@ -1,10 +1,12 @@
+use std::borrow::Cow;
 use std::fmt::Display;
-use std::io::{self, ErrorKind, Read, Write};
+use std::io::{self, Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::{fs, process};
 
+use ansi_term::{ANSIGenericString, Style};
 use enum_dispatch::enum_dispatch;
 use log::{error, info};
 #[cfg(feature = "s3")]
@@ -20,6 +22,7 @@ mod list;
 pub mod opts;
 mod style;
 mod table;
+mod validate;
 
 const DATE_FORMAT: &str = "%Y-%m-%d %H:%M";
 
@@ -51,7 +54,7 @@ pub fn exec_command(args: &RocflArgs, config: Config) -> Result<()> {
                     error!("Force quitting. If a write operation was in progress, it is possible the resource was left in an inconsistent state.");
                     process::exit(1);
                 } else {
-                    println!("Stopping rocfl. If in the middle of a write operation, please wait for it to gracefully complete.");
+                    println("Stopping rocfl. If in the middle of a write operation, please wait for it to gracefully complete.");
                     terminate_ref.store(true, Ordering::Release);
                     repo_ref.close();
                 }
@@ -81,7 +84,7 @@ trait Cmd {
 }
 
 struct GlobalArgs {
-    _quiet: bool,
+    quiet: bool,
     _verbose: bool,
     no_styles: bool,
 }
@@ -89,35 +92,34 @@ struct GlobalArgs {
 impl GlobalArgs {
     fn new(quiet: bool, verbose: bool, no_styles: bool) -> Self {
         Self {
-            _quiet: quiet,
+            quiet,
             _verbose: verbose,
             no_styles,
         }
     }
 }
 
-fn println(value: impl Display) -> Result<()> {
-    if let Err(e) = writeln!(io::stdout(), "{}", value) {
-        match e.kind() {
-            // This happens if the app is killed while writing
-            ErrorKind::BrokenPipe => Ok(()),
-            _ => Err(e.into()),
-        }
-    } else {
-        Ok(())
-    }
+fn println(value: impl Display) {
+    let _ = writeln!(io::stdout(), "{}", value);
 }
 
-fn print(value: impl Display) -> Result<()> {
-    if let Err(e) = write!(io::stdout(), "{}", value) {
-        match e.kind() {
-            // This happens if the app is killed while writing
-            ErrorKind::BrokenPipe => Ok(()),
-            _ => Err(e.into()),
-        }
+fn print(value: impl Display) {
+    let _ = write!(io::stdout(), "{}", value);
+}
+
+fn paint<'b, I, S: 'b + ToOwned + ?Sized>(
+    no_styles: bool,
+    style: Style,
+    text: I,
+) -> ANSIGenericString<'b, S>
+where
+    I: Into<Cow<'b, S>>,
+    <S as ToOwned>::Owned: std::fmt::Debug,
+{
+    if no_styles {
+        style::DEFAULT.paint(text)
     } else {
-        io::stdout().flush()?;
-        Ok(())
+        style.paint(text)
     }
 }
 
@@ -145,7 +147,7 @@ pub fn init_repo(cmd: &InitCmd, args: &RocflArgs, config: &Config) -> Result<()>
         println(format!(
             "Initialized OCFL repository with layout {}",
             cmd.layout
-        ))?;
+        ));
     }
 
     Ok(())

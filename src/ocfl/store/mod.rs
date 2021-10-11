@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::Debug;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -7,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::ocfl::error::Result;
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::store::layout::LayoutExtensionName;
+use crate::ocfl::validate::{IncrementalValidator, ObjectValidationResult};
 use crate::ocfl::{ContentPath, LogicalPath, VersionRef};
 
 pub mod fs;
@@ -65,6 +67,33 @@ pub trait OcflStore {
 
     /// Returns a list of all of the extension names that are associated with the object
     fn list_object_extensions(&self, object_id: &str) -> Result<Vec<String>>;
+
+    /// Validates the specified object and returns any problems found. Err will only be returned
+    /// if a non-validation problem was encountered.
+    fn validate_object(
+        &self,
+        object_id: &str,
+        fixity_check: bool,
+    ) -> Result<ObjectValidationResult>;
+
+    /// Validates the specified object at the specified path, relative the storage root, and
+    /// returns any problems found. Err will only be returned if a non-validation problem was
+    /// encountered.
+    fn validate_object_at(
+        &self,
+        object_root: &str,
+        fixity_check: bool,
+    ) -> Result<ObjectValidationResult>;
+
+    /// Validates the structure of an OCFL repository as well as all of the objects in the repository
+    /// When `fixity_check` is `false`, then the digests of object content files are not validated.
+    ///
+    /// The storage root is validated immediately, and an incremental validator is returned that
+    /// is used to lazily validate the rest of the repository.
+    fn validate_repo<'a>(
+        &'a self,
+        fixity_check: bool,
+    ) -> Result<Box<dyn IncrementalValidator + 'a>>;
 
     /// Instructs the store to gracefully stop any in-flight work and not accept any additional
     /// requests.
@@ -129,4 +158,52 @@ pub trait StagingStore: OcflStore {
 pub struct OcflLayout {
     extension: LayoutExtensionName,
     description: String,
+}
+
+/// Abstraction over reading files and listing directory contents. `/` _must_ be used as the file
+/// path separator.
+pub trait Storage {
+    /// Reads the file at the specified path and writes its contents to the provided sink.
+    fn read<W: Write>(&self, path: &str, sink: &mut W) -> Result<()>;
+
+    /// Lists the contents of the specified directory. If `recursive` is `true`, then all leaf-nodes
+    /// are returned. If the directory does not exist, or is empty, then an empty vector is returned.
+    /// The returned paths are all relative the directory that was listed.
+    fn list(&self, path: &str, recursive: bool) -> Result<Vec<Listing>>;
+}
+
+/// Represents filesystem entity
+#[derive(Debug, Hash, Eq, PartialEq)]
+pub enum Listing<'a> {
+    /// A regular file
+    File(Cow<'a, str>),
+    /// A directory
+    Directory(Cow<'a, str>),
+    /// Anything that is not a regular file or directory, eg a symbolic link
+    Other(Cow<'a, str>),
+}
+
+impl<'a> Listing<'a> {
+    pub fn file(path: &str) -> Listing {
+        Listing::File(Cow::Borrowed(path))
+    }
+
+    pub fn dir(path: &str) -> Listing {
+        Listing::Directory(Cow::Borrowed(path))
+    }
+    pub fn file_owned(path: String) -> Listing<'a> {
+        Listing::File(Cow::Owned(path))
+    }
+
+    pub fn dir_owned(path: String) -> Listing<'a> {
+        Listing::Directory(Cow::Owned(path))
+    }
+
+    pub fn path(&self) -> &str {
+        match self {
+            Listing::File(path) => path,
+            Listing::Directory(path) => path,
+            Listing::Other(path) => path,
+        }
+    }
 }

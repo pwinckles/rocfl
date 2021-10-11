@@ -1,0 +1,9 @@
+{
+  "digestAlgorithm": "sha512",
+  "id": "http://example.org/E008_no_versions",
+  "manifest": {
+  },
+  "type": "https://ocfl.io/1.0/spec/#inventory",
+  "versions": {
+  }
+}

@@ -1,5 +1,6 @@
 use core::{cmp, fmt};
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io;
@@ -16,7 +17,9 @@ use strum_macros::{Display as EnumDisplay, EnumString};
 use crate::ocfl::error::{Result, RocflError};
 
 /// Enum of all valid digest algorithms
-#[derive(Deserialize, Serialize, Debug, Eq, PartialEq, Copy, Clone, EnumString, EnumDisplay)]
+#[derive(
+    Deserialize, Serialize, Debug, Hash, Eq, PartialEq, Copy, Clone, EnumString, EnumDisplay,
+)]
 pub enum DigestAlgorithm {
     #[serde(rename = "md5")]
     #[strum(serialize = "md5")]
@@ -56,6 +59,12 @@ pub struct DigestReader<R: Read> {
 /// Writer wrapper that calculates a digest while writing
 pub struct DigestWriter<W: Write> {
     digest: Box<dyn DynDigest>,
+    inner: W,
+}
+
+/// Writer wrapper that calculates multiple digests while writing
+pub struct MultiDigestWriter<W: Write> {
+    digests: HashMap<DigestAlgorithm, Box<dyn DynDigest>>,
     inner: W,
 }
 
@@ -200,6 +209,52 @@ impl<W: Write> Write for DigestWriter<W> {
     }
 }
 
+impl<W: Write> MultiDigestWriter<W> {
+    pub fn new(algorithms: &[DigestAlgorithm], writer: W) -> Self {
+        let mut digests = HashMap::with_capacity(algorithms.len());
+        for algorithm in algorithms {
+            // TODO unwrap this is here due to the blake2b problem
+            digests.insert(*algorithm, algorithm.new_digest().unwrap());
+        }
+
+        Self {
+            digests,
+            inner: writer,
+        }
+    }
+
+    pub fn inner(&self) -> &W {
+        &self.inner
+    }
+
+    pub fn finalize_hex(self) -> HashMap<DigestAlgorithm, HexDigest> {
+        let mut results = HashMap::with_capacity(self.digests.len());
+        for (algorithm, digest) in self.digests {
+            results.insert(algorithm, digest.finalize().to_vec().into());
+        }
+        results
+    }
+}
+
+impl<W: Write> Write for MultiDigestWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let result = self.inner.write(buf)?;
+
+        if result > 0 {
+            let part = &buf[0..result];
+            self.digests
+                .values_mut()
+                .for_each(|digest| digest.update(part));
+        }
+
+        Ok(result)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 impl From<Vec<u8>> for HexDigest {
     fn from(bytes: Vec<u8>) -> Self {
         Self(hex::encode(bytes))
@@ -289,6 +344,7 @@ impl Display for HexDigest {
 mod tests {
     use std::io;
 
+    use crate::ocfl::digest::MultiDigestWriter;
     use crate::ocfl::error::Result;
     use crate::ocfl::DigestAlgorithm;
 
@@ -333,6 +389,48 @@ mod tests {
         let actual = writer.finalize_hex();
 
         assert_eq!(expected, actual.to_string());
+
+        Ok(())
+    }
+
+    #[test]
+    fn calculate_multiple_digests_while_writing() -> Result<()> {
+        let input = "testing\n".to_string();
+        let output: Vec<u8> = Vec::new();
+
+        let mut writer = MultiDigestWriter::new(
+            &[
+                DigestAlgorithm::Md5,
+                DigestAlgorithm::Sha256,
+                DigestAlgorithm::Sha512,
+            ],
+            output,
+        );
+
+        io::copy(&mut input.as_bytes(), &mut writer)?;
+
+        let expected_sha512 =
+            "24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7c\
+        acfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28"
+                .to_string();
+        let expected_sha256 =
+            "12a61f4e173fb3a11c05d6471f74728f76231b4a5fcd9667cef3af87a3ae4dc2".to_string();
+        let expected_md5 = "eb1a3227cdc3fedbaec2fe38bf6c044a".to_string();
+
+        let actual = writer.finalize_hex();
+
+        assert_eq!(
+            expected_sha512,
+            actual.get(&DigestAlgorithm::Sha512).unwrap().to_string()
+        );
+        assert_eq!(
+            expected_sha256,
+            actual.get(&DigestAlgorithm::Sha256).unwrap().to_string()
+        );
+        assert_eq!(
+            expected_md5,
+            actual.get(&DigestAlgorithm::Md5).unwrap().to_string()
+        );
 
         Ok(())
     }

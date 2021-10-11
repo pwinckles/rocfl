@@ -21,6 +21,7 @@ impl Cmd for ListCmd {
         _config: &Config,
         terminate: &AtomicBool,
     ) -> Result<()> {
+        // TODO disable table output when no tty
         if self.objects || self.object_id.is_none() {
             self.list_objects(repo, args, terminate)
         } else {
@@ -36,6 +37,9 @@ impl ListCmd {
         args: GlobalArgs,
         terminate: &AtomicBool,
     ) -> Result<()> {
+        // TODO this should really just print them if it's just the id w/ no ordering
+        // TODO Option<Result<>> should be returned from the iter so that the return code can be changed
+
         let iter = if self.staged {
             repo.list_staged_objects(self.object_id.as_deref())?
         } else {

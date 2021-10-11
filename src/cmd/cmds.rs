@@ -228,11 +228,11 @@ impl Cmd for PurgeCmd {
             print(format!(
                 "Permanently delete '{}'? This cannot be undone. [y/N]: ",
                 self.object_id
-            ))?;
+            ));
             let mut response = String::new();
             io::stdin().read_line(&mut response)?;
             if !response.trim().eq_ignore_ascii_case("y") {
-                println("Aborted")?;
+                println("Aborted");
                 return Ok(());
             }
         }

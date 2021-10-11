@@ -1,0 +1,79 @@
+{
+  "id": "urn:example-1",
+  "type": "https://ocfl.io/1.0/spec/#inventory",
+  "digestAlgorithm": "sha512",
+  "head": "v7",
+  "contentDirectory": "content",
+  "manifest": {
+    "24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7cacfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28": [
+      "v1/content/test.txt"
+    ]
+  },
+  "versions": {
+    "v1": {
+      "created": "2021-03-30T15:18:29.613693922-05:00",
+      "state": {
+        "24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7cacfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28": [
+          "test.txt"
+        ]
+      },
+      "message": "First",
+      "user": {
+        "name": "tester",
+        "address": "mailto:tests@example.com"
+      }
+    },
+    "v4": {
+      "created": "2021-03-30T15:20:32.474183369-05:00",
+      "state": {
+        "24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7cacfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28": [
+          "test-2.txt",
+          "test-4.txt",
+          "test.txt",
+          "test-3.txt"
+        ]
+      },
+      "message": "Fourth",
+      "user": {
+        "name": "tester",
+        "address": "mailto:tests@example.com"
+      }
+    },
+    "v5": {
+      "created": "2021-03-30T15:20:44.945696903-05:00",
+      "state": {
+        "24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7cacfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28": [
+          "test-2.txt",
+          "test-3.txt",
+          "test-4.txt",
+          "test.txt",
+          "test-5.txt"
+        ]
+      },
+      "message": "Fifth",
+      "user": {
+        "name": "tester",
+        "address": "mailto:tests@example.com"
+      }
+    },
+    "v7": {
+      "created": "2021-03-30T15:21:04.397642206-05:00",
+      "state": {
+        "24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7cacfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28": [
+          "test-6.txt",
+          "test-7.txt",
+          "test-3.txt",
+          "test-4.txt",
+          "test-2.txt",
+          "test-5.txt",
+          "test.txt"
+        ]
+      },
+      "message": "Seventh",
+      "user": {
+        "name": "tester",
+        "address": "mailto:tests@example.com"
+      }
+    }
+  }
+}

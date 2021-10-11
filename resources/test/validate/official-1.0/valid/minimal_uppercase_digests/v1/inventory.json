@@ -1,0 +1,26 @@
+{
+  "digestAlgorithm": "sha512",
+  "head": "v1",
+  "id": "ark:00000/minimal_uppercase_digests",
+  "manifest": {
+    "43A43FE8A8A082D3B5343DFAF2FD0C8B8E370675B1F376E92E9994612C33EA255B11298269D72F797399EBB94EDEEFE53DF243643676548F584FB8603CA53A0F": [
+      "v1/content/a_file.txt"
+    ]
+  },
+  "type": "https://ocfl.io/1.0/spec/#inventory",
+  "versions": {
+    "v1": {
+      "created": "2019-01-01T02:03:04Z",
+      "message": "The valid example has uppercase digests",
+      "state": {
+        "43A43FE8A8A082D3B5343DFAF2FD0C8B8E370675B1F376E92E9994612C33EA255B11298269D72F797399EBB94EDEEFE53DF243643676548F584FB8603CA53A0F": [
+          "a_file.txt"
+        ]
+      },
+      "user": {
+        "address": "mailto:a_person@example.org",
+        "name": "A Person"
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "digestAlgorithm": "sha512",
+  "head": "v1",
+  "id": "http://example.org/E058_no_sidecar",
+  "manifest": {
+    "e7c22b994c59d9cf2b48e549b1e24666636045930d3da7c1acb299d1c3b7f931f94aae41edda2c2b207a36e10f8bcb8d45223e54878f5b316e7ce3b6bc019629": [
+      "v1/content/file.txt"
+    ]
+  },
+  "type": "https://ocfl.io/1.0/spec/#inventory",
+  "versions": {
+    "v1": {
+      "created": "2020-05-21T19:00:00Z",
+      "message": "a version",
+      "state": {
+        "e7c22b994c59d9cf2b48e549b1e24666636045930d3da7c1acb299d1c3b7f931f94aae41edda2c2b207a36e10f8bcb8d45223e54878f5b316e7ce3b6bc019629": [
+          "file.txt"
+        ]
+      },
+      "user": {
+        "name": "Other Person",
+	"address": "https://orcid.org/0123-0123-0123-012X"
+      }
+    }
+  }
+}

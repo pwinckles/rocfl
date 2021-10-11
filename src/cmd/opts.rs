@@ -72,7 +72,7 @@ pub struct RocflArgs {
     #[structopt(short, long, value_name = "PROFILE")]
     pub profile: Option<String>,
 
-    /// Suppress error messages
+    /// Suppress error messages and other command specific logging
     #[structopt(short, long)]
     pub quiet: bool,
 
@@ -122,6 +122,8 @@ pub enum Command {
     Status(StatusCmd),
     #[structopt(name = "purge")]
     Purge(PurgeCmd),
+    #[structopt(name = "validate")]
+    Validate(ValidateCmd),
 }
 
 /// Edit rocfl configuration
@@ -540,6 +542,35 @@ pub struct PurgeCmd {
     /// ID of the object to purge
     #[structopt(name = "OBJ_ID")]
     pub object_id: String,
+}
+
+// TODO add examples to docs
+
+/// Validate an object or the entire repository
+///
+/// When run on a specific object, the object is validated against the OCFL spec, and any issues
+/// are reported. When run against the entire repository, the repository structure is validated,
+/// in addition to validating all of the objects in the repository.
+///
+/// Return code 1 is returned if there were problems performing the validation, but no invalid
+/// objects were identified. Return code 2 is returned if invalid objects were identified. Return
+/// code 0 is returned if all objects were valid, or only warning level issues were identified.
+///
+/// Use '--quiet' to suppress output for valid objects. For example: 'rocfl --quiet validate'
+#[derive(Debug, StructOpt)]
+#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+pub struct ValidateCmd {
+    /// Interpret positional parameters as paths to object roots relative the repository root
+    #[structopt(short, long)]
+    pub paths: bool,
+
+    /// Disable fixity check on stored files
+    #[structopt(short, long)]
+    pub no_fixity_check: bool,
+
+    /// IDs of the objects to validate, or paths object roots when used with '--paths'
+    #[structopt(name = "OBJ_ID/PATH")]
+    pub object_ids: Vec<String>,
 }
 
 // TODO a command for rebasing staging if an object is updated after the staged version was created?

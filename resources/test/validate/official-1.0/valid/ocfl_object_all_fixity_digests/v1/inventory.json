@@ -1,0 +1,43 @@
+{
+  "digestAlgorithm": "sha512",
+  "fixity": {
+    "md5": {
+      "e8f239a71aabe2231faf696d92c92c20": [ "v1/content/file.txt" ]
+    },
+    "sha1": {
+      "43c8321bda03dea62b63a5c09e9105b24ab6121b": [ "v1/content/file.txt" ]
+    },
+    "sha256": {
+      "0b13a01dc7580ed7d4737d62ecd1a0c2067b0f3eccc327f4964fd82d582e3fd4": [ "v1/content/file.txt" ]
+    },
+    "sha512": {
+      "a8a450d00c6ca7aa90e3e4858864fc195b6b2fe0a75c2d1e078e92eca232ce7be034a129ea9ea9cda2b0efaf11ba8f5ebdbebacb12f7992a4c37cad589e16a4d": [ "v1/content/file.txt" ]
+    },
+    "blake2b-512": {
+      "51ff3faaf6b51b56011aea528fde0c43af07912011d1baa4fba795b899aa96e01452afc32d757777695bb9c93add6e8cb166b5e6f1c3670d9950e15570922203": [ "v1/content/file.txt" ]
+    }
+  },
+  "head": "v1",
+  "id": "info:something/abc",
+  "manifest": {
+    "a8a450d00c6ca7aa90e3e4858864fc195b6b2fe0a75c2d1e078e92eca232ce7be034a129ea9ea9cda2b0efaf11ba8f5ebdbebacb12f7992a4c37cad589e16a4d": [
+      "v1/content/file.txt"
+    ]
+  },
+  "type": "https://ocfl.io/1.0/spec/#inventory",
+  "versions": {
+    "v1": {
+      "created": "2000-01-02T03:04:05Z",
+      "state": {
+        "a8a450d00c6ca7aa90e3e4858864fc195b6b2fe0a75c2d1e078e92eca232ce7be034a129ea9ea9cda2b0efaf11ba8f5ebdbebacb12f7992a4c37cad589e16a4d": [
+          "file.txt"
+        ]
+      },
+      "message": "A file",
+      "user": {
+        "name": "A Person",
+	"address": "https://orcid.org/0000-0000-0000-0000"
+      }
+    }
+  }
+}

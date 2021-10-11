@@ -14,12 +14,13 @@ use common::*;
 use fs_extra::dir::CopyOptions;
 use rand::Rng;
 use rocfl::ocfl::{
-    CommitMeta, DigestAlgorithm, FileDetails, LayoutExtensionName, OcflRepo, RocflError,
-    StorageLayout, VersionNum, VersionRef,
+    CommitMeta, DigestAlgorithm, ErrorCode, FileDetails, LayoutExtensionName, OcflRepo,
+    ProblemLocation, RocflError, StorageLayout, ValidationError, VersionNum, VersionRef, WarnCode,
 };
 use rusoto_core::Region;
 use rusoto_s3::{
-    DeleteObjectRequest, GetObjectRequest, HeadObjectRequest, ListObjectsV2Request, S3Client, S3,
+    DeleteObjectRequest, GetObjectRequest, HeadObjectRequest, ListObjectsV2Request,
+    PutObjectRequest, S3Client, S3,
 };
 use tokio::io::AsyncReadExt;
 
@@ -293,6 +294,223 @@ fn create_and_update_object() {
 }
 
 #[test]
+fn validate_valid_object() {
+    skip_or_run_s3_test(
+        "validate_valid_object",
+        |_s3_client: S3Client, prefix: String, staging: TempDir, temp: TempDir| {
+            let repo = default_repo(&prefix, staging.path());
+            let object_id = "urn:example:rocfl:s3-object";
+            let commit_meta = CommitMeta::new()
+                .with_message(Some("commit".to_string()))
+                .with_user(
+                    Some("Peter Winckles".to_string()),
+                    Some("mailto:me@example.com".to_string()),
+                )
+                .unwrap();
+
+            repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
+                .unwrap();
+
+            create_dirs(&temp, "a/b/c");
+            create_dirs(&temp, "a/d/e");
+            create_dirs(&temp, "a/f");
+
+            create_file(&temp, "a/file1.txt", "File One");
+            create_file(&temp, "a/b/file2.txt", "File Two");
+            create_file(&temp, "a/b/file3.txt", "File Three");
+            create_file(&temp, "a/b/c/file4.txt", "File Four");
+            create_file(&temp, "a/d/e/file5.txt", "File Five");
+            create_file(&temp, "a/f/file6.txt", "File Six");
+
+            repo.move_files_external(object_id, &vec![temp.child("a").path()], "/")
+                .unwrap();
+
+            repo.commit(object_id, commit_meta.clone(), None, false)
+                .unwrap();
+
+            repo.remove_files(object_id, &vec!["a/b/file3.txt", "a/b/c/file4.txt"], false)
+                .unwrap();
+
+            repo.commit(object_id, commit_meta.clone(), None, false)
+                .unwrap();
+
+            repo.copy_files_internal(
+                object_id,
+                VersionNum::v1().into(),
+                &vec!["a/b/file3.txt"],
+                "/",
+                false,
+            )
+            .unwrap();
+            repo.copy_files_internal(
+                object_id,
+                VersionNum::v1().into(),
+                &vec!["a/file1.txt"],
+                "something/file1.txt",
+                false,
+            )
+            .unwrap();
+
+            create_dirs(&temp, "something");
+
+            repo.copy_files_external(
+                object_id,
+                &vec![create_file(&temp, "something/new.txt", "NEW").path()],
+                "something/new.txt",
+                true,
+            )
+            .unwrap();
+
+            repo.commit(object_id, commit_meta.clone(), None, false)
+                .unwrap();
+
+            repo.copy_files_external(
+                object_id,
+                &vec![create_file(&temp, "file6.txt", "UPDATED!").path()],
+                "a/f/file6.txt",
+                true,
+            )
+            .unwrap();
+
+            repo.move_files_internal(object_id, &vec!["a/d/e/file5.txt"], "a/file5.txt")
+                .unwrap();
+
+            repo.commit(object_id, commit_meta, None, false).unwrap();
+
+            let mut validator = repo.validate_repo(true).unwrap();
+
+            no_errors_storage(validator.storage_root_result());
+            no_warnings_storage(validator.storage_root_result());
+
+            for result in &mut validator {
+                let result = result.unwrap();
+                no_errors(&result);
+                no_warnings(&result);
+            }
+
+            no_errors_storage(validator.storage_hierarchy_result());
+            no_warnings_storage(validator.storage_hierarchy_result());
+        },
+    );
+}
+
+#[test]
+fn validate_invalid_object() {
+    skip_or_run_s3_test(
+        "validate_invalid_object",
+        |s3_client: S3Client, prefix: String, staging: TempDir, temp: TempDir| {
+            let repo = default_repo(&prefix, staging.path());
+            let object_id = "urn:example:rocfl:s3-object";
+            let object_id_2 = "urn:example:rocfl:s3-object-2";
+
+            let commit_meta = CommitMeta::new()
+                .with_message(Some("commit".to_string()))
+                .with_user(
+                    Some("Peter Winckles".to_string()),
+                    Some("mailto:me@example.com".to_string()),
+                )
+                .unwrap();
+
+            repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
+                .unwrap();
+
+            create_dirs(&temp, "a/b/c");
+            create_dirs(&temp, "a/d/e");
+            create_dirs(&temp, "a/f");
+
+            create_file(&temp, "a/file1.txt", "File One");
+            create_file(&temp, "a/b/file2.txt", "File Two");
+            create_file(&temp, "a/b/file3.txt", "File Three");
+            create_file(&temp, "a/b/c/file4.txt", "File Four");
+            create_file(&temp, "a/d/e/file5.txt", "File Five");
+            create_file(&temp, "a/f/file6.txt", "File Six");
+
+            repo.move_files_external(object_id, &vec![temp.child("a").path()], "/")
+                .unwrap();
+
+            repo.commit(object_id, commit_meta.clone(), None, false)
+                .unwrap();
+
+            repo.create_object(object_id_2, DigestAlgorithm::Sha512, "content", 0)
+                .unwrap();
+            repo.copy_files_external(
+                object_id_2,
+                &vec![create_file(&temp, "test.txt", "testing").path()],
+                "/",
+                false,
+            )
+            .unwrap();
+
+            repo.commit(object_id_2, commit_meta, None, false).unwrap();
+
+            let details = repo
+                .get_object_details(object_id, VersionRef::Head)
+                .unwrap();
+
+            write_file(&s3_client, &format!("{}/0=ocfl_1.0", prefix), "garbage");
+            write_file(&s3_client, &format!("{}/abc/random.txt", prefix), "garbage");
+            write_file(
+                &s3_client,
+                &format!("{}/file.txt", &details.object_root),
+                "garbage",
+            );
+            write_file(
+                &s3_client,
+                &format!("{}/v1/content/file.txt", &details.object_root),
+                "garbage",
+            );
+
+            let mut validator = repo.validate_repo(true).unwrap();
+
+            has_errors_storage(
+                validator.storage_root_result(),
+                &[ValidationError::new(
+                    ProblemLocation::StorageRoot,
+                    ErrorCode::E080,
+                    "Root version declaration is invalid. Expected: ocfl_1.0; Found: garbage"
+                        .to_string(),
+                )],
+            );
+            no_warnings_storage(validator.storage_root_result());
+
+            for result in &mut validator {
+                let result = result.unwrap();
+                match result.object_id.as_ref().unwrap().as_ref() {
+                    "urn:example:rocfl:s3-object" => {
+                        has_errors(&result, &[
+                            root_error(ErrorCode::E001, "Unexpected file in object root: file.txt"),
+                            root_error(ErrorCode::E023, "A content file exists that is not referenced in the manifest: v1/content/file.txt")
+                        ]);
+                        has_warnings(
+                            &result,
+                            &[root_warning(
+                                WarnCode::W004,
+                                "Inventory 'digestAlgorithm' should be 'sha512'. Found: sha256",
+                            )],
+                        );
+                    }
+                    "urn:example:rocfl:s3-object-2" => {
+                        no_errors(&result);
+                        no_warnings(&result);
+                    }
+                    id => panic!("Unexpected object: {}", id),
+                }
+            }
+
+            has_errors_storage(
+                validator.storage_hierarchy_result(),
+                &[ValidationError::new(
+                    ProblemLocation::StorageHierarchy,
+                    ErrorCode::E072,
+                    "Found a file in the storage hierarchy: abc/random.txt".to_string(),
+                )],
+            );
+            no_warnings_storage(validator.storage_hierarchy_result());
+        },
+    );
+}
+
+#[test]
 fn purge_object() {
     skip_or_run_s3_test(
         "purge_object",
@@ -539,6 +757,20 @@ fn get_content_with_key(s3_client: &S3Client, key: &str) -> String {
         }
 
         String::from_utf8(content).unwrap()
+    })
+}
+
+fn write_file(s3_client: &S3Client, key: &str, contents: &str) {
+    tokio_test::block_on(async move {
+        let _ = s3_client
+            .put_object(PutObjectRequest {
+                bucket: bucket(),
+                key: key.to_string(),
+                body: Some(contents.to_string().into_bytes().into()),
+                ..Default::default()
+            })
+            .await
+            .expect(&format!("Expected put {} to succeed", key));
     })
 }
 

@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
 use assert_fs::TempDir;
@@ -229,6 +229,52 @@ fn logical_directory_listing() {
         .stdout(contains_str("a/c/different.txt").not());
 }
 
+#[test]
+fn validate_repo_sanity() {
+    let root = validate_repo_root("invalid");
+
+    let _ = validate(&root)
+        .assert()
+        .stdout(contains_str("Storage root is invalid"))
+        .stdout(contains_str(
+            "Object urn:example:rocfl:obj-2 is invalid",
+        ))
+        .stdout(contains_str("Object urn:example:rocfl:obj-1 is valid"))
+        .stdout(contains_str(
+            "Storage hierarchy is invalid",
+        ))
+        .stdout(contains_str("Total objects:   2"))
+        .stdout(contains_str("Invalid objects: 1"))
+        .stdout(contains_str("Storage issues:  10"));
+}
+
+#[test]
+fn validate_repo_quiet() {
+    let root = validate_repo_root("invalid");
+
+    let mut rocfl = Command::cargo_bin("rocfl").unwrap();
+    rocfl
+        .arg("-S")
+        .arg("-q")
+        .arg("-r")
+        .arg(root.to_string_lossy().as_ref())
+        .arg("validate");
+
+    let _ = rocfl
+        .assert()
+        .stdout(contains_str("Storage root is invalid"))
+        .stdout(contains_str(
+            "urn:example:rocfl:obj-2 is invalid",
+        ))
+        .stdout(contains_str("Object urn:example:rocfl:obj-1 is valid").not())
+        .stdout(contains_str(
+            "Storage hierarchy is invalid",
+        ))
+        .stdout(contains_str("Total objects:   2"))
+        .stdout(contains_str("Invalid objects: 1"))
+        .stdout(contains_str("Storage issues:  10"));
+}
+
 // TODO backfill more cli sanity tests
 
 fn init(path: impl AsRef<Path>) -> Command {
@@ -259,6 +305,10 @@ fn status(path: impl AsRef<Path>) -> Command {
     rocfl(path, "status")
 }
 
+fn validate(path: impl AsRef<Path>) -> Command {
+    rocfl(path, "validate")
+}
+
 fn rocfl(path: impl AsRef<Path>, command: &str) -> Command {
     let mut rocfl = Command::cargo_bin("rocfl").unwrap();
     rocfl
@@ -275,4 +325,15 @@ fn contains_str(string: &str) -> ContainsPredicate {
 
 fn empty() -> IsEmptyPredicate {
     predicates::str::is_empty()
+}
+
+fn validate_repo_root(name: &str) -> PathBuf {
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("resources");
+    path.push("test");
+    path.push("validate");
+    path.push("custom");
+    path.push("repos");
+    path.push(name);
+    path
 }

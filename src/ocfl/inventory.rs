@@ -1,9 +1,10 @@
 use std::borrow::Cow;
 use std::collections::hash_map::Iter;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::mem;
 use std::rc::Rc;
+use std::str::FromStr;
 
 use chrono::{DateTime, Local};
 use globset::GlobBuilder;
@@ -80,7 +81,7 @@ pub struct Version {
 }
 
 /// OCFL user serialization object
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, Eq, PartialEq)]
 pub struct User {
     pub name: Option<String>,
     pub address: Option<String>,
@@ -180,6 +181,11 @@ impl Inventory {
         self.manifest.contains_path(content_path)
     }
 
+    /// Returns the digest associated to the content path in the manifest
+    pub fn digest_for_content_path(&self, content_path: &ContentPath) -> Option<&Rc<HexDigest>> {
+        self.manifest.get_id(content_path)
+    }
+
     /// Returns the first content path associated with the specified digest, or an error if it does
     /// not exist.
     ///
@@ -259,6 +265,23 @@ impl Inventory {
         };
 
         self.content_path_for_digest(digest, version_num.into(), Some(logical_path))
+    }
+
+    /// Returns a reference to the set of all of the content paths that are associated to the
+    /// digest
+    pub fn content_paths(&self, digest: &HexDigest) -> Option<&HashSet<Rc<ContentPath>>> {
+        self.manifest.get_paths(digest)
+    }
+
+    /// Returns a set of all of the content paths in the inventory
+    pub fn all_content_paths(&self) -> HashSet<Rc<ContentPath>> {
+        let mut paths = HashSet::with_capacity(self.manifest.len());
+
+        for (path, _) in &self.manifest {
+            paths.insert(path.clone());
+        }
+
+        paths
     }
 
     /// Returns the diffs of two versions. An error is returned if either of the specified versions
@@ -442,11 +465,78 @@ impl Inventory {
         logical_path.to_content_path(self.head, self.defaulted_content_dir())
     }
 
+    /// Returns the content directory specified in the inventory or the default value if none
+    /// is specified.
     pub fn defaulted_content_dir(&self) -> &str {
         match &self.content_directory {
             Some(dir) => dir.as_str(),
             None => DEFAULT_CONTENT_DIR,
         }
+    }
+
+    /// Returns a reference to the inventory's manifest
+    pub fn manifest(&self) -> &PathBiMap<ContentPath> {
+        &self.manifest
+    }
+
+    /// Inverts the fixity block and returns a map of content paths to their expected digests
+    #[allow(clippy::type_complexity)]
+    pub fn invert_fixity(
+        &self,
+    ) -> Option<HashMap<ContentPath, Vec<(DigestAlgorithm, Rc<HexDigest>)>>> {
+        if let Some(fixity) = &self.fixity {
+            let mut inverted = HashMap::new();
+
+            for (algorithm, manifest) in fixity {
+                // TODO skipping blake2b until we can support streaming them
+                if algorithm.starts_with("blake2b") {
+                    continue;
+                }
+                if let Ok(algorithm) = DigestAlgorithm::from_str(algorithm) {
+                    for (digest, paths) in manifest {
+                        let digest = Rc::new(HexDigest::from(digest.as_str()));
+                        for path in paths {
+                            inverted
+                                .entry(ContentPath::try_from(path).unwrap())
+                                .or_insert_with(Vec::new)
+                                .push((algorithm, digest.clone()))
+                        }
+                    }
+                }
+            }
+
+            Some(inverted)
+        } else {
+            None
+        }
+    }
+
+    /// Returns a set of all of the content paths in the manifest
+    pub fn manifest_paths(&self) -> HashSet<Rc<ContentPath>> {
+        let mut paths = HashSet::with_capacity(self.manifest.len());
+
+        for (content_path, _) in &self.manifest {
+            paths.insert(content_path.clone());
+        }
+
+        paths
+    }
+
+    /// Returns a set of all of the content paths in the fixity block
+    pub fn fixity_paths(&self) -> HashSet<&str> {
+        let mut paths = HashSet::new();
+
+        if let Some(fixity) = &self.fixity {
+            fixity
+                .values()
+                .flat_map(|m| m.values())
+                .flat_map(|v| v.iter())
+                .for_each(|path| {
+                    paths.insert(path.as_ref());
+                });
+        }
+
+        paths
     }
 }
 
@@ -546,6 +636,16 @@ impl Version {
     /// Returns non-consuming iterator for the version's state
     pub fn state_iter(&self) -> Iter<Rc<LogicalPath>, Rc<HexDigest>> {
         self.state.iter()
+    }
+
+    pub fn logical_paths(&self) -> HashSet<Rc<LogicalPath>> {
+        let mut paths = HashSet::with_capacity(self.state.len());
+
+        for (path, _) in &self.state {
+            paths.insert(path.clone());
+        }
+
+        paths
     }
 
     /// Moves the current state map out, replacing it when an empty state

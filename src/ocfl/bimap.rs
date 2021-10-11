@@ -18,6 +18,7 @@ pub struct PathBiMap<P>
 where
     P: Eq + Hash + DeserializeOwned + Serialize,
 {
+    // TODO experiment with the performance of changing the map impl -- check serialization
     id_to_paths: HashMap<Rc<HexDigest>, HashSet<Rc<P>>>,
     path_to_id: HashMap<Rc<P>, Rc<HexDigest>>,
 }

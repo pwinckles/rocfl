@@ -1,9 +1,9 @@
 use core::fmt;
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, Write};
 use std::hash::{Hash, Hasher};
 use std::path;
 use std::path::Path;
@@ -180,6 +180,8 @@ pub enum Diff {
         renamed: Vec<Rc<LogicalPath>>,
     },
 }
+
+pub(crate) struct PrettyPrintSet<'a, T: Display>(pub(crate) &'a HashSet<T>);
 
 impl VersionNum {
     /// Creates a new VersionNum at version 1 with no zero-padding
@@ -1147,6 +1149,20 @@ impl Diff {
                 .first()
                 .expect("At least one renamed path should have existed"),
         }
+    }
+}
+
+impl<'a, T: Display> Display for PrettyPrintSet<'a, T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_char('[')?;
+        let max = self.0.len() - 1;
+        for (i, entry) in self.0.iter().enumerate() {
+            write!(f, "{}", entry)?;
+            if i < max {
+                write!(f, ", ")?;
+            }
+        }
+        f.write_char(']')
     }
 }
 

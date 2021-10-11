@@ -23,6 +23,7 @@ use rusoto_s3::{
     S3Client as RusotoS3Client, StreamingBody, UploadPartRequest, S3,
 };
 use tokio::io::AsyncReadExt;
+use tokio::runtime;
 use tokio::runtime::Runtime;
 use walkdir::WalkDir;
 
@@ -31,6 +32,9 @@ use super::{OcflLayout, OcflStore};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
+use crate::ocfl::paths::{join, join_with_trailing_slash};
+use crate::ocfl::store::{Listing, Storage};
+use crate::ocfl::validate::{IncrementalValidator, ObjectValidationResult, Validator};
 use crate::ocfl::{
     paths, specs, util, InventoryPath, LayoutExtensionName, LogicalPath, VersionRef,
 };
@@ -45,9 +49,10 @@ const PART_SIZE: u64 = 1024 * 1024 * 5;
 static EXTENSIONS_DIR_SUFFIX: Lazy<String> = Lazy::new(|| format!("/{}", EXTENSIONS_DIR));
 
 pub struct S3OcflStore {
-    s3_client: S3Client,
+    s3_client: Arc<S3Client>,
     /// Maps object IDs to paths within the storage root
     storage_layout: Option<StorageLayout>,
+    validator: Validator<S3Storage>,
     // TODO this never expires entries and is only intended to be useful within the scope of the cli
     /// Caches object ID to path mappings
     id_path_cache: RwLock<HashMap<String, String>>,
@@ -68,7 +73,10 @@ impl S3OcflStore {
         check_extensions(&s3_client);
         let storage_layout = load_storage_layout(&s3_client);
 
+        let s3_client = Arc::new(s3_client);
+
         Ok(Self {
+            validator: Validator::new(S3Storage::new(s3_client.clone())),
             s3_client,
             storage_layout,
             id_path_cache: RwLock::new(HashMap::new()),
@@ -89,7 +97,10 @@ impl S3OcflStore {
 
         init_new_repo(&s3_client, layout.as_ref())?;
 
+        let s3_client = Arc::new(s3_client);
+
         Ok(Self {
+            validator: Validator::new(S3Storage::new(s3_client.clone())),
             s3_client,
             storage_layout: layout,
             id_path_cache: RwLock::new(HashMap::new()),
@@ -520,10 +531,48 @@ impl OcflStore for S3OcflStore {
         Ok(extensions)
     }
 
+    /// Validates the specified object and returns any problems found. Err will only be returned
+    /// if a non-validation problem was encountered.
+    fn validate_object(
+        &self,
+        object_id: &str,
+        fixity_check: bool,
+    ) -> Result<ObjectValidationResult> {
+        let object_root = self.lookup_or_find_object_root_path(object_id)?;
+
+        self.validator
+            .validate_object(Some(object_id), &object_root, fixity_check)
+    }
+
+    /// Validates the specified object at the specified path, relative the storage root, and
+    /// returns any problems found. Err will only be returned if a non-validation problem was
+    /// encountered.
+    fn validate_object_at(
+        &self,
+        object_root: &str,
+        fixity_check: bool,
+    ) -> Result<ObjectValidationResult> {
+        self.validator
+            .validate_object(None, object_root, fixity_check)
+    }
+
+    /// Validates the structure of an OCFL repository as well as all of the objects in the repository
+    /// When `fixity_check` is `false`, then the digests of object content files are not validated.
+    ///
+    /// The storage root is validated immediately, and an incremental validator is returned that
+    /// is used to lazily validate the rest of the repository.
+    fn validate_repo<'a>(
+        &'a self,
+        fixity_check: bool,
+    ) -> Result<Box<dyn IncrementalValidator + 'a>> {
+        Ok(Box::new(self.validator.validate_repo(fixity_check)?))
+    }
+
     /// Instructs the store to gracefully stop any in-flight work and not accept any additional
     /// requests.
     fn close(&self) {
         self.closed.store(true, Ordering::Release);
+        self.validator.close();
     }
 }
 
@@ -531,6 +580,7 @@ struct S3Client {
     s3_client: RusotoS3Client,
     bucket: String,
     prefix: String,
+    // TODO this should ideally be externalized, but wait for new aws rust client
     runtime: Runtime,
 }
 
@@ -547,6 +597,10 @@ struct InventoryIter<'a> {
     closed: Arc<AtomicBool>,
 }
 
+pub struct S3Storage {
+    s3_client: Arc<S3Client>,
+}
+
 impl S3Client {
     fn new(
         region: Region,
@@ -558,7 +612,7 @@ impl S3Client {
             s3_client: create_rusoto_client(region, profile),
             bucket: bucket.to_owned(),
             prefix: prefix.unwrap_or_default().to_owned(),
-            runtime: Runtime::new()?,
+            runtime: runtime::Builder::new_multi_thread().enable_all().build()?,
         })
     }
 
@@ -992,6 +1046,55 @@ impl<'a> Iterator for InventoryIter<'a> {
     }
 }
 
+impl S3Storage {
+    fn new(s3_client: Arc<S3Client>) -> Self {
+        Self { s3_client }
+    }
+}
+
+impl Storage for S3Storage {
+    /// Reads the file at the specified path and writes its contents to the provided sink.
+    fn read<W: Write>(&self, path: &str, sink: &mut W) -> Result<()> {
+        self.s3_client.stream_object(path, sink)
+    }
+
+    /// Lists the contents of the specified directory. If `recursive` is `true`, then all leaf-nodes
+    /// are returned. If the directory does not exist, or is empty, then an empty vector is returned.
+    /// The returned paths are all relative the directory that was listed.
+    fn list(&self, path: &str, recursive: bool) -> Result<Vec<Listing>> {
+        let prefix_len = if path.is_empty() || path.ends_with('/') {
+            path.len()
+        } else {
+            path.len() + 1
+        };
+
+        if recursive {
+            let key_parts = self.s3_client.list_objects(path)?;
+            Ok(key_parts
+                .iter()
+                .map(|entry| Listing::file_owned(entry[prefix_len..].to_string()))
+                .collect::<Vec<Listing>>())
+        } else {
+            let s3_result = self.s3_client.list_dir(path)?;
+            let mut result =
+                Vec::with_capacity(s3_result.directories.len() + s3_result.objects.len());
+
+            s3_result
+                .objects
+                .iter()
+                .map(|entry| Listing::file_owned(entry[prefix_len..].to_string()))
+                .for_each(|entry| result.push(entry));
+            s3_result
+                .directories
+                .iter()
+                .map(|entry| Listing::dir_owned(entry[prefix_len..].to_string()))
+                .for_each(|entry| result.push(entry));
+
+            Ok(result)
+        }
+    }
+}
+
 fn check_extensions(s3_client: &S3Client) {
     match s3_client.list_dir(EXTENSIONS_DIR) {
         Ok(result) => {
@@ -1168,32 +1271,6 @@ fn is_object_dir(objects: &[String]) -> bool {
         }
     }
     false
-}
-
-fn join(part1: &str, part2: &str) -> String {
-    let mut joined = match part1.ends_with('/') {
-        true => part1[..part1.len() - 1].to_string(),
-        false => part1.to_string(),
-    };
-
-    if !part2.is_empty() {
-        if (!joined.is_empty() || part1 == "/") && !part2.starts_with('/') {
-            joined.push('/');
-        }
-        joined.push_str(part2);
-    }
-
-    joined
-}
-
-fn join_with_trailing_slash(part1: &str, part2: &str) -> String {
-    let mut joined = join(part1, part2);
-
-    if !joined.is_empty() && !joined.ends_with('/') {
-        joined.push('/');
-    }
-
-    joined
 }
 
 #[cfg(test)]

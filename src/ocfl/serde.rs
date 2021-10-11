@@ -17,15 +17,15 @@ use crate::ocfl::digest::HexDigest;
 use crate::ocfl::inventory::{Inventory, Version};
 use crate::ocfl::{ContentPath, LogicalPath, VersionNum};
 
-const ID_FIELD: &str = "id";
-const TYPE_FIELD: &str = "type";
-const DIGEST_ALGORITHM_FIELD: &str = "digestAlgorithm";
-const HEAD_FIELD: &str = "head";
-const CONTENT_DIRECTORY_FIELD: &str = "contentDirectory";
-const MANIFEST_FIELD: &str = "manifest";
-const VERSIONS_FIELD: &str = "versions";
-const FIXITY_FIELD: &str = "fixity";
-const INVENTORY_FIELDS: &[&str] = &[
+pub const ID_FIELD: &str = "id";
+pub const TYPE_FIELD: &str = "type";
+pub const DIGEST_ALGORITHM_FIELD: &str = "digestAlgorithm";
+pub const HEAD_FIELD: &str = "head";
+pub const CONTENT_DIRECTORY_FIELD: &str = "contentDirectory";
+pub const MANIFEST_FIELD: &str = "manifest";
+pub const VERSIONS_FIELD: &str = "versions";
+pub const FIXITY_FIELD: &str = "fixity";
+pub const INVENTORY_FIELDS: &[&str] = &[
     ID_FIELD,
     TYPE_FIELD,
     DIGEST_ALGORITHM_FIELD,
@@ -36,11 +36,15 @@ const INVENTORY_FIELDS: &[&str] = &[
     FIXITY_FIELD,
 ];
 
-const CREATED_FIELD: &str = "created";
-const STATE_FIELD: &str = "state";
-const USER_FIELD: &str = "user";
-const MESSAGE_FIELD: &str = "message";
-const VERSION_FIELDS: &[&str] = &[CREATED_FIELD, STATE_FIELD, USER_FIELD, MESSAGE_FIELD];
+pub const CREATED_FIELD: &str = "created";
+pub const STATE_FIELD: &str = "state";
+pub const USER_FIELD: &str = "user";
+pub const MESSAGE_FIELD: &str = "message";
+pub const VERSION_FIELDS: &[&str] = &[CREATED_FIELD, STATE_FIELD, USER_FIELD, MESSAGE_FIELD];
+
+pub const NAME_FIELD: &str = "name";
+pub const ADDRESS_FIELD: &str = "address";
+pub const USER_FIELDS: &[&str] = &[NAME_FIELD, ADDRESS_FIELD];
 
 impl<'de> Deserialize<'de> for Inventory {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -100,7 +104,7 @@ impl<'de> Deserialize<'de> for Inventory {
             type Value = Inventory;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("an OCFL inventory")
+                formatter.write_str("an OCFL inventory object")
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -227,7 +231,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for VersionsSeed<'a, 'b> {
             type Value = BTreeMap<VersionNum, Version>;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("a map of OCFL versions")
+                formatter.write_str("a map of OCFL version objects")
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -308,7 +312,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for VersionSeed<'a, 'b> {
             type Value = Version;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("an OCFL version")
+                formatter.write_str("an OCFL version object")
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -392,7 +396,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for ManifestSeed<'a, 'b> {
             type Value = PathBiMap<ContentPath>;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("an OCFL inventory manifest")
+                formatter.write_str("an OCFL inventory manifest map")
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -433,7 +437,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for StateSeed<'a, 'b> {
             type Value = PathBiMap<LogicalPath>;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("an OCFL version state")
+                formatter.write_str("an OCFL version state map")
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>

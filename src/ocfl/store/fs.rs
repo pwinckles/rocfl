@@ -1,5 +1,6 @@
 //! Local filesystem OCFL storage implementation.
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -24,6 +25,8 @@ use super::{OcflLayout, OcflStore, StagingStore};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
+use crate::ocfl::store::{Listing, Storage};
+use crate::ocfl::validate::{IncrementalValidator, ObjectValidationResult, Validator};
 use crate::ocfl::{paths, specs, util, ContentPath, InventoryPath, LogicalPath, VersionRef};
 
 static OBJECT_ID_MATCHER: Lazy<RegexMatcher> =
@@ -38,7 +41,12 @@ pub struct FsOcflStore {
     // TODO this never expires entries and is only intended to be useful within the scope of the cli
     /// Caches object ID to path mappings
     id_path_cache: RwLock<HashMap<String, String>>,
+    validator: Validator<FsStorage>,
     closed: Arc<AtomicBool>,
+}
+
+pub struct FsStorage {
+    storage_root: PathBuf,
 }
 
 impl FsOcflStore {
@@ -63,6 +71,7 @@ impl FsOcflStore {
         let storage_layout = load_storage_layout(&storage_root);
 
         Ok(Self {
+            validator: Validator::new(FsStorage::new(storage_root.clone())),
             storage_root,
             storage_layout,
             id_path_cache: RwLock::new(HashMap::new()),
@@ -77,6 +86,7 @@ impl FsOcflStore {
         init_new_repo(&root, layout.as_ref())?;
 
         Ok(Self {
+            validator: Validator::new(FsStorage::new(root.clone())),
             storage_root: root,
             storage_layout: layout,
             id_path_cache: RwLock::new(HashMap::new()),
@@ -439,10 +449,48 @@ impl OcflStore for FsOcflStore {
         Ok(extensions)
     }
 
+    /// Validates the specified object and returns any problems found. Err will only be returned
+    /// if a non-validation problem was encountered.
+    fn validate_object(
+        &self,
+        object_id: &str,
+        fixity_check: bool,
+    ) -> Result<ObjectValidationResult> {
+        let object_root = self.lookup_or_find_object_root_path(object_id)?;
+
+        self.validator
+            .validate_object(Some(object_id), &object_root, fixity_check)
+    }
+
+    /// Validates the specified object at the specified path, relative the storage root, and
+    /// returns any problems found. Err will only be returned if a non-validation problem was
+    /// encountered.
+    fn validate_object_at(
+        &self,
+        object_root: &str,
+        fixity_check: bool,
+    ) -> Result<ObjectValidationResult> {
+        self.validator
+            .validate_object(None, object_root, fixity_check)
+    }
+
+    /// Validates the structure of an OCFL repository as well as all of the objects in the repository
+    /// When `fixity_check` is `false`, then the digests of object content files are not validated.
+    ///
+    /// The storage root is validated immediately, and an incremental validator is returned that
+    /// is used to lazily validate the rest of the repository.
+    fn validate_repo<'a>(
+        &'a self,
+        fixity_check: bool,
+    ) -> Result<Box<dyn IncrementalValidator + 'a>> {
+        Ok(Box::new(self.validator.validate_repo(fixity_check)?))
+    }
+
     /// Instructs the store to gracefully stop any in-flight work and not accept any additional
     /// requests.
     fn close(&self) {
         self.closed.store(true, Ordering::Release);
+        self.validator.close();
     }
 }
 
@@ -797,6 +845,65 @@ impl Iterator for InventoryIter {
                 },
             }
         }
+    }
+}
+
+impl FsStorage {
+    pub fn new(storage_root: impl AsRef<Path>) -> Self {
+        Self {
+            storage_root: storage_root.as_ref().to_path_buf(),
+        }
+    }
+}
+
+impl Storage for FsStorage {
+    /// Reads the file at the specified path and writes its contents to the provided sink.
+    fn read<W: Write>(&self, path: &str, sink: &mut W) -> Result<()> {
+        io::copy(&mut File::open(self.storage_root.join(path))?, sink)?;
+        Ok(())
+    }
+
+    /// Lists the contents of the specified directory. If `recursive` is `true`, then all leaf-nodes
+    /// are returned. If the directory does not exist, or is empty, then an empty vector is returned.
+    /// The returned paths are all relative the directory that was listed.
+    fn list(&self, path: &str, recursive: bool) -> Result<Vec<Listing>> {
+        let mut listings = Vec::new();
+        let root = self.storage_root.join(path);
+
+        if fs::metadata(&root).is_err() {
+            return Ok(listings);
+        }
+
+        let mut walker = WalkDir::new(&root);
+
+        if !recursive {
+            walker = walker.max_depth(1);
+        }
+
+        for path in walker {
+            let path = path?;
+
+            let relative_path = util::convert_backslash_to_forward(
+                pathdiff::diff_paths(path.path(), &root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .as_ref(),
+            )
+            .to_string();
+
+            if path.file_type().is_file() {
+                listings.push(Listing::File(Cow::Owned(relative_path)));
+            } else if path.file_type().is_dir() {
+                if path.path() != root.as_path() && (!recursive || util::dir_is_empty(path.path())?)
+                {
+                    listings.push(Listing::Directory(Cow::Owned(relative_path)));
+                }
+            } else {
+                listings.push(Listing::Other(Cow::Owned(relative_path)))
+            }
+        }
+
+        Ok(listings)
     }
 }
 

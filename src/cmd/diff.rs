@@ -49,7 +49,7 @@ impl LogCmd {
             Ok(table.write_stdio()?)
         } else {
             for version in versions {
-                println(FormatVersion::new(version, !args.no_styles))?
+                println(FormatVersion::new(version, !args.no_styles));
             }
             Ok(())
         }
@@ -87,13 +87,14 @@ impl Cmd for ShowCmd {
         if self.staged {
             if !self.minimal {
                 let object = repo.get_staged_object_details(&self.object_id)?;
-                println(FormatVersion::new(&object.version_details, !args.no_styles))?;
+                println(FormatVersion::new(&object.version_details, !args.no_styles));
             }
 
             let diffs = repo.diff_staged(&self.object_id)?;
 
             if diffs.is_empty() {
-                println("No staged changes found.")
+                println("No staged changes found.");
+                Ok(())
             } else {
                 display_diffs(diffs, &args)
             }
@@ -101,7 +102,7 @@ impl Cmd for ShowCmd {
             let object = repo.get_object_details(&self.object_id, self.version.into())?;
 
             if !self.minimal {
-                println(FormatVersion::new(&object.version_details, !args.no_styles))?;
+                println(FormatVersion::new(&object.version_details, !args.no_styles));
             }
 
             let right = object.version_details.version_num;
