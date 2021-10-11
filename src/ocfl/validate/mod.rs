@@ -3,6 +3,8 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::slice::Iter;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::vec::IntoIter;
 
 use log::info;
@@ -266,6 +268,7 @@ pub struct ValidationWarning {
 pub struct Validator<S: Storage> {
     /// Storage abstraction used to access files in any backend
     storage: S,
+    closed: Arc<AtomicBool>,
 }
 
 /// Lazily validates every object in the repository. Each call to `next()` validates another object.
@@ -288,6 +291,7 @@ pub struct IncrementalValidatorImpl<'a, S: Storage> {
     dir_iters: Vec<Dir<'a>>,
     current_iter: Option<Dir<'a>>,
     seen_ids: HashSet<String>,
+    closed: Arc<AtomicBool>,
 }
 
 /// Wraps a directory iterator with the path to the directory
@@ -468,11 +472,12 @@ impl ValidationWarning {
     }
 }
 
-// TODO need to hookup ctrl+c
-
 impl<S: Storage> Validator<S> {
     pub fn new(storage: S) -> Self {
-        Self { storage }
+        Self {
+            storage,
+            closed: Arc::new(AtomicBool::new(false)),
+        }
     }
 
     /// Validates an object at a specific location relative the repository root. if `fixity_check`
@@ -483,7 +488,7 @@ impl<S: Storage> Validator<S> {
         object_root: &str,
         fixity_check: bool,
     ) -> Result<ObjectValidationResult> {
-        // TODO improve logging
+        info!("Validating object at {}", object_root);
 
         let root_files = self.storage.list(object_root, false)?;
 
@@ -538,6 +543,11 @@ impl<S: Storage> Validator<S> {
                 );
 
                 for (num, _) in inventory.versions.iter().rev() {
+                    if self.is_closed() {
+                        info!("Terminating validation of object {}", inventory.id);
+                        break;
+                    }
+
                     let version_dir = paths::join(object_root, &num.to_string());
                     if *num == inventory.head {
                         self.validate_head_version(&version_dir, &inventory, &digest, &mut result)?;
@@ -607,6 +617,7 @@ impl<S: Storage> Validator<S> {
             &self.storage,
             fixity_check,
             files,
+            self.closed.clone(),
         ))
     }
 
@@ -1550,6 +1561,11 @@ impl<S: Storage> Validator<S> {
         let mut fixity = root_inventory.invert_fixity();
 
         for path in content_files.iter(root_inventory.head) {
+            if self.is_closed() {
+                info!("Terminating validation of object {}", root_inventory.id);
+                break;
+            }
+
             if let Some(digest) = root_inventory.digest_for_content_path(path) {
                 let mut expectations = HashMap::new();
                 expectations.insert(root_algorithm, digest);
@@ -1601,6 +1617,16 @@ impl<S: Storage> Validator<S> {
 
         Ok(())
     }
+
+    /// Instructs the store to gracefully stop any in-flight work and not accept any additional
+    /// requests.
+    pub fn close(&self) {
+        self.closed.store(true, Ordering::Release);
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
+    }
 }
 
 impl<'a, S: Storage> IncrementalValidatorImpl<'a, S> {
@@ -1610,6 +1636,7 @@ impl<'a, S: Storage> IncrementalValidatorImpl<'a, S> {
         storage: &'a S,
         fixity_check: bool,
         root_files: Vec<Listing<'a>>,
+        closed: Arc<AtomicBool>,
     ) -> Self {
         Self {
             storage_root_result,
@@ -1620,6 +1647,7 @@ impl<'a, S: Storage> IncrementalValidatorImpl<'a, S> {
             dir_iters: vec![Dir::new("".to_string(), root_files.into_iter())],
             current_iter: None,
             seen_ids: HashSet::new(),
+            closed,
         }
     }
 
@@ -1657,7 +1685,10 @@ impl<'a, S: Storage> Iterator for IncrementalValidatorImpl<'a, S> {
     /// Finds the next object in the repository and validates it
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            // TODO check for close
+            if self.closed.load(Ordering::Acquire) {
+                info!("Terminating repository validation");
+                return None;
+            }
 
             if self.current_iter.is_none() && self.dir_iters.is_empty() {
                 return None;
@@ -1706,17 +1737,16 @@ impl<'a, S: Storage> Iterator for IncrementalValidatorImpl<'a, S> {
                                                     }
                                                     Some(Ok(result))
                                                 }
-                                                Err(e) => Some(Err(e))
-                                            }
+                                                Err(e) => Some(Err(e)),
+                                            };
                                         }
                                     }
 
                                     // no object found -- advance to next directory
                                     let dir = Dir::new(path, listing.into_iter());
-                                    self.dir_iters
-                                        .push(self.current_iter.replace(dir).unwrap());
+                                    self.dir_iters.push(self.current_iter.replace(dir).unwrap());
                                 }
-                                Err(e) => return Some(Err(e))
+                                Err(e) => return Some(Err(e)),
                             }
                         }
                         Listing::File(name) => {

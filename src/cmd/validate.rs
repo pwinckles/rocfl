@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
+use std::process;
 use std::sync::atomic::AtomicBool;
 
 use ansi_term::{ANSIGenericString, Style};
@@ -12,7 +13,6 @@ use crate::ocfl::{
     ObjectValidationResult, OcflRepo, ProblemLocation, Result, StorageValidationResult,
     ValidationResult,
 };
-use std::process;
 
 const UNKNOWN_ID: &str = "Unknown";
 

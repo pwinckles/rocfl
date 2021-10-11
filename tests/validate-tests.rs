@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use common::*;
 use rocfl::ocfl::{
-    ErrorCode, ObjectValidationResult, OcflRepo, ProblemLocation,
-    ValidationError, ValidationResult, ValidationWarning, WarnCode,
+    ErrorCode, ObjectValidationResult, OcflRepo, ProblemLocation, ValidationError,
+    ValidationResult, ValidationWarning, WarnCode,
 };
 
 mod common;

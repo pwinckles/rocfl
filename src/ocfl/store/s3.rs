@@ -572,6 +572,7 @@ impl OcflStore for S3OcflStore {
     /// requests.
     fn close(&self) {
         self.closed.store(true, Ordering::Release);
+        self.validator.close();
     }
 }
 
