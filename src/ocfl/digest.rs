@@ -213,7 +213,7 @@ impl<W: Write> MultiDigestWriter<W> {
     pub fn new(algorithms: &[DigestAlgorithm], writer: W) -> Self {
         let mut digests = HashMap::with_capacity(algorithms.len());
         for algorithm in algorithms {
-            // TODO unwrap
+            // TODO unwrap this is here due to the blake2b problem
             digests.insert(*algorithm, algorithm.new_digest().unwrap());
         }
 
@@ -236,7 +236,6 @@ impl<W: Write> MultiDigestWriter<W> {
     }
 }
 
-// TODO test
 impl<W: Write> Write for MultiDigestWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let result = self.inner.write(buf)?;
@@ -345,6 +344,7 @@ impl Display for HexDigest {
 mod tests {
     use std::io;
 
+    use crate::ocfl::digest::MultiDigestWriter;
     use crate::ocfl::error::Result;
     use crate::ocfl::DigestAlgorithm;
 
@@ -389,6 +389,48 @@ mod tests {
         let actual = writer.finalize_hex();
 
         assert_eq!(expected, actual.to_string());
+
+        Ok(())
+    }
+
+    #[test]
+    fn calculate_multiple_digests_while_writing() -> Result<()> {
+        let input = "testing\n".to_string();
+        let output: Vec<u8> = Vec::new();
+
+        let mut writer = MultiDigestWriter::new(
+            &[
+                DigestAlgorithm::Md5,
+                DigestAlgorithm::Sha256,
+                DigestAlgorithm::Sha512,
+            ],
+            output,
+        );
+
+        io::copy(&mut input.as_bytes(), &mut writer)?;
+
+        let expected_sha512 =
+            "24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7c\
+        acfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28"
+                .to_string();
+        let expected_sha256 =
+            "12a61f4e173fb3a11c05d6471f74728f76231b4a5fcd9667cef3af87a3ae4dc2".to_string();
+        let expected_md5 = "eb1a3227cdc3fedbaec2fe38bf6c044a".to_string();
+
+        let actual = writer.finalize_hex();
+
+        assert_eq!(
+            expected_sha512,
+            actual.get(&DigestAlgorithm::Sha512).unwrap().to_string()
+        );
+        assert_eq!(
+            expected_sha256,
+            actual.get(&DigestAlgorithm::Sha256).unwrap().to_string()
+        );
+        assert_eq!(
+            expected_md5,
+            actual.get(&DigestAlgorithm::Md5).unwrap().to_string()
+        );
 
         Ok(())
     }

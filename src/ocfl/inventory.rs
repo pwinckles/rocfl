@@ -474,12 +474,12 @@ impl Inventory {
         }
     }
 
-    // TODO
+    /// Returns a reference to the inventory's manifest
     pub fn manifest(&self) -> &PathBiMap<ContentPath> {
         &self.manifest
     }
 
-    // TODO
+    /// Inverts the fixity block and returns a map of content paths to their expected digests
     #[allow(clippy::type_complexity)]
     pub fn invert_fixity(
         &self,
@@ -511,7 +511,7 @@ impl Inventory {
         }
     }
 
-    // TODO replace this with above manifest()
+    /// Returns a set of all of the content paths in the manifest
     pub fn manifest_paths(&self) -> HashSet<Rc<ContentPath>> {
         let mut paths = HashSet::with_capacity(self.manifest.len());
 
@@ -522,7 +522,7 @@ impl Inventory {
         paths
     }
 
-    // TODO
+    /// Returns a set of all of the content paths in the fixity block
     pub fn fixity_paths(&self) -> HashSet<&str> {
         let mut paths = HashSet::new();
 

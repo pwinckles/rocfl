@@ -13,7 +13,7 @@ use maplit::hashmap;
 use rocfl::ocfl::{
     CommitMeta, ContentPath, Diff, DigestAlgorithm, FileDetails, InventoryPath,
     LayoutExtensionName, ObjectVersion, ObjectVersionDetails, OcflRepo, Result, RocflError,
-    StorageLayout, VersionDetails, VersionNum, VersionRef,
+    StorageLayout, ValidationResult, VersionDetails, VersionNum, VersionRef,
 };
 
 mod common;
@@ -584,6 +584,7 @@ fn create_new_repo_empty_dir() -> Result<()> {
         .child("c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2")
         .assert(predicates::path::is_dir());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -615,6 +616,7 @@ fn create_new_flat_repo_empty_dir() -> Result<()> {
 
     root.child(object_id).assert(predicates::path::is_dir());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -653,6 +655,7 @@ fn create_new_hash_id_repo_empty_dir() -> Result<()> {
         .child(object_id)
         .assert(predicates::path::is_dir());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -692,6 +695,7 @@ fn create_new_repo_empty_dir_custom_layout() -> Result<()> {
         )
         .assert(predicates::path::is_dir());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -846,6 +850,7 @@ fn copy_files_into_new_object() -> Result<()> {
                         fc0eb2b065ebd28b2959b59d9a489929edf9ea7db4dcda8a09a76f",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -945,6 +950,7 @@ fn copy_files_into_existing_object() -> Result<()> {
                         fc0eb2b065ebd28b2959b59d9a489929edf9ea7db4dcda8a09a76f",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -1013,6 +1019,7 @@ fn copied_files_should_dedup_on_commit() -> Result<()> {
                         30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -1100,6 +1107,7 @@ fn copy_to_dir_when_dst_ends_in_slash() -> Result<()> {
                         30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -1145,6 +1153,7 @@ fn copy_into_dir_when_dest_is_existing_dir() -> Result<()> {
         2b2384d707254333a8439fd3ca191e93293f745786ff78ef069f8",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -1276,6 +1285,8 @@ fn copy_should_partially_succeed_when_multiple_src_and_some_fail() {
         "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
                         30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
     );
+
+    validate_repo(&repo);
 }
 
 #[test]
@@ -1346,6 +1357,7 @@ fn copy_multiple_sources() -> Result<()> {
         "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -1384,6 +1396,8 @@ fn create_object_with_non_standard_config() {
         .content_path
         .as_str()
         .contains("/content-dir/"));
+
+    validate_repo(&repo);
 }
 
 #[test]
@@ -1617,6 +1631,7 @@ fn internal_copy_single_existing_file() -> Result<()> {
         "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -1697,6 +1712,7 @@ fn internal_copy_multiple_existing_file() -> Result<()> {
         "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -1768,6 +1784,7 @@ fn internal_copy_files_added_in_staged_version() -> Result<()> {
         "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 #[test]
@@ -1856,6 +1873,7 @@ fn internal_copy_files_with_recursive_glob() -> Result<()> {
         "ac055b59cef48e2c34706677198cd8445ad692689be5169f33f1d93f957581e0",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -1985,6 +2003,7 @@ fn internal_copy_should_continue_on_partial_success() -> Result<()> {
     assert!(staged_obj.state.get(&lpath("a/file1.txt")).is_some());
     assert!(staged_obj.state.get(&lpath("a/file5.txt")).is_some());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -2092,6 +2111,7 @@ fn move_files_into_new_object() -> Result<()> {
                         fc0eb2b065ebd28b2959b59d9a489929edf9ea7db4dcda8a09a76f",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -2158,6 +2178,7 @@ fn move_files_into_existing_object() -> Result<()> {
         "d9c924093b541d5f76801cd8d7d0c74799fd52c221f51816b801ebb3385b0329",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -2352,6 +2373,7 @@ fn move_into_dir_when_dst_ends_with_slash() -> Result<()> {
         "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -2396,6 +2418,7 @@ fn move_into_dir_when_dest_is_existing_dir() -> Result<()> {
         "9d6f965ac832e40a5df6c06afe983e3b449c07b843ff51ce76204de05c690d11",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -2472,6 +2495,8 @@ fn move_should_partially_succeed_when_multiple_src_and_some_fail() {
         "521b9ccefbcd14d179e7a1bb877752870a6d620938b28a66a107eac6e6805b9d0989f45b57\
                         30508041aa5e710847d439ea74cd312c9355f1f2dae08d40e41d50",
     );
+
+    validate_repo(&repo);
 }
 
 #[test]
@@ -2517,6 +2542,8 @@ fn fail_copy_when_conflicting_src() {
         "v1/content/test",
         "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
     );
+
+    validate_repo(&repo);
 }
 
 #[test]
@@ -2561,6 +2588,7 @@ fn internal_move_single_existing_file() -> Result<()> {
 
     assert!(committed_obj.state.get(&lpath("a/file1.txt")).is_none());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -2643,6 +2671,7 @@ fn internal_move_multiple_existing_file() -> Result<()> {
     assert!(committed_obj.state.get(&lpath("a/file5.txt")).is_none());
     assert!(committed_obj.state.get(&lpath("a/b/file2.txt")).is_none());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -2696,6 +2725,7 @@ fn internal_move_should_continue_on_partial_success() -> Result<()> {
     assert!(staged_obj.state.get(&lpath("a/file1.txt")).is_none());
     assert!(staged_obj.state.get(&lpath("a/file5.txt")).is_none());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -2747,6 +2777,8 @@ fn internal_move_files_added_in_staged_version() {
     );
 
     assert_file_not_exists(&committed_obj, "just in.txt", "v5/content/just in.txt");
+
+    validate_repo(&repo);
 }
 
 #[test]
@@ -2835,6 +2867,7 @@ fn remove_existing_file() -> Result<()> {
 
     assert!(previous_version.state.get(&lpath("a/file5.txt")).is_some());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -2876,6 +2909,7 @@ fn remove_multiple_existing_files() -> Result<()> {
         .get(&lpath("something/new.txt"))
         .is_some());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -2912,6 +2946,7 @@ fn remove_globs() -> Result<()> {
     assert!(previous_version.state.get(&lpath("a/file5.txt")).is_some());
     assert!(previous_version.state.get(&lpath("a/file1.txt")).is_some());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -2940,6 +2975,7 @@ fn remove_recursive() -> Result<()> {
     assert_eq!(1, committed_obj.state.len());
     assert!(committed_obj.state.get(&lpath("file3.txt")).is_some());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -2961,6 +2997,7 @@ fn remove_files_that_do_not_exist_should_do_nothing() -> Result<()> {
     assert_eq!(6, staged_obj.state.len());
     assert!(staged_obj.state.get(&lpath("file3.txt")).is_none());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3032,6 +3069,7 @@ fn reset_newly_added_files() -> Result<()> {
         "104d021d7891c889c85c12e83e35ba1c5327c4415878c69372fe71e8f3992a28",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3103,6 +3141,7 @@ fn reset_copied_file() -> Result<()> {
         "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3184,6 +3223,7 @@ fn reset_changes_to_existing_files() -> Result<()> {
         "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3243,6 +3283,7 @@ fn reset_removed_file() -> Result<()> {
         "df21fb2fb83c1c64015a00e7677ccceb8da5377cba716611570230fb91d32bc9",
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3313,6 +3354,7 @@ fn reset_complex_changes_without_conflict() -> Result<()> {
         .get(&lpath("a/file1.txt/file3.txt"))
         .is_none());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3377,6 +3419,7 @@ fn reset_should_do_nothing_when_path_does_not_exist() -> Result<()> {
     let staged_obj = repo.get_staged_object(object_id)?;
     assert_eq!(3, staged_obj.state.len());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3394,6 +3437,7 @@ fn reset_should_do_nothing_if_object_has_no_changes() -> Result<()> {
     repo.reset(object_id, &vec!["bogus"], true)?;
 
     if let Err(RocflError::NotFound(_)) = repo.get_staged_object(object_id) {
+        validate_repo(&repo);
         Ok(())
     } else {
         panic!("Expected the staged object to not be found");
@@ -3411,6 +3455,7 @@ fn reset_should_do_nothing_if_object_does_not_exist() -> Result<()> {
 
     assert_staged_obj_not_exists(&repo, object_id);
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3429,6 +3474,7 @@ fn purge_should_remove_object_from_repo() -> Result<()> {
 
     assert_obj_not_exists(&repo, object_id);
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3454,6 +3500,7 @@ fn purge_should_remove_object_from_repo_and_staging() -> Result<()> {
     assert_obj_not_exists(&repo, object_id);
     assert_staged_obj_not_exists(&repo, object_id);
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3469,6 +3516,7 @@ fn purge_should_do_nothing_when_obj_does_not_exist() -> Result<()> {
     assert_obj_not_exists(&repo, object_id);
     assert_staged_obj_not_exists(&repo, object_id);
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3508,6 +3556,7 @@ fn commit_should_use_custom_meta_when_provided() -> Result<()> {
     assert_eq!(message, obj.version_details.message.unwrap());
     assert_eq!(created, obj.version_details.created);
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3544,6 +3593,7 @@ fn commit_should_use_custom_meta_when_mixture_provided() -> Result<()> {
     assert_eq!(message, obj.version_details.message.unwrap());
     assert_eq!(created, obj.version_details.created);
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3604,6 +3654,8 @@ fn commit_should_pretty_print_inventory() {
         format!("{}{}{}", expected_p1, timestamp.to_rfc3339(), expected_p2),
         fs::read_to_string(&inventory_path).unwrap()
     );
+
+    validate_repo(&repo);
 }
 
 #[test]
@@ -3692,6 +3744,7 @@ fn commit_should_remove_staged_object() -> Result<()> {
 
     assert_staged_obj_not_exists(&repo, object_id);
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3718,6 +3771,7 @@ fn get_staged_object_file_when_exists_in_staged_version() -> Result<()> {
 
     assert_eq!("blah", String::from_utf8(out).unwrap());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3744,6 +3798,7 @@ fn get_staged_object_file_when_exists_in_prior_version() -> Result<()> {
 
     assert_eq!("File One", String::from_utf8(out).unwrap());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3798,6 +3853,7 @@ fn diff_should_detect_simple_rename() -> Result<()> {
     );
     assert_eq!(Diff::Modified(lpath_rc("a/f/file6.txt")), diff.remove(0));
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3837,6 +3893,7 @@ fn diff_should_detect_multi_origin_rename() -> Result<()> {
         diff.remove(0)
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3882,6 +3939,7 @@ fn diff_should_detect_multi_dest_rename() -> Result<()> {
         diff.remove(0)
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3921,6 +3979,7 @@ fn diff_should_detect_multi_src_multi_dest_rename() -> Result<()> {
         diff.remove(0)
     );
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3965,6 +4024,7 @@ fn diff_staged_changes_when_some() -> Result<()> {
     assert_eq!(Diff::Deleted(lpath_rc("a/file5.txt")), diff.remove(0));
     assert_eq!(Diff::Added(lpath_rc("new.txt")), diff.remove(0));
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -3983,6 +4043,7 @@ fn diff_empty_when_no_staged_changes() -> Result<()> {
 
     assert_eq!(0, diff.len());
 
+    validate_repo(&repo);
     Ok(())
 }
 
@@ -4036,6 +4097,8 @@ fn internal_copy_of_new_file_should_copy_file_on_disk() {
         "v1/content/b-file.txt",
         "d1b2a59fbea7e20077af9f91b27e95e865061b270be03ff539ab3b73587882e8",
     );
+
+    validate_repo(&repo);
 }
 
 #[test]
@@ -4082,6 +4145,8 @@ fn internal_move_of_new_file_should_move_file_on_disk() {
         "v1/content/b-file.txt",
         "d1b2a59fbea7e20077af9f91b27e95e865061b270be03ff539ab3b73587882e8",
     );
+
+    validate_repo(&repo);
 }
 
 #[test]
@@ -4126,6 +4191,8 @@ fn internal_move_of_new_file_should_move_file_on_disk_and_not_leave_empty_dirs()
         "v1/content/b-file.txt",
         "d1b2a59fbea7e20077af9f91b27e95e865061b270be03ff539ab3b73587882e8",
     );
+
+    validate_repo(&repo);
 }
 
 #[test]
@@ -4212,6 +4279,8 @@ fn internal_copy_of_duplicate_file_should_operate_on_staged_version() {
         "v1/content/a-file.txt",
         "d1b2a59fbea7e20077af9f91b27e95e865061b270be03ff539ab3b73587882e8",
     );
+
+    validate_repo(&repo);
 }
 
 #[test]
@@ -4279,6 +4348,8 @@ fn fail_commit_when_staged_version_out_of_sync_with_main() {
         VersionNum::try_from(5).unwrap(),
         committed_obj.version_details.version_num
     );
+
+    validate_repo(&repo);
 }
 
 #[test]
@@ -4370,6 +4441,8 @@ fn create_and_update_object_in_repo_with_no_layout() {
         "v2/content/test2.txt",
         "431111472993bf4d9b8b347476b79321fea8a337f3c1cb2fedaa185b54185540",
     );
+
+    validate_repo(&repo);
 }
 
 #[test]
@@ -4408,11 +4481,34 @@ fn fail_when_incorrect_object_in_root() {
     repo.get_object(object_id_2, VersionRef::Head).unwrap();
 }
 
-// TODO validate all test created inventories after adding validation API
-
 // TODO When version rewrite is implemented it is no longer safe to assume that logical paths
 //      were mapped directly to content paths. This means that all move/copy operations must
 //      verify that they are not unintentionally overwriting an existing file.
+
+fn validate_repo(repo: &OcflRepo) {
+    let mut validator = repo.validate_repo(true).unwrap();
+
+    if validator.storage_root_result().has_errors() {
+        panic!(
+            "Found validation errors: {:?}",
+            validator.storage_root_result()
+        );
+    }
+
+    for result in &mut validator {
+        let result = result.unwrap();
+        if result.has_errors() {
+            panic!("Found validation errors: {:?}", result);
+        }
+    }
+
+    if validator.storage_hierarchy_result().has_errors() {
+        panic!(
+            "Found validation errors: {:?}",
+            validator.storage_hierarchy_result()
+        );
+    }
+}
 
 fn assert_staged_obj_count(repo: &OcflRepo, count: usize) {
     assert_eq!(count, repo.list_staged_objects(None).unwrap().count());

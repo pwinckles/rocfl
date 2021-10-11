@@ -39,6 +39,8 @@ static SHA512_256_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[a-fA-F0-9]{6
 
 thread_local!(static PARSE_RESULT: RefCell<ParseValidationResult> = RefCell::new(ParseValidationResult::new()));
 
+/// Deserializes and validates the inventory json. If the inventory is valid, an `Inventory` object
+/// is returned; otherwise a list of the problems encountered is returned.
 pub(super) fn parse(bytes: &[u8]) -> ParseResult {
     fn take_result() -> ParseValidationResult {
         PARSE_RESULT.with(|result| result.take())
