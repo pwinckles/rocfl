@@ -2419,6 +2419,7 @@ mod tests {
         )
     }
 
+    #[allow(dead_code)]
     fn has_warning(code: WarnCode, message: &str, result: &ParseValidationResult) {
         let warnings = result.warnings.borrow();
         assert!(

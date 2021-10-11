@@ -37,6 +37,8 @@ impl ListCmd {
         args: GlobalArgs,
         terminate: &AtomicBool,
     ) -> Result<()> {
+        // TODO this should really just print them if it's just the id w/ no ordering
+
         let iter = if self.staged {
             repo.list_staged_objects(self.object_id.as_deref())?
         } else {

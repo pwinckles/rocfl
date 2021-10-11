@@ -14,15 +14,13 @@ use crate::ocfl::consts::*;
 use crate::ocfl::digest::{HexDigest, MultiDigestWriter};
 use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::Inventory;
-use crate::ocfl::store::OcflLayout;
-use crate::ocfl::validate::store::{Listing, Storage};
+use crate::ocfl::store::{Listing, OcflLayout, Storage};
 use crate::ocfl::{
     paths, util, ContentPath, ContentPathVersion, DigestAlgorithm, InventoryPath, PrettyPrintSet,
     VersionNum,
 };
 
 mod serde;
-pub mod store;
 
 static SIDECAR_SPLIT: Lazy<Regex> = Lazy::new(|| Regex::new(r#"[\t ]+"#).unwrap());
 static EMPTY_PATHS: Vec<ContentPath> = vec![];
@@ -485,6 +483,8 @@ impl<S: Storage> Validator<S> {
         object_root: &str,
         fixity_check: bool,
     ) -> Result<ObjectValidationResult> {
+        // TODO improve logging
+
         let root_files = self.storage.list(object_root, false)?;
 
         if root_files.is_empty() {

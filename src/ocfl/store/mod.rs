@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::Debug;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -157,4 +158,52 @@ pub trait StagingStore: OcflStore {
 pub struct OcflLayout {
     extension: LayoutExtensionName,
     description: String,
+}
+
+/// Abstraction over reading files and listing directory contents. `/` _must_ be used as the file
+/// path separator.
+pub trait Storage {
+    /// Reads the file at the specified path and writes its contents to the provided sink.
+    fn read<W: Write>(&self, path: &str, sink: &mut W) -> Result<()>;
+
+    /// Lists the contents of the specified directory. If `recursive` is `true`, then all leaf-nodes
+    /// are returned. If the directory does not exist, or is empty, then an empty vector is returned.
+    /// The returned paths are all relative the directory that was listed.
+    fn list(&self, path: &str, recursive: bool) -> Result<Vec<Listing>>;
+}
+
+/// Represents filesystem entity
+#[derive(Debug, Hash, Eq, PartialEq)]
+pub enum Listing<'a> {
+    /// A regular file
+    File(Cow<'a, str>),
+    /// A directory
+    Directory(Cow<'a, str>),
+    /// Anything that is not a regular file or directory, eg a symbolic link
+    Other(Cow<'a, str>),
+}
+
+impl<'a> Listing<'a> {
+    pub fn file(path: &str) -> Listing {
+        Listing::File(Cow::Borrowed(path))
+    }
+
+    pub fn dir(path: &str) -> Listing {
+        Listing::Directory(Cow::Borrowed(path))
+    }
+    pub fn file_owned(path: String) -> Listing<'a> {
+        Listing::File(Cow::Owned(path))
+    }
+
+    pub fn dir_owned(path: String) -> Listing<'a> {
+        Listing::Directory(Cow::Owned(path))
+    }
+
+    pub fn path(&self) -> &str {
+        match self {
+            Listing::File(path) => path,
+            Listing::Directory(path) => path,
+            Listing::Other(path) => path,
+        }
+    }
 }

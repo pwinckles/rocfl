@@ -1,5 +1,6 @@
 //! Local filesystem OCFL storage implementation.
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -24,7 +25,7 @@ use super::{OcflLayout, OcflStore, StagingStore};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
-use crate::ocfl::validate::store::fs::FsStorage;
+use crate::ocfl::store::{Listing, Storage};
 use crate::ocfl::validate::{IncrementalValidator, ObjectValidationResult, Validator};
 use crate::ocfl::{paths, specs, util, ContentPath, InventoryPath, LogicalPath, VersionRef};
 
@@ -42,6 +43,10 @@ pub struct FsOcflStore {
     id_path_cache: RwLock<HashMap<String, String>>,
     validator: Validator<FsStorage>,
     closed: Arc<AtomicBool>,
+}
+
+pub struct FsStorage {
+    storage_root: PathBuf,
 }
 
 impl FsOcflStore {
@@ -839,6 +844,65 @@ impl Iterator for InventoryIter {
                 },
             }
         }
+    }
+}
+
+impl FsStorage {
+    pub fn new(storage_root: impl AsRef<Path>) -> Self {
+        Self {
+            storage_root: storage_root.as_ref().to_path_buf(),
+        }
+    }
+}
+
+impl Storage for FsStorage {
+    /// Reads the file at the specified path and writes its contents to the provided sink.
+    fn read<W: Write>(&self, path: &str, sink: &mut W) -> Result<()> {
+        io::copy(&mut File::open(self.storage_root.join(path))?, sink)?;
+        Ok(())
+    }
+
+    /// Lists the contents of the specified directory. If `recursive` is `true`, then all leaf-nodes
+    /// are returned. If the directory does not exist, or is empty, then an empty vector is returned.
+    /// The returned paths are all relative the directory that was listed.
+    fn list(&self, path: &str, recursive: bool) -> Result<Vec<Listing>> {
+        let mut listings = Vec::new();
+        let root = self.storage_root.join(path);
+
+        if fs::metadata(&root).is_err() {
+            return Ok(listings);
+        }
+
+        let mut walker = WalkDir::new(&root);
+
+        if !recursive {
+            walker = walker.max_depth(1);
+        }
+
+        for path in walker {
+            let path = path?;
+
+            let relative_path = util::convert_backslash_to_forward(
+                pathdiff::diff_paths(path.path(), &root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .as_ref(),
+            )
+            .to_string();
+
+            if path.file_type().is_file() {
+                listings.push(Listing::File(Cow::Owned(relative_path)));
+            } else if path.file_type().is_dir() {
+                if path.path() != root.as_path() && (!recursive || util::dir_is_empty(path.path())?)
+                {
+                    listings.push(Listing::Directory(Cow::Owned(relative_path)));
+                }
+            } else {
+                listings.push(Listing::Other(Cow::Owned(relative_path)))
+            }
+        }
+
+        Ok(listings)
     }
 }
 

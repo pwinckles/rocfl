@@ -1,10 +1,12 @@
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
+use common::*;
 use rocfl::ocfl::{
-    ErrorCode, ObjectValidationResult, OcflRepo, ProblemLocation, StorageValidationResult,
-    ValidationError, ValidationResult, ValidationWarning, VersionNum, WarnCode,
+    ErrorCode, ObjectValidationResult, OcflRepo, ProblemLocation,
+    ValidationError, ValidationResult, ValidationWarning, WarnCode,
 };
+
+mod common;
 
 #[test]
 fn extra_dir_in_root() {
@@ -1375,160 +1377,6 @@ fn validate_invalid_repo() {
         ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/inventory.json.sha512".to_string()),
     ]);
     no_warnings_storage(validator.storage_hierarchy_result());
-}
-
-fn version_error(num: &str, code: ErrorCode, text: &str) -> ValidationError {
-    ValidationError::new(
-        VersionNum::from_str(num).unwrap().into(),
-        code,
-        text.to_string(),
-    )
-}
-
-fn root_error(code: ErrorCode, text: &str) -> ValidationError {
-    ValidationError::new(ProblemLocation::ObjectRoot, code, text.to_string())
-}
-
-fn version_warning(num: &str, code: WarnCode, text: &str) -> ValidationWarning {
-    ValidationWarning::new(
-        VersionNum::from_str(num).unwrap().into(),
-        code,
-        text.to_string(),
-    )
-}
-
-fn root_warning(code: WarnCode, text: &str) -> ValidationWarning {
-    ValidationWarning::new(ProblemLocation::ObjectRoot, code, text.to_string())
-}
-
-fn has_errors(result: &ObjectValidationResult, expected_errors: &[ValidationError]) {
-    for expected in expected_errors {
-        assert!(
-            result.errors().contains(expected),
-            "Expected errors to contain {:?}. Found: {:?}",
-            expected,
-            result.errors()
-        );
-    }
-    assert_eq!(
-        expected_errors.len(),
-        result.errors().len(),
-        "Expected {} errors; found {}: {:?}",
-        expected_errors.len(),
-        result.errors().len(),
-        result.errors()
-    )
-}
-
-fn has_warnings(result: &ObjectValidationResult, expected_warnings: &[ValidationWarning]) {
-    for expected in expected_warnings {
-        assert!(
-            result.warnings().contains(expected),
-            "Expected warnings to contain {:?}. Found: {:?}",
-            expected,
-            result.warnings()
-        );
-    }
-    assert_eq!(
-        expected_warnings.len(),
-        result.warnings().len(),
-        "Expected {} warnings; found {}: {:?}",
-        expected_warnings.len(),
-        result.warnings().len(),
-        result.warnings()
-    )
-}
-
-fn has_errors_storage(result: &StorageValidationResult, expected_errors: &[ValidationError]) {
-    for expected in expected_errors {
-        assert!(
-            result.errors().contains(expected),
-            "Expected errors to contain {:?}. Found: {:?}",
-            expected,
-            result.errors()
-        );
-    }
-    assert_eq!(
-        expected_errors.len(),
-        result.errors().len(),
-        "Expected {} errors; found {}: {:?}",
-        expected_errors.len(),
-        result.errors().len(),
-        result.errors()
-    )
-}
-
-fn has_warnings_storage(result: &StorageValidationResult, expected_warnings: &[ValidationWarning]) {
-    for expected in expected_warnings {
-        assert!(
-            result.warnings().contains(expected),
-            "Expected warnings to contain {:?}. Found: {:?}",
-            expected,
-            result.warnings()
-        );
-    }
-    assert_eq!(
-        expected_warnings.len(),
-        result.warnings().len(),
-        "Expected {} warnings; found {}: {:?}",
-        expected_warnings.len(),
-        result.warnings().len(),
-        result.warnings()
-    )
-}
-
-fn error_count(expected: usize, result: &ObjectValidationResult) {
-    assert_eq!(
-        expected,
-        result.errors().len(),
-        "Expected {} errors; found {}: {:?}",
-        expected,
-        result.errors().len(),
-        result.errors()
-    )
-}
-
-fn warning_count(expected: usize, result: &ObjectValidationResult) {
-    assert_eq!(
-        expected,
-        result.warnings().len(),
-        "Expected {} warnings; found {}: {:?}",
-        expected,
-        result.warnings().len(),
-        result.warnings()
-    )
-}
-
-fn no_warnings(result: &ObjectValidationResult) {
-    assert!(
-        result.warnings().is_empty(),
-        "Expected no warnings; found: {:?}",
-        result.warnings()
-    )
-}
-
-fn no_errors(result: &ObjectValidationResult) {
-    assert!(
-        result.errors().is_empty(),
-        "Expected no errors; found: {:?}",
-        result.errors()
-    )
-}
-
-fn no_warnings_storage(result: &StorageValidationResult) {
-    assert!(
-        result.warnings().is_empty(),
-        "Expected no warnings; found: {:?}",
-        result.warnings()
-    )
-}
-
-fn no_errors_storage(result: &StorageValidationResult) {
-    assert!(
-        result.errors().is_empty(),
-        "Expected no errors; found: {:?}",
-        result.errors()
-    )
 }
 
 fn official_valid_test(name: &str) -> ObjectValidationResult {
