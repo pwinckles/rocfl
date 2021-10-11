@@ -1,6 +1,6 @@
 [package]
 name = "rocfl"
-version = "1.5.2-pre"
+version = "1.6.0-dev"
 authors = ["Peter Winckles <pwinckles@pm.me>"]
 edition = "2018"
 description= "A Rust CLI for OCFL repositories"
