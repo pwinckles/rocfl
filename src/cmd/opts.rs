@@ -550,6 +550,10 @@ pub struct PurgeCmd {
 /// are reported. When run against the entire repository, the repository structure is validated,
 /// in addition to validating all of the objects in the repository.
 ///
+/// Return code 1 is returned if there were problems performing the validation, but no invalid
+/// objects were identified. Return code 2 is returned if invalid objects were identified. Return
+/// code 0 is returned if all objects were valid, or only warning level issues were identified.
+///
 /// Use '--quiet' to suppress output for valid objects. For example: 'rocfl --quiet validate'
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
@@ -562,7 +566,6 @@ pub struct ValidateCmd {
     #[structopt(short, long)]
     pub no_fixity_check: bool,
 
-    // TODO allow multiple?
     /// IDs of the objects to validate, or paths object roots when used with '--paths'
     #[structopt(name = "OBJ_ID/PATH")]
     pub object_ids: Vec<String>,

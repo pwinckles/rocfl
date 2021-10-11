@@ -5,7 +5,7 @@ use std::slice::Iter;
 use std::str::FromStr;
 use std::vec::IntoIter;
 
-use log::error;
+use log::info;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use strum_macros::Display as EnumDisplay;
@@ -269,7 +269,7 @@ pub struct Validator<S: Storage> {
 }
 
 /// Lazily validates every object in the repository. Each call to `next()` validates another object.
-pub trait IncrementalValidator: Iterator<Item = ObjectValidationResult> {
+pub trait IncrementalValidator: Iterator<Item = Result<ObjectValidationResult>> {
     /// The validation results for the repository's storage root. This is available immediately.
     fn storage_root_result(&self) -> &StorageValidationResult;
 
@@ -1652,7 +1652,7 @@ impl<'a, S: Storage> IncrementalValidator for IncrementalValidatorImpl<'a, S> {
 }
 
 impl<'a, S: Storage> Iterator for IncrementalValidatorImpl<'a, S> {
-    type Item = ObjectValidationResult;
+    type Item = Result<ObjectValidationResult>;
 
     /// Finds the next object in the repository and validates it
     fn next(&mut self) -> Option<Self::Item> {
@@ -1685,13 +1685,10 @@ impl<'a, S: Storage> Iterator for IncrementalValidatorImpl<'a, S> {
                                         )
                                     }
 
-                                    let mut found_obj = false;
-
                                     for entry in &listing {
                                         if self.is_object_root(entry) {
-                                            found_obj = true;
                                             // TODO E081 object ocfl versions must be same or earlier
-                                            match self.validator.validate_object(
+                                            return match self.validator.validate_object(
                                                 None,
                                                 &path,
                                                 self.fixity_check,
@@ -1700,30 +1697,26 @@ impl<'a, S: Storage> Iterator for IncrementalValidatorImpl<'a, S> {
                                                     if let Some(id) = &result.object_id {
                                                         if self.seen_ids.contains(id) {
                                                             self.storage_hierarchy_result.error(
-                                                            ProblemLocation::StorageHierarchy,
-                                                            ErrorCode::E037,
-                                                            format!("Found duplicate object {} at {}", id, path));
+                                                                ProblemLocation::StorageHierarchy,
+                                                                ErrorCode::E037,
+                                                                format!("Found duplicate object {} at {}", id, path));
                                                         } else {
                                                             self.seen_ids.insert(id.clone());
                                                         }
                                                     }
-                                                    return Some(result);
+                                                    Some(Ok(result))
                                                 }
-                                                Err(e) => {
-                                                    error!("{:#}", e);
-                                                    break;
-                                                }
+                                                Err(e) => Some(Err(e))
                                             }
                                         }
                                     }
 
-                                    if !found_obj {
-                                        let dir = Dir::new(path, listing.into_iter());
-                                        self.dir_iters
-                                            .push(self.current_iter.replace(dir).unwrap());
-                                    }
+                                    // no object found -- advance to next directory
+                                    let dir = Dir::new(path, listing.into_iter());
+                                    self.dir_iters
+                                        .push(self.current_iter.replace(dir).unwrap());
                                 }
-                                Err(e) => error!("{:#}", e),
+                                Err(e) => return Some(Err(e))
                             }
                         }
                         Listing::File(name) => {

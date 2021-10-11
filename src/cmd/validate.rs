@@ -12,6 +12,7 @@ use crate::ocfl::{
     ObjectValidationResult, OcflRepo, ProblemLocation, Result, StorageValidationResult,
     ValidationResult,
 };
+use std::process;
 
 const UNKNOWN_ID: &str = "Unknown";
 
@@ -31,8 +32,6 @@ impl Cmd for ValidateCmd {
             self.validate_repo(repo, args, terminate)?;
         }
 
-        // TODO different return code on error/warning?
-
         Ok(())
     }
 }
@@ -47,12 +46,14 @@ impl ValidateCmd {
         let mut has_printed = false;
         let mut obj_count = 0;
         let mut invalid_count = 0;
+        let mut error_validating = false;
 
         for object_id in &self.object_ids {
             let result = if self.paths {
                 match repo.validate_object_at(object_id, !self.no_fixity_check) {
                     Ok(result) => result,
                     Err(e) => {
+                        error_validating = true;
                         error!("{:#}", e);
                         continue;
                     }
@@ -61,6 +62,7 @@ impl ValidateCmd {
                 match repo.validate_object(object_id, !self.no_fixity_check) {
                     Ok(result) => result,
                     Err(e) => {
+                        error_validating = true;
                         error!("{:#}", e);
                         continue;
                     }
@@ -96,6 +98,12 @@ impl ValidateCmd {
             println(format!("  Invalid objects: {}", invalid_count));
         }
 
+        if invalid_count > 0 {
+            process::exit(2);
+        } else if error_validating {
+            process::exit(1);
+        }
+
         Ok(())
     }
 
@@ -110,6 +118,7 @@ impl ValidateCmd {
         let mut obj_count = 0;
         let mut invalid_count = 0;
         let mut has_printed = false;
+        let mut error_validating = false;
 
         if !args.quiet || validator.storage_root_result().has_errors_or_warnings() {
             has_printed = true;
@@ -121,22 +130,31 @@ impl ValidateCmd {
         }
 
         for result in &mut validator {
-            obj_count += 1;
-            if result.has_errors() {
-                invalid_count += 1;
-            }
+            match result {
+                Ok(result) => {
+                    obj_count += 1;
+                    if result.has_errors() {
+                        invalid_count += 1;
+                    }
 
-            if !args.quiet || result.has_errors_or_warnings() {
-                if has_printed {
-                    println("");
-                } else {
-                    has_printed = true;
+                    if !args.quiet || result.has_errors_or_warnings() {
+                        if has_printed {
+                            println("");
+                        } else {
+                            has_printed = true;
+                        }
+
+                        print(DisplayObjectValidationResult {
+                            result: &result,
+                            no_styles: args.no_styles,
+                        })
+                    }
                 }
-
-                print(DisplayObjectValidationResult {
-                    result: &result,
-                    no_styles: args.no_styles,
-                })
+                Err(e) => {
+                    error_validating = true;
+                    error!("{:#}", e);
+                    continue;
+                }
             }
         }
 
@@ -169,6 +187,12 @@ impl ValidateCmd {
         println(format!("  Total objects:   {}", obj_count));
         println(format!("  Invalid objects: {}", invalid_count));
         println(format!("  Storage issues:  {}", storage_errors));
+
+        if invalid_count > 0 || storage_errors > 0 {
+            process::exit(2);
+        } else if error_validating {
+            process::exit(1);
+        }
 
         Ok(())
     }

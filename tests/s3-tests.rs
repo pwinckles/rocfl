@@ -383,6 +383,7 @@ fn validate_valid_object() {
             no_warnings_storage(validator.storage_root_result());
 
             for result in &mut validator {
+                let result = result.unwrap();
                 no_errors(&result);
                 no_warnings(&result);
             }
@@ -473,6 +474,7 @@ fn validate_invalid_object() {
             no_warnings_storage(validator.storage_root_result());
 
             for result in &mut validator {
+                let result = result.unwrap();
                 match result.object_id.as_ref().unwrap().as_ref() {
                     "urn:example:rocfl:s3-object" => {
                         has_errors(&result, &[
