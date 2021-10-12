@@ -151,19 +151,15 @@ impl S3OcflStore {
 
         let mut iter = InventoryIter::new_id_matching(self, object_id, self.closed.clone());
 
-        match iter.next() {
-            Some(inventory) => Ok(inventory),
-            None => Err(not_found(object_id, None)),
-        }
-    }
-
-    fn parse_inventory_optional(&self, object_root: &str) -> Option<Inventory> {
-        match self.parse_inventory(object_root) {
-            Ok(inventory) => inventory,
-            Err(e) => {
-                error!("{:#}", e);
-                None
-            }
+        loop {
+            return match iter.next() {
+                Some(Ok(inventory)) => Ok(inventory),
+                Some(Err(e)) => {
+                    error!("{:#}", e);
+                    continue;
+                }
+                None => Err(not_found(object_id, None)),
+            };
         }
     }
 
@@ -349,7 +345,7 @@ impl OcflStore for S3OcflStore {
     fn iter_inventories<'a>(
         &'a self,
         filter_glob: Option<&str>,
-    ) -> Result<Box<dyn Iterator<Item = Inventory> + 'a>> {
+    ) -> Result<Box<dyn Iterator<Item = Result<Inventory>> + 'a>> {
         self.ensure_open()?;
 
         Ok(Box::new(match filter_glob {
@@ -976,32 +972,30 @@ impl<'a> InventoryIter<'a> {
         }
     }
 
-    fn create_if_matches(&self, object_root: &str) -> Option<Inventory> {
-        match self.store.parse_inventory_optional(object_root) {
-            Some(inventory) => {
+    fn create_if_matches(&self, object_root: &str) -> Option<Result<Inventory>> {
+        match self.store.parse_inventory(object_root) {
+            Ok(Some(inventory)) => {
                 if let Some(id_matcher) = &self.id_matcher {
                     if id_matcher(&inventory.id) {
-                        Some(inventory)
+                        Some(Ok(inventory))
                     } else {
                         None
                     }
                 } else {
-                    Some(inventory)
+                    Some(Ok(inventory))
                 }
             }
-            None => {
-                error!(
-                    "Expected object to exist at {}, but none found.",
-                    object_root
-                );
-                None
-            }
+            Ok(None) => Some(Err(RocflError::NotFound(format!(
+                "Expected object to exist at {}, but none found.",
+                object_root
+            )))),
+            Err(e) => Some(Err(e)),
         }
     }
 }
 
 impl<'a> Iterator for InventoryIter<'a> {
-    type Item = Inventory;
+    type Item = Result<Inventory>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -1027,18 +1021,20 @@ impl<'a> Iterator for InventoryIter<'a> {
                         continue;
                     }
 
-                    match self.store.list_dir(&entry) {
-                        Ok(listing) => {
-                            if is_object_dir(&listing.objects) {
-                                if let Some(inventory) = self.create_if_matches(&entry) {
-                                    return Some(inventory);
-                                }
-                            } else {
-                                self.dir_iters.push(self.current.replace(None).unwrap());
-                                self.current.replace(Some(listing.directories.into_iter()));
-                            }
+                    let listing = match self.store.list_dir(&entry) {
+                        Ok(listing) => listing,
+                        Err(e) => return Some(Err(e)),
+                    };
+
+                    if is_object_dir(&listing.objects) {
+                        match self.create_if_matches(&entry) {
+                            Some(Ok(inventory)) => return Some(Ok(inventory)),
+                            Some(Err(e)) => return Some(Err(e)),
+                            _ => (),
                         }
-                        Err(e) => error!("{:#}", e),
+                    } else {
+                        self.dir_iters.push(self.current.replace(None).unwrap());
+                        self.current.replace(Some(listing.directories.into_iter()));
                     }
                 }
             }

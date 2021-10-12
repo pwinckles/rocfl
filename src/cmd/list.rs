@@ -1,9 +1,11 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
+use std::process;
 use std::sync::atomic::{AtomicBool, Ordering as AOrdering};
 
 use globset::GlobBuilder;
+use log::error;
 
 use crate::cmd::opts::{ListCmd, *};
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, Separator, TableView, TextCell};
@@ -43,8 +45,6 @@ impl ListCmd {
         args: GlobalArgs,
         terminate: &AtomicBool,
     ) -> Result<()> {
-        // TODO Option<Result<>> should be returned from the iter so that the return code can be changed
-
         let iter = if self.staged {
             repo.list_staged_objects(self.object_id.as_deref())?
         } else {
@@ -66,32 +66,45 @@ impl ListCmd {
     fn stream_objects<'a>(
         &self,
         args: GlobalArgs,
-        iter: Box<dyn Iterator<Item = ObjectVersionDetails> + 'a>,
+        iter: Box<dyn Iterator<Item = Result<ObjectVersionDetails>> + 'a>,
     ) {
-        if self.header {
-            let mut header_line = "".to_string();
-
-            if self.long {
-                header_line
-                    .push_str(&paint(args.no_styles, *style::UNDERLINE, VERSION).to_string());
-                header_line.push('\t');
-                header_line
-                    .push_str(&paint(args.no_styles, *style::UNDERLINE, UPDATED).to_string());
-                header_line.push('\t');
-            }
-
-            header_line.push_str(&paint(args.no_styles, *style::UNDERLINE, OBJECT_ID).to_string());
-
-            if self.physical {
-                header_line.push('\t');
-                header_line
-                    .push_str(&paint(args.no_styles, *style::UNDERLINE, VERSION).to_string());
-            }
-
-            println(header_line);
-        }
+        let mut has_errors = false;
+        let mut header_printed = false;
 
         for object in iter {
+            if let Err(e) = object {
+                println!("here");
+                has_errors = true;
+                error!("{:#}", e);
+                continue;
+            }
+
+            if !header_printed && self.header {
+                header_printed = true;
+                let mut header_line = "".to_string();
+
+                if self.long {
+                    header_line
+                        .push_str(&paint(args.no_styles, *style::UNDERLINE, VERSION).to_string());
+                    header_line.push('\t');
+                    header_line
+                        .push_str(&paint(args.no_styles, *style::UNDERLINE, UPDATED).to_string());
+                    header_line.push('\t');
+                }
+
+                header_line
+                    .push_str(&paint(args.no_styles, *style::UNDERLINE, OBJECT_ID).to_string());
+
+                if self.physical {
+                    header_line.push('\t');
+                    header_line
+                        .push_str(&paint(args.no_styles, *style::UNDERLINE, VERSION).to_string());
+                }
+
+                println(header_line);
+            }
+
+            let object = object.unwrap();
             let mut line = "".to_string();
 
             if self.long {
@@ -128,21 +141,32 @@ impl ListCmd {
 
             println(line);
         }
+
+        if has_errors {
+            process::exit(1);
+        }
     }
 
     fn write_objects_to_table<'a>(
         &self,
         args: GlobalArgs,
         terminate: &AtomicBool,
-        iter: Box<dyn Iterator<Item = ObjectVersionDetails> + 'a>,
+        iter: Box<dyn Iterator<Item = Result<ObjectVersionDetails>> + 'a>,
     ) -> Result<()> {
+        let mut has_errors = false;
         let mut objects = Vec::new();
 
         for object in iter {
+            if let Err(e) = object {
+                has_errors = true;
+                error!("{:#}", e);
+                continue;
+            }
+
             if terminate.load(AOrdering::Acquire) {
                 return Ok(());
             }
-            objects.push(object);
+            objects.push(object.unwrap());
         }
 
         objects.sort_unstable_by(|a, b| {
@@ -167,7 +191,13 @@ impl ListCmd {
             table.add_row(object);
         }
 
-        Ok(table.write_stdio()?)
+        table.write_stdio()?;
+
+        if has_errors {
+            process::exit(1);
+        } else {
+            Ok(())
+        }
     }
 
     fn list_object_contents(

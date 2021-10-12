@@ -29,7 +29,7 @@ pub trait OcflStore {
     fn iter_inventories<'a>(
         &'a self,
         filter_glob: Option<&str>,
-    ) -> Result<Box<dyn Iterator<Item = Inventory> + 'a>>;
+    ) -> Result<Box<dyn Iterator<Item = Result<Inventory>> + 'a>>;
 
     /// Writes the specified file to the sink.
     ///

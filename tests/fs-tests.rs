@@ -23,7 +23,7 @@ fn list_all_objects() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
-    let mut objects: Vec<ObjectVersionDetails> = repo.list_objects(None)?.collect();
+    let mut objects: Vec<ObjectVersionDetails> = repo.list_objects(None)?.flatten().collect();
 
     sort_obj_details(&mut objects);
 
@@ -101,7 +101,7 @@ fn list_single_object_from_glob() -> Result<()> {
     let repo_root = create_repo_root("multiple-objects");
     let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
-    let mut objects: Vec<ObjectVersionDetails> = repo.list_objects(Some("*1"))?.collect();
+    let mut objects: Vec<ObjectVersionDetails> = repo.list_objects(Some("*1"))?.flatten().collect();
 
     assert_eq!(1, objects.len());
 
@@ -137,7 +137,7 @@ fn list_empty_repo() -> Result<()> {
     let repo_root = create_repo_root("empty");
     let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
-    let objects: Vec<ObjectVersionDetails> = repo.list_objects(None)?.collect();
+    let objects: Vec<ObjectVersionDetails> = repo.list_objects(None)?.flatten().collect();
 
     assert_eq!(0, objects.len());
 
@@ -158,15 +158,17 @@ fn list_repo_with_invalid_objects() -> Result<()> {
     let iter = repo.list_objects(None)?;
 
     for object in iter {
-        assert_eq!(
-            object,
-            ObjectVersionDetails {
-                id: "o2".to_string(),
-                object_root: object_root.to_string_lossy().to_string(),
-                digest_algorithm: DigestAlgorithm::Sha512,
-                version_details: o2_v3_details()
-            }
-        );
+        if let Ok(object) = object {
+            assert_eq!(
+                object,
+                ObjectVersionDetails {
+                    id: "o2".to_string(),
+                    object_root: object_root.display().to_string(),
+                    digest_algorithm: DigestAlgorithm::Sha512,
+                    version_details: o2_v3_details()
+                }
+            );
+        }
     }
 
     Ok(())
@@ -727,7 +729,7 @@ fn copy_files_into_new_object() -> Result<()> {
     repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)?;
     assert_staged_obj_count(&repo, 1);
 
-    let staged: Vec<ObjectVersionDetails> = repo.list_staged_objects(None)?.collect();
+    let staged: Vec<ObjectVersionDetails> = repo.list_staged_objects(None)?.flatten().collect();
     assert_eq!(object_id, staged.first().unwrap().id);
 
     create_file(&temp, "test.txt", "testing");

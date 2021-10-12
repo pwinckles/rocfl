@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::Local;
-use log::{error, info, warn};
+use log::{info, warn};
 use once_cell::sync::OnceCell;
 #[cfg(feature = "s3")]
 use rusoto_core::Region;
@@ -179,12 +179,12 @@ impl OcflRepo {
     /// Objects are lazy-loaded. An optional glob pattern may be provided to filter the objects
     /// that are returned.
     ///
-    /// The iterator return an error if it encounters a problem accessing an object. This does
+    /// The iterator returns an error if it encounters a problem accessing an object. This does
     /// terminate the iterator; there are still more objects until it returns `None`.
     pub fn list_objects<'a>(
         &'a self,
         filter_glob: Option<&str>,
-    ) -> Result<Box<dyn Iterator<Item = ObjectVersionDetails> + 'a>> {
+    ) -> Result<Box<dyn Iterator<Item = Result<ObjectVersionDetails>> + 'a>> {
         self.ensure_open()?;
 
         let inv_iter = self.store.iter_inventories(filter_glob)?;
@@ -198,12 +198,12 @@ impl OcflRepo {
     /// Objects are lazy-loaded. An optional glob pattern may be provided to filter the objects
     /// that are returned.
     ///
-    /// The iterator return an error if it encounters a problem accessing an object. This does
+    /// The iterator returns an error if it encounters a problem accessing an object. This does
     /// terminate the iterator; there are still more objects until it returns `None`.
     pub fn list_staged_objects<'a>(
         &'a self,
         filter_glob: Option<&str>,
-    ) -> Result<Box<dyn Iterator<Item = ObjectVersionDetails> + 'a>> {
+    ) -> Result<Box<dyn Iterator<Item = Result<ObjectVersionDetails>> + 'a>> {
         self.ensure_open()?;
 
         if !self.staging_root.exists() {
@@ -1233,7 +1233,7 @@ impl OcflRepo {
 
 /// An iterator that adapts the output of a delegate `Inventory` iterator into another type.
 struct InventoryAdapterIter<'a, T> {
-    iter: Box<dyn Iterator<Item = Inventory> + 'a>,
+    iter: Box<dyn Iterator<Item = Result<Inventory>> + 'a>,
     adapter: Box<dyn Fn(Inventory) -> Result<T>>,
 }
 
@@ -1241,7 +1241,7 @@ impl<'a, T> InventoryAdapterIter<'a, T> {
     /// Creates a new `InventoryAdapterIter` that applies the `adapter` closure to the output
     /// of every `next()` call.
     fn new(
-        iter: Box<dyn Iterator<Item = Inventory> + 'a>,
+        iter: Box<dyn Iterator<Item = Result<Inventory>> + 'a>,
         adapter: impl Fn(Inventory) -> Result<T> + 'a + 'static,
     ) -> Self {
         Self {
@@ -1252,18 +1252,16 @@ impl<'a, T> InventoryAdapterIter<'a, T> {
 }
 
 impl<'a, T> Iterator for InventoryAdapterIter<'a, T> {
-    type Item = T;
+    type Item = Result<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next() {
             None => None,
-            Some(inventory) => match self.adapter.deref()(inventory) {
-                Ok(adapted) => Some(adapted),
-                Err(e) => {
-                    error!("{:#}", e);
-                    self.next()
-                }
+            Some(Ok(inventory)) => match self.adapter.deref()(inventory) {
+                Ok(adapted) => Some(Ok(adapted)),
+                Err(e) => Some(Err(e)),
             },
+            Some(Err(e)) => Some(Err(e)),
         }
     }
 }

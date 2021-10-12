@@ -149,14 +149,20 @@ impl FsOcflStore {
         let mut iter =
             InventoryIter::new_id_matching(&self.storage_root, object_id, self.closed.clone())?;
 
-        match iter.next() {
-            Some(inventory) => {
-                if let Ok(mut cache) = self.id_path_cache.write() {
-                    cache.insert(object_id.to_string(), inventory.object_root.clone());
+        loop {
+            return match iter.next() {
+                Some(Ok(inventory)) => {
+                    if let Ok(mut cache) = self.id_path_cache.write() {
+                        cache.insert(object_id.to_string(), inventory.object_root.clone());
+                    }
+                    Ok(inventory)
                 }
-                Ok(inventory)
-            }
-            None => Err(not_found(object_id, None)),
+                Some(Err(e)) => {
+                    error!("{:#}", e);
+                    continue;
+                }
+                None => Err(not_found(object_id, None)),
+            };
         }
     }
 
@@ -246,7 +252,7 @@ impl OcflStore for FsOcflStore {
     fn iter_inventories<'a>(
         &'a self,
         filter_glob: Option<&str>,
-    ) -> Result<Box<dyn Iterator<Item = Inventory> + 'a>> {
+    ) -> Result<Box<dyn Iterator<Item = Result<Inventory>> + 'a>> {
         self.ensure_open()?;
 
         Ok(Box::new(match filter_glob {
@@ -738,23 +744,27 @@ impl InventoryIter {
         })
     }
 
-    fn create_if_matches<P: AsRef<Path>>(&self, object_root: P) -> Option<Inventory> {
+    fn create_if_matches<P: AsRef<Path>>(&self, object_root: P) -> Option<Result<Inventory>> {
         let inventory_path = paths::inventory_path(&object_root);
 
         if self.id_matcher.is_some() {
-            if let Some(object_id) = self.extract_object_id(&inventory_path) {
-                if self.id_matcher.as_ref().unwrap().deref()(&object_id) {
-                    return parse_inventory_optional(object_root, &self.root);
+            match self.extract_object_id(&inventory_path) {
+                Some(Ok(object_id)) => {
+                    if self.id_matcher.as_ref().unwrap().deref()(&object_id) {
+                        Some(parse_inventory(object_root, &self.root))
+                    } else {
+                        None
+                    }
                 }
+                Some(Err(e)) => Some(Err(e)),
+                None => None,
             }
         } else {
-            return parse_inventory_optional(object_root, &self.root);
+            Some(parse_inventory(object_root, &self.root))
         }
-
-        None
     }
 
-    fn extract_object_id<P: AsRef<Path>>(&self, path: P) -> Option<String> {
+    fn extract_object_id<P: AsRef<Path>>(&self, path: P) -> Option<Result<String>> {
         let mut matches: Vec<String> = vec![];
 
         let result = Searcher::new().search_path(
@@ -769,29 +779,25 @@ impl InventoryIter {
         );
 
         if let Err(e) = result {
-            error!(
+            Some(Err(RocflError::General(format!(
                 "Failed to locate object ID in inventory at {}: {:#}",
-                path.as_ref().to_string_lossy(),
+                path.as_ref().display(),
                 e
-            );
-            None
+            ))))
         } else {
             match matches.get(0) {
-                Some(id) => Some(id.to_string()),
-                None => {
-                    error!(
-                        "Failed to locate object ID in inventory at {}",
-                        path.as_ref().to_string_lossy()
-                    );
-                    None
-                }
+                Some(id) => Some(Ok(id.to_string())),
+                None => Some(Err(RocflError::General(format!(
+                    "Failed to locate object ID in inventory at {}",
+                    path.as_ref().display()
+                )))),
             }
         }
     }
 }
 
 impl Iterator for InventoryIter {
-    type Item = Inventory;
+    type Item = Result<Inventory>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -812,37 +818,42 @@ impl Iterator for InventoryIter {
                 None => {
                     self.current.replace(None);
                 }
-                Some(Err(e)) => error!("{:#}", e),
-                Some(Ok(entry)) => match entry.file_type() {
-                    Err(e) => error!("{:#}", e),
-                    Ok(ftype) if ftype.is_dir() => {
+                Some(Err(e)) => return Some(Err(e.into())),
+                Some(Ok(entry)) => {
+                    let ftype = match entry.file_type() {
+                        Ok(ftype) => ftype,
+                        Err(e) => return Some(Err(e.into())),
+                    };
+
+                    if ftype.is_dir() {
                         let path = entry.path();
 
                         if path.file_name().unwrap_or_default() == EXTENSIONS_DIR {
                             continue;
                         }
 
-                        match is_object_root(&path) {
-                            Ok(is_root) if is_root => {
-                                if let Some(inventory) = self.create_if_matches(&path) {
-                                    return Some(inventory);
-                                }
+                        let is_object_root = match is_object_root(&path) {
+                            Ok(is_object_root) => is_object_root,
+                            Err(e) => return Some(Err(e)),
+                        };
+
+                        if is_object_root {
+                            match self.create_if_matches(&path) {
+                                Some(Ok(inventory)) => return Some(Ok(inventory)),
+                                Some(Err(e)) => return Some(Err(e)),
+                                _ => (),
                             }
-                            Ok(is_root) if !is_root => {
-                                self.dir_iters.push(self.current.replace(None).unwrap());
-                                match fs::read_dir(&path) {
-                                    Ok(next) => {
-                                        self.current.replace(Some(next));
-                                    }
-                                    Err(e) => error!("{:#}", e),
+                        } else {
+                            self.dir_iters.push(self.current.replace(None).unwrap());
+                            match fs::read_dir(&path) {
+                                Ok(next) => {
+                                    self.current.replace(Some(next));
                                 }
+                                Err(e) => return Some(Err(e.into())),
                             }
-                            Err(e) => error!("{:#}", e),
-                            _ => unreachable!(),
                         }
                     }
-                    _ => (),
-                },
+                }
             }
         }
     }
@@ -917,20 +928,6 @@ fn is_object_root<P: AsRef<Path>>(path: P) -> Result<bool> {
         }
     }
     Ok(false)
-}
-
-fn parse_inventory_optional<A, B>(object_root: A, storage_root: B) -> Option<Inventory>
-where
-    A: AsRef<Path>,
-    B: AsRef<Path>,
-{
-    match parse_inventory(object_root, storage_root) {
-        Ok(inventory) => Some(inventory),
-        Err(e) => {
-            error!("{:#}", e);
-            None
-        }
-    }
 }
 
 /// Parses the HEAD inventory of the OCFL object that's rooted in the specified directory.

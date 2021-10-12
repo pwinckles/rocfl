@@ -20,6 +20,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   immediately display results so long as they do not need to be
   displayed in a table, that is `-l` or `-p` are not specified or `-t`
   is specified
+- `ls` now returns `1` if it encounters any errors while listing objects
 
 ## [1.5.2] - 2021-07-15
 
