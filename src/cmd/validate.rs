@@ -88,11 +88,11 @@ impl ValidateCmd {
             }
         }
 
-        if has_printed {
-            println("");
-        }
-
         if self.object_ids.len() > 1 {
+            if has_printed {
+                println("");
+            }
+
             println(paint(args.no_styles, *style::BOLD, "Summary:"));
             println(format!("  Total objects:   {}", obj_count));
             println(format!("  Invalid objects: {}", invalid_count));
