@@ -147,7 +147,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Initial release
 
 <!-- next-url -->
-[Unreleased]: https://github.com/assert-rs/predicates-rs/compare/v2.0.3...HEAD
+[Unreleased]: https://github.com/pwinckles/rocfl/compare/v1.5.2...HEAD
 [1.5.2]: https://github.com/pwinckles/rocfl/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/pwinckles/rocfl/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/pwinckles/rocfl/compare/v1.4.0...v1.5.0
