@@ -6,7 +6,8 @@ The format is based on [Keep a
 Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+<!-- next-header -->
+## [Unreleased] - ReleaseDate
 
 ### Added
 
@@ -144,3 +145,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Initial release
+
+<!-- next-url -->
+[Unreleased]: https://github.com/assert-rs/predicates-rs/compare/v2.0.3...HEAD
+[1.5.2]: https://github.com/pwinckles/rocfl/compare/v1.5.1...v1.5.2
+[1.5.1]: https://github.com/pwinckles/rocfl/compare/v1.5.0...v1.5.1
+[1.5.0]: https://github.com/pwinckles/rocfl/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/pwinckles/rocfl/compare/v1.3.1...v1.4.0
+[1.3.3]: https://github.com/pwinckles/rocfl/compare/v1.3.1...v1.3.3
+[1.3.2]: https://github.com/pwinckles/rocfl/compare/v1.3.1...v1.3.2
+[1.3.1]: https://github.com/pwinckles/rocfl/compare/v1.3.0...v1.3.1
+[1.3.0]: https://github.com/pwinckles/rocfl/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/pwinckles/rocfl/compare/v1.1.2...v1.2.0
+[1.1.2]: https://github.com/pwinckles/rocfl/compare/v1.1.1...v1.1.2
+[1.1.1]: https://github.com/pwinckles/rocfl/compare/v1.1.1...v1.1.1
+[1.1.0]: https://github.com/pwinckles/rocfl/compare/v1.0.3...v1.1.0
+[1.0.3]: https://github.com/pwinckles/rocfl/compare/v1.0.2...v1.0.3
+[1.0.2]: https://github.com/pwinckles/rocfl/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/pwinckles/rocfl/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/pwinckles/rocfl/releases/tag/v1.0.0
