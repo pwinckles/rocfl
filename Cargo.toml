@@ -2,7 +2,7 @@
 name = "rocfl"
 version = "1.6.1-dev"
 authors = ["Peter Winckles <pwinckles@pm.me>"]
-edition = "2018"
+edition = "2021"
 description= "A Rust CLI for OCFL repositories"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
