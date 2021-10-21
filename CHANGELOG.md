@@ -9,6 +9,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+### Fixed
+
+- Purge confirmation was not being displayed
+
 ## [1.6.0] - 2021-10-12
 
 ### Added

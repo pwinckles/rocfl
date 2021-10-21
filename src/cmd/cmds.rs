@@ -1,5 +1,6 @@
 use std::convert::TryInto;
 use std::io;
+use std::io::Write;
 use std::sync::atomic::AtomicBool;
 
 use log::info;
@@ -229,6 +230,7 @@ impl Cmd for PurgeCmd {
                 "Permanently delete '{}'? This cannot be undone. [y/N]: ",
                 self.object_id
             ));
+            let _ = io::stdout().flush();
             let mut response = String::new();
             io::stdin().read_line(&mut response)?;
             if !response.trim().eq_ignore_ascii_case("y") {
