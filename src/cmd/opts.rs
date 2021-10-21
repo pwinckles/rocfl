@@ -568,6 +568,9 @@ pub struct ValidateCmd {
     #[structopt(short, long)]
     pub no_fixity_check: bool,
 
+    // TODO use a different option to suppress valid and/or warning objects
+    // TODO add a flag for excluding specific codes
+
     /// IDs of the objects to validate, or paths object roots when used with '--paths'
     #[structopt(name = "OBJ_ID/PATH")]
     pub object_ids: Vec<String>,
