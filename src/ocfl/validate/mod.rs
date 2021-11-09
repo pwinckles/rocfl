@@ -10,7 +10,7 @@ use std::vec::IntoIter;
 use log::info;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use strum_macros::Display as EnumDisplay;
+use strum_macros::{Display as EnumDisplay, EnumString};
 
 use crate::ocfl::consts::*;
 use crate::ocfl::digest::{HexDigest, MultiDigestWriter};
@@ -62,7 +62,7 @@ pub fn validate_content_dir(content_dir: &str) -> Result<()> {
 
 /// OCFL validation codes for errors: https://ocfl.io/1.0/spec/validation-codes.html
 #[allow(dead_code)]
-#[derive(Debug, EnumDisplay, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, EnumDisplay, EnumString, Copy, Clone, Eq, PartialEq)]
 pub enum ErrorCode {
     E001,
     E002,
@@ -169,7 +169,7 @@ pub enum ErrorCode {
 
 /// OCFL validation codes for warnings: https://ocfl.io/1.0/spec/validation-codes.html
 #[allow(dead_code)]
-#[derive(Debug, EnumDisplay, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, EnumDisplay, EnumString, Copy, Clone, Eq, PartialEq)]
 pub enum WarnCode {
     W001,
     W002,
@@ -206,6 +206,12 @@ pub trait ValidationResult {
 
     /// The list of identified warnings
     fn warnings(&self) -> &[ValidationWarning];
+
+    /// The list of identified errors
+    fn errors_mut(&mut self) -> &mut Vec<ValidationError>;
+
+    /// The list of identified warnings
+    fn warnings_mut(&mut self) -> &mut Vec<ValidationWarning>;
 
     /// Adds a new error
     fn error(&mut self, location: ProblemLocation, code: ErrorCode, message: String);
@@ -279,6 +285,13 @@ pub trait IncrementalValidator: Iterator<Item = Result<ObjectValidationResult>> 
     /// The validation results for the repository's hierarchy. This is available _after_ every
     /// object has been validated.
     fn storage_hierarchy_result(&self) -> &StorageValidationResult;
+
+    /// The validation results for the repository's storage root. This is available immediately.
+    fn storage_root_result_mut(&mut self) -> &mut StorageValidationResult;
+
+    /// The validation results for the repository's hierarchy. This is available _after_ every
+    /// object has been validated.
+    fn storage_hierarchy_result_mut(&mut self) -> &mut StorageValidationResult;
 }
 
 /// Lazily validates every object in the repository. Each call to `next()` validates another object.
@@ -359,6 +372,14 @@ impl ValidationResult for StorageValidationResult {
         &self.warnings
     }
 
+    fn errors_mut(&mut self) -> &mut Vec<ValidationError> {
+        &mut self.errors
+    }
+
+    fn warnings_mut(&mut self) -> &mut Vec<ValidationWarning> {
+        &mut self.warnings
+    }
+
     fn error(&mut self, location: ProblemLocation, code: ErrorCode, message: String) {
         self.errors
             .push(ValidationError::new(location, code, message));
@@ -423,6 +444,14 @@ impl ValidationResult for ObjectValidationResult {
 
     fn warnings(&self) -> &[ValidationWarning] {
         &self.warnings
+    }
+
+    fn errors_mut(&mut self) -> &mut Vec<ValidationError> {
+        &mut self.errors
+    }
+
+    fn warnings_mut(&mut self) -> &mut Vec<ValidationWarning> {
+        &mut self.warnings
     }
 
     // TODO I think there's a clever way around the string formatting issue in the book
@@ -1676,6 +1705,17 @@ impl<'a, S: Storage> IncrementalValidator for IncrementalValidatorImpl<'a, S> {
     /// object has been validated.
     fn storage_hierarchy_result(&self) -> &StorageValidationResult {
         &self.storage_hierarchy_result
+    }
+
+    /// The validation results for the repository's storage root. This is available immediately.
+    fn storage_root_result_mut(&mut self) -> &mut StorageValidationResult {
+        &mut self.storage_root_result
+    }
+
+    /// The validation results for the repository's hierarchy. This is available _after_ every
+    /// object has been validated.
+    fn storage_hierarchy_result_mut(&mut self) -> &mut StorageValidationResult {
+        &mut self.storage_hierarchy_result
     }
 }
 

@@ -134,7 +134,13 @@ Validate an entire repository without performing content fixity checks
 and only reporting errors:
 
 ``` console
-rocfl -q validate -n
+rocfl validate -n -l Error
+```
+
+Validate an entire repository and suppress warning `W004`:
+
+``` console
+rocfl validate -w W004
 ```
 
 Validate a specific object:

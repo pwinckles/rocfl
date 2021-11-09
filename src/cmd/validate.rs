@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 use ansi_term::{ANSIGenericString, Style};
 use log::error;
 
-use crate::cmd::opts::ValidateCmd;
+use crate::cmd::opts::{Level, ValidateCmd};
 use crate::cmd::{paint, print, println, style, Cmd, GlobalArgs};
 use crate::config::Config;
 use crate::ocfl::{
@@ -49,7 +49,7 @@ impl ValidateCmd {
         let mut error_validating = false;
 
         for object_id in &self.object_ids {
-            let result = if self.paths {
+            let mut result = if self.paths {
                 match repo.validate_object_at(object_id, !self.no_fixity_check) {
                     Ok(result) => result,
                     Err(e) => {
@@ -69,12 +69,14 @@ impl ValidateCmd {
                 }
             };
 
+            self.suppress_errors_warnings(&mut result);
+
             obj_count += 1;
             if result.has_errors() {
                 invalid_count += 1;
             }
 
-            if !args.quiet || result.has_errors_or_warnings() {
+            if self.should_print(&result) {
                 if has_printed {
                     println("");
                 } else {
@@ -84,6 +86,7 @@ impl ValidateCmd {
                 print(DisplayObjectValidationResult {
                     result: &result,
                     no_styles: args.no_styles,
+                    level: self.level,
                 })
             }
         }
@@ -120,24 +123,29 @@ impl ValidateCmd {
         let mut has_printed = false;
         let mut error_validating = false;
 
-        if !args.quiet || validator.storage_root_result().has_errors_or_warnings() {
+        self.suppress_errors_warnings(validator.storage_hierarchy_result_mut());
+
+        if self.should_print(validator.storage_root_result()) {
             has_printed = true;
             print(DisplayStorageValidationResult {
                 result: validator.storage_root_result(),
                 location: "root",
                 no_styles: args.no_styles,
+                level: self.level,
             });
         }
 
         for result in &mut validator {
             match result {
-                Ok(result) => {
+                Ok(mut result) => {
+                    self.suppress_errors_warnings(&mut result);
+
                     obj_count += 1;
                     if result.has_errors() {
                         invalid_count += 1;
                     }
 
-                    if !args.quiet || result.has_errors_or_warnings() {
+                    if self.should_print(&result) {
                         if has_printed {
                             println("");
                         } else {
@@ -147,6 +155,7 @@ impl ValidateCmd {
                         print(DisplayObjectValidationResult {
                             result: &result,
                             no_styles: args.no_styles,
+                            level: self.level,
                         })
                     }
                 }
@@ -158,11 +167,9 @@ impl ValidateCmd {
             }
         }
 
-        if !args.quiet
-            || validator
-                .storage_hierarchy_result()
-                .has_errors_or_warnings()
-        {
+        self.suppress_errors_warnings(validator.storage_hierarchy_result_mut());
+
+        if self.should_print(validator.storage_hierarchy_result()) {
             if has_printed {
                 println("");
             } else {
@@ -173,6 +180,7 @@ impl ValidateCmd {
                 result: validator.storage_hierarchy_result(),
                 location: "hierarchy",
                 no_styles: args.no_styles,
+                level: self.level,
             });
         }
 
@@ -195,6 +203,23 @@ impl ValidateCmd {
         }
 
         Ok(())
+    }
+
+    fn should_print<T: ValidationResult>(&self, result: &T) -> bool {
+        result.has_errors()
+            || (result.has_warnings() && self.level != Level::Error)
+            || self.level == Level::Info
+    }
+
+    /// Removes errors and warnings from a validation result if the user indicated they should be
+    /// suppressed
+    fn suppress_errors_warnings<T: ValidationResult>(&self, result: &mut T) {
+        result
+            .errors_mut()
+            .retain(|e| !self.suppress_error.contains(&e.code));
+        result
+            .warnings_mut()
+            .retain(|w| !self.suppress_warning.contains(&w.code));
     }
 }
 
@@ -222,6 +247,7 @@ struct DisplayStorageValidationResult<'a> {
     result: &'a StorageValidationResult,
     location: &'a str,
     no_styles: bool,
+    level: Level,
 }
 
 impl<'a> Painter for DisplayStorageValidationResult<'a> {
@@ -268,18 +294,20 @@ impl<'a> Display for DisplayStorageValidationResult<'a> {
                 )?;
             }
 
-            if self.result.has_warnings() {
-                writeln!(f, "  {}:", self.paint(*style::YELLOW, "Warnings"))?;
-            }
-            for (i, warning) in self.result.warnings().iter().enumerate() {
-                writeln!(
-                    f,
-                    "    {:width$}. [{}] {}",
-                    i + 1,
-                    warning.code,
-                    warning.text,
-                    width = warning_width
-                )?;
+            if self.level != Level::Error {
+                if self.result.has_warnings() {
+                    writeln!(f, "  {}:", self.paint(*style::YELLOW, "Warnings"))?;
+                }
+                for (i, warning) in self.result.warnings().iter().enumerate() {
+                    writeln!(
+                        f,
+                        "    {:width$}. [{}] {}",
+                        i + 1,
+                        warning.code,
+                        warning.text,
+                        width = warning_width
+                    )?;
+                }
             }
         } else {
             writeln!(
@@ -298,6 +326,7 @@ impl<'a> Display for DisplayStorageValidationResult<'a> {
 struct DisplayObjectValidationResult<'a> {
     result: &'a ObjectValidationResult,
     no_styles: bool,
+    level: Level,
 }
 
 impl<'a> DisplayObjectValidationResult<'a> {
@@ -356,19 +385,21 @@ impl<'a> Display for DisplayObjectValidationResult<'a> {
                 )?;
             }
 
-            if self.result.has_warnings() {
-                writeln!(f, "  {}:", self.paint(*style::YELLOW, "Warnings"))?;
-            }
-            for (i, warning) in self.result.warnings().iter().enumerate() {
-                writeln!(
-                    f,
-                    "    {:width$}. [{}] ({}) {}",
-                    i + 1,
-                    warning.code,
-                    display_location(warning.location),
-                    warning.text,
-                    width = warning_width
-                )?;
+            if self.level != Level::Error {
+                if self.result.has_warnings() {
+                    writeln!(f, "  {}:", self.paint(*style::YELLOW, "Warnings"))?;
+                }
+                for (i, warning) in self.result.warnings().iter().enumerate() {
+                    writeln!(
+                        f,
+                        "    {:width$}. [{}] ({}) {}",
+                        i + 1,
+                        warning.code,
+                        display_location(warning.location),
+                        warning.text,
+                        width = warning_width
+                    )?;
+                }
             }
         } else {
             writeln!(

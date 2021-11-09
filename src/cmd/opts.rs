@@ -12,7 +12,7 @@ use structopt::StructOpt;
 use strum::VariantNames;
 use strum_macros::{Display as EnumDisplay, EnumString, EnumVariantNames};
 
-use crate::ocfl::VersionNum;
+use crate::ocfl::{ErrorCode, VersionNum, WarnCode};
 
 /// A CLI for OCFL repositories
 ///
@@ -556,7 +556,8 @@ pub struct PurgeCmd {
 /// objects were identified. Return code 2 is returned if invalid objects were identified. Return
 /// code 0 is returned if all objects were valid, or only warning level issues were identified.
 ///
-/// Use '--quiet' to suppress output for valid objects. For example: 'rocfl --quiet validate'
+/// If warnings or errors are suppressed and an object has no remaining issues after suppression,
+/// then the object is reported as valid.
 #[derive(Debug, StructOpt)]
 #[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
 pub struct ValidateCmd {
@@ -568,8 +569,38 @@ pub struct ValidateCmd {
     #[structopt(short, long)]
     pub no_fixity_check: bool,
 
-    // TODO use a different option to suppress valid and/or warning objects
-    // TODO add a flag for excluding specific codes
+    /// The log level to use when printing validation results. 'Warn' suppresses output from valid
+    /// objects; 'Error' suppresses valid objects and warnings.
+    #[structopt(short,
+        long,
+        value_name = "LEVEL",
+        default_value = "Info",
+        possible_values = &Level::variants(),
+        case_insensitive = true
+    )]
+    pub level: Level,
+
+    /// Do not report the specified warning
+    #[structopt(
+        short = "w",
+        long,
+        value_name = "CODE",
+        multiple = true,
+        number_of_values = 1,
+        case_insensitive = true
+    )]
+    pub suppress_warning: Vec<WarnCode>,
+
+    /// Do not report the specified error
+    #[structopt(
+        short = "e",
+        long,
+        value_name = "CODE",
+        multiple = true,
+        number_of_values = 1,
+        case_insensitive = true
+    )]
+    pub suppress_error: Vec<ErrorCode>,
 
     /// IDs of the objects to validate, or paths object roots when used with '--paths'
     #[structopt(name = "OBJ_ID/PATH")]
@@ -613,6 +644,15 @@ arg_enum! {
     pub enum DigestAlgorithm {
         Sha256,
         Sha512,
+    }
+}
+
+arg_enum! {
+    #[derive(Debug, Clone, Copy, Eq, PartialEq)]
+    pub enum Level {
+        Info,
+        Warn,
+        Error,
     }
 }
 

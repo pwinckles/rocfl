@@ -10,6 +10,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+
+- Validation warnings and errors can now be suppressed using
+  `--suppress-warning` and `--suppress-error`
+
+### Changed
+
+- `validate` now uses `--level` to determine what is printed
+
 ## [1.6.1] - 2021-10-21
 
 ### Fixed
