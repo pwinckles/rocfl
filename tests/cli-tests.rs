@@ -248,15 +248,9 @@ fn validate_repo_sanity() {
 fn validate_repo_quiet() {
     let root = validate_repo_root("invalid");
 
-    let mut rocfl = Command::cargo_bin("rocfl").unwrap();
-    rocfl
-        .arg("-S")
-        .arg("-q")
-        .arg("-r")
-        .arg(root.to_string_lossy().as_ref())
-        .arg("validate");
-
-    let _ = rocfl
+    let _ = validate(&root)
+        .arg("-l")
+        .arg("error")
         .assert()
         .stdout(contains_str("Storage root is invalid"))
         .stdout(contains_str("urn:example:rocfl:obj-2 is invalid"))
