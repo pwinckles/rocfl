@@ -41,8 +41,8 @@ uriparse = "0.6"
 
 # Enum features
 enum_dispatch = "0.3"
-strum = "0.21"
-strum_macros = "0.21"
+strum = "0.22"
+strum_macros = "0.22"
 
 # Path handling
 pathdiff = "0.2"
@@ -58,7 +58,7 @@ atty = "0.2"
 
 # Logging
 log = "0.4"
-env_logger = "0.8"
+env_logger = "0.9"
 
 # Digests
 digest = "0.9"
@@ -75,7 +75,7 @@ grep-searcher = "0.1"
 grep-regex = "0.1"
 
 # Config
-directories = "3"
+directories = "4"
 toml = "0.5"
 edit = "0.1"
 
