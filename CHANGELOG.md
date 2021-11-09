@@ -10,6 +10,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased] - ReleaseDate
 
+## [1.6.2] - 2021-11-09
+
 ### Added
 
 - Validation warnings and errors can now be suppressed using
@@ -165,7 +167,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Initial release
 
 <!-- next-url -->
-[Unreleased]: https://github.com/pwinckles/rocfl/compare/v1.6.1...HEAD
+[Unreleased]: https://github.com/pwinckles/rocfl/compare/v1.6.2...HEAD
+[1.6.2]: https://github.com/pwinckles/rocfl/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/pwinckles/rocfl/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/pwinckles/rocfl/compare/v1.5.2...v1.6.0
 [1.5.2]: https://github.com/pwinckles/rocfl/compare/v1.5.1...v1.5.2
