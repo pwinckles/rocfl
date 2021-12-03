@@ -317,6 +317,7 @@ struct Dir<'a> {
 
 /// The result of deserializing an inventory
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 enum ParseResult {
     /// Indicates the inventory was successfully deserialized and no errors were detected. The
     /// `ParseValidationResult` may still contain warnings.

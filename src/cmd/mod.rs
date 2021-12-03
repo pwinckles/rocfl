@@ -138,7 +138,7 @@ pub fn init_repo(cmd: &InitCmd, args: &RocflArgs, config: &Config) -> Result<()>
     } else {
         let _ = OcflRepo::init_fs_repo(
             config.root.as_ref().unwrap(),
-            config.staging_root.as_ref().map(|r| Path::new(r)),
+            config.staging_root.as_ref().map(Path::new),
             create_layout(cmd.layout, cmd.config_file.as_deref())?,
         )?;
     }
@@ -165,7 +165,7 @@ fn create_repo(config: &Config) -> Result<OcflRepo> {
     } else {
         OcflRepo::fs_repo(
             config.root.as_ref().unwrap(),
-            config.staging_root.as_ref().map(|r| Path::new(r)),
+            config.staging_root.as_ref().map(Path::new),
         )
     }
 }
