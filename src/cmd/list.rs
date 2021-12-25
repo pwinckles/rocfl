@@ -73,7 +73,6 @@ impl ListCmd {
 
         for object in iter {
             if let Err(e) = object {
-                println!("here");
                 has_errors = true;
                 error!("{:#}", e);
                 continue;
