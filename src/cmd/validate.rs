@@ -1,13 +1,14 @@
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
-use std::process;
+use std::io::{BufWriter, Write};
 use std::sync::atomic::AtomicBool;
+use std::{io, process};
 
 use ansi_term::{ANSIGenericString, Style};
 use log::error;
 
 use crate::cmd::opts::{Level, ValidateCmd};
-use crate::cmd::{paint, print, println, style, Cmd, GlobalArgs};
+use crate::cmd::{paint, style, Cmd, GlobalArgs};
 use crate::config::Config;
 use crate::ocfl::{
     ObjectValidationResult, OcflRepo, ProblemLocation, Result, StorageValidationResult,
@@ -43,6 +44,7 @@ impl ValidateCmd {
         args: GlobalArgs,
         _terminate: &AtomicBool,
     ) -> Result<()> {
+        let mut out = BufWriter::new(io::stdout());
         let mut has_printed = false;
         let mut obj_count = 0;
         let mut invalid_count = 0;
@@ -54,6 +56,7 @@ impl ValidateCmd {
                     Ok(result) => result,
                     Err(e) => {
                         error_validating = true;
+                        let _ = out.flush();
                         error!("{:#}", e);
                         continue;
                     }
@@ -63,6 +66,7 @@ impl ValidateCmd {
                     Ok(result) => result,
                     Err(e) => {
                         error_validating = true;
+                        let _ = out.flush();
                         error!("{:#}", e);
                         continue;
                     }
@@ -78,28 +82,38 @@ impl ValidateCmd {
 
             if self.should_print(&result) {
                 if has_printed {
-                    println("");
+                    let _ = writeln!(out);
                 } else {
                     has_printed = true;
                 }
 
-                print(DisplayObjectValidationResult {
-                    result: &result,
-                    no_styles: args.no_styles,
-                    level: self.level,
-                })
+                let _ = write!(
+                    out,
+                    "{}",
+                    DisplayObjectValidationResult {
+                        result: &result,
+                        no_styles: args.no_styles,
+                        level: self.level,
+                    }
+                );
+
+                if atty::is(atty::Stream::Stdout) {
+                    let _ = out.flush();
+                }
             }
         }
 
         if self.object_ids.len() > 1 {
             if has_printed {
-                println("");
+                let _ = writeln!(out);
             }
 
-            println(paint(args.no_styles, *style::BOLD, "Summary:"));
-            println(format!("  Total objects:   {}", obj_count));
-            println(format!("  Invalid objects: {}", invalid_count));
+            let _ = writeln!(out, "{}", paint(args.no_styles, *style::BOLD, "Summary:"));
+            let _ = writeln!(out, "  Total objects:   {}", obj_count);
+            let _ = writeln!(out, "  Invalid objects: {}", invalid_count);
         }
+
+        let _ = out.flush();
 
         if invalid_count > 0 {
             process::exit(2);
@@ -117,6 +131,7 @@ impl ValidateCmd {
         _terminate: &AtomicBool,
     ) -> Result<()> {
         let mut validator = repo.validate_repo(!self.no_fixity_check)?;
+        let mut out = BufWriter::new(io::stdout());
 
         let mut obj_count = 0;
         let mut invalid_count = 0;
@@ -127,12 +142,16 @@ impl ValidateCmd {
 
         if self.should_print(validator.storage_root_result()) {
             has_printed = true;
-            print(DisplayStorageValidationResult {
-                result: validator.storage_root_result(),
-                location: "root",
-                no_styles: args.no_styles,
-                level: self.level,
-            });
+            let _ = write!(
+                out,
+                "{}",
+                DisplayStorageValidationResult {
+                    result: validator.storage_root_result(),
+                    location: "root",
+                    no_styles: args.no_styles,
+                    level: self.level,
+                }
+            );
         }
 
         for result in &mut validator {
@@ -147,20 +166,29 @@ impl ValidateCmd {
 
                     if self.should_print(&result) {
                         if has_printed {
-                            println("");
+                            let _ = writeln!(out);
                         } else {
                             has_printed = true;
                         }
 
-                        print(DisplayObjectValidationResult {
-                            result: &result,
-                            no_styles: args.no_styles,
-                            level: self.level,
-                        })
+                        let _ = write!(
+                            out,
+                            "{}",
+                            DisplayObjectValidationResult {
+                                result: &result,
+                                no_styles: args.no_styles,
+                                level: self.level,
+                            }
+                        );
+
+                        if atty::is(atty::Stream::Stdout) {
+                            let _ = out.flush();
+                        }
                     }
                 }
                 Err(e) => {
                     error_validating = true;
+                    let _ = out.flush();
                     error!("{:#}", e);
                     continue;
                 }
@@ -171,30 +199,36 @@ impl ValidateCmd {
 
         if self.should_print(validator.storage_hierarchy_result()) {
             if has_printed {
-                println("");
+                let _ = writeln!(out);
             } else {
                 has_printed = true;
             }
 
-            print(DisplayStorageValidationResult {
-                result: validator.storage_hierarchy_result(),
-                location: "hierarchy",
-                no_styles: args.no_styles,
-                level: self.level,
-            });
+            let _ = write!(
+                out,
+                "{}",
+                DisplayStorageValidationResult {
+                    result: validator.storage_hierarchy_result(),
+                    location: "hierarchy",
+                    no_styles: args.no_styles,
+                    level: self.level,
+                }
+            );
         }
 
         let storage_errors = validator.storage_root_result().errors().len()
             + validator.storage_hierarchy_result().errors().len();
 
         if has_printed {
-            println("");
+            let _ = writeln!(out);
         }
 
-        println(paint(args.no_styles, *style::BOLD, "Summary:"));
-        println(format!("  Total objects:   {}", obj_count));
-        println(format!("  Invalid objects: {}", invalid_count));
-        println(format!("  Storage issues:  {}", storage_errors));
+        let _ = writeln!(out, "{}", paint(args.no_styles, *style::BOLD, "Summary:"));
+        let _ = writeln!(out, "  Total objects:   {}", obj_count);
+        let _ = writeln!(out, "  Invalid objects: {}", invalid_count);
+        let _ = writeln!(out, "  Storage issues:  {}", storage_errors);
+
+        let _ = out.flush();
 
         if invalid_count > 0 || storage_errors > 0 {
             process::exit(2);

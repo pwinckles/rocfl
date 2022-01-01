@@ -1,6 +1,6 @@
+use std::cmp;
 use std::fmt::{self, Display, Formatter};
-use std::io::{ErrorKind, Result, Write};
-use std::{cmp, io};
+use std::io::{Result, Write};
 
 use ansi_term::Style;
 use unicode_width::UnicodeWidthStr;
@@ -90,19 +90,6 @@ impl<'a> TableView<'a> {
             column.update_width(cell.width());
         }
         self.rows.push(row);
-    }
-
-    pub fn write_stdio(&self) -> Result<()> {
-        let writer = io::stdout();
-        let mut lock = writer.lock();
-        if let Err(e) = self.write(&mut lock) {
-            match e.kind() {
-                ErrorKind::BrokenPipe => Ok(()),
-                _ => Err(e),
-            }
-        } else {
-            Ok(())
-        }
     }
 
     pub fn write(&self, writer: &mut impl Write) -> Result<()> {

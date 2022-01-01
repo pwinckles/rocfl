@@ -1,15 +1,16 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
-use std::process;
+use std::io::{BufWriter, Write};
 use std::sync::atomic::{AtomicBool, Ordering as AOrdering};
+use std::{io, process};
 
 use globset::GlobBuilder;
 use log::error;
 
 use crate::cmd::opts::{ListCmd, *};
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, Separator, TableView, TextCell};
-use crate::cmd::{paint, println, style, Cmd, GlobalArgs, DATE_FORMAT};
+use crate::cmd::{paint, style, Cmd, GlobalArgs, DATE_FORMAT};
 use crate::config::Config;
 use crate::ocfl::{
     FileDetails, InventoryPath, LogicalPath, ObjectVersion, ObjectVersionDetails, OcflRepo, Result,
@@ -57,10 +58,11 @@ impl ListCmd {
             // It's safe to stream the results so long as they are not sorted and do not need
             // to be displayed in a table
             self.stream_objects(args, iter);
-            Ok(())
         } else {
-            self.write_objects_to_table(args, terminate, iter)
+            self.write_objects_to_table(args, terminate, iter);
         }
+
+        Ok(())
     }
 
     fn stream_objects<'a>(
@@ -68,6 +70,7 @@ impl ListCmd {
         args: GlobalArgs,
         iter: Box<dyn Iterator<Item = Result<ObjectVersionDetails>> + 'a>,
     ) {
+        let mut out = BufWriter::new(io::stdout());
         let mut has_errors = false;
         let mut header_printed = false;
 
@@ -100,7 +103,7 @@ impl ListCmd {
                         .push_str(&paint(args.no_styles, *style::UNDERLINE, VERSION).to_string());
                 }
 
-                println(header_line);
+                let _ = writeln!(out, "{}", header_line);
             }
 
             let object = object.unwrap();
@@ -138,8 +141,13 @@ impl ListCmd {
                 line.push_str(&object.object_root);
             }
 
-            println(line);
+            let _ = writeln!(out, "{}", line);
+            if atty::is(atty::Stream::Stdout) {
+                let _ = out.flush();
+            }
         }
+
+        let _ = out.flush();
 
         if has_errors {
             process::exit(1);
@@ -151,7 +159,7 @@ impl ListCmd {
         args: GlobalArgs,
         terminate: &AtomicBool,
         iter: Box<dyn Iterator<Item = Result<ObjectVersionDetails>> + 'a>,
-    ) -> Result<()> {
+    ) {
         let mut has_errors = false;
         let mut objects = Vec::new();
 
@@ -163,7 +171,7 @@ impl ListCmd {
             }
 
             if terminate.load(AOrdering::Acquire) {
-                return Ok(());
+                return;
             }
             objects.push(object.unwrap());
         }
@@ -177,25 +185,26 @@ impl ListCmd {
         });
 
         if terminate.load(AOrdering::Acquire) {
-            return Ok(());
+            return;
         }
 
         let mut table = self.object_table(args);
 
         for object in &objects {
             if terminate.load(AOrdering::Acquire) {
-                return Ok(());
+                return;
             }
 
             table.add_row(object);
         }
 
-        table.write_stdio()?;
+        let out = io::stdout();
+        let mut writer = BufWriter::new(out.lock());
+        let _ = table.write(&mut writer);
+        let _ = writer.flush();
 
         if has_errors {
             process::exit(1);
-        } else {
-            Ok(())
         }
     }
 
@@ -224,7 +233,12 @@ impl ListCmd {
 
         let mut table = self.object_content_table(args);
         listings.iter().for_each(|listing| table.add_row(listing));
-        Ok(table.write_stdio()?)
+
+        let out = io::stdout();
+        let mut writer = BufWriter::new(out.lock());
+        let _ = table.write(&mut writer);
+
+        Ok(())
     }
 
     fn object_table(&self, args: GlobalArgs) -> TableView {

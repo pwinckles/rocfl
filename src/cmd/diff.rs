@@ -3,11 +3,12 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::fmt::Formatter;
+use std::io::{self, BufWriter, Write};
 use std::sync::atomic::AtomicBool;
 
 use crate::cmd::opts::{DiffCmd, LogCmd, ShowCmd};
 use crate::cmd::table::{Alignment, AsRow, Column, ColumnId, Row, Separator, TableView, TextCell};
-use crate::cmd::{println, style, Cmd, GlobalArgs, DATE_FORMAT};
+use crate::cmd::{style, Cmd, GlobalArgs, DATE_FORMAT};
 use crate::config::Config;
 use crate::ocfl::{Diff, InventoryPath, OcflRepo, Result, VersionDetails};
 
@@ -37,21 +38,25 @@ impl Cmd for LogCmd {
 
         versions.truncate(self.num.0);
 
-        self.print_versions(&versions, args)
+        self.print_versions(&versions, args);
+        Ok(())
     }
 }
 
 impl LogCmd {
-    fn print_versions(&self, versions: &[VersionDetails], args: GlobalArgs) -> Result<()> {
+    fn print_versions(&self, versions: &[VersionDetails], args: GlobalArgs) {
+        let out = io::stdout();
+
         if self.compact {
             let mut table = self.version_table(args);
             versions.iter().for_each(|version| table.add_row(version));
-            Ok(table.write_stdio()?)
+            let mut writer = BufWriter::new(out.lock());
+            let _ = table.write(&mut writer);
         } else {
+            let mut writer = BufWriter::new(out.lock());
             for version in versions {
-                println(FormatVersion::new(version, !args.no_styles));
+                let _ = writeln!(writer, "{}", FormatVersion::new(version, !args.no_styles));
             }
-            Ok(())
         }
     }
 
@@ -84,16 +89,22 @@ impl Cmd for ShowCmd {
         _config: &Config,
         _terminate: &AtomicBool,
     ) -> Result<()> {
+        let mut out = BufWriter::new(io::stdout());
+
         if self.staged {
             if !self.minimal {
                 let object = repo.get_staged_object_details(&self.object_id)?;
-                println(FormatVersion::new(&object.version_details, !args.no_styles));
+                let _ = writeln!(
+                    out,
+                    "{}",
+                    FormatVersion::new(&object.version_details, !args.no_styles)
+                );
             }
 
             let diffs = repo.diff_staged(&self.object_id)?;
 
             if diffs.is_empty() {
-                println("No staged changes found.");
+                let _ = writeln!(out, "No staged changes found.");
                 Ok(())
             } else {
                 display_diffs(diffs, &args)
@@ -102,7 +113,11 @@ impl Cmd for ShowCmd {
             let object = repo.get_object_details(&self.object_id, self.version.into())?;
 
             if !self.minimal {
-                println(FormatVersion::new(&object.version_details, !args.no_styles));
+                let _ = writeln!(
+                    out,
+                    "{}",
+                    FormatVersion::new(&object.version_details, !args.no_styles)
+                );
             }
 
             let right = object.version_details.version_num;
@@ -145,7 +160,10 @@ fn display_diffs(diffs: Vec<Diff>, args: &GlobalArgs) -> Result<()> {
     let mut table = TableView::new(columns, Separator::Space, true, !args.no_styles);
 
     diffs.iter().for_each(|diff| table.add_row(diff));
-    table.write_stdio()?;
+
+    let out = io::stdout();
+    let mut writer = BufWriter::new(out.lock());
+    let _ = table.write(&mut writer);
 
     Ok(())
 }
