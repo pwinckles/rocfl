@@ -45,6 +45,8 @@ impl ValidateCmd {
         _terminate: &AtomicBool,
     ) -> Result<()> {
         let mut out = BufWriter::new(io::stdout());
+        let isatty = atty::is(atty::Stream::Stdout);
+
         let mut has_printed = false;
         let mut obj_count = 0;
         let mut invalid_count = 0;
@@ -97,7 +99,7 @@ impl ValidateCmd {
                     }
                 );
 
-                if atty::is(atty::Stream::Stdout) {
+                if isatty {
                     let _ = out.flush();
                 }
             }
