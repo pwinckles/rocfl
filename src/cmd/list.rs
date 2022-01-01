@@ -71,6 +71,7 @@ impl ListCmd {
         iter: Box<dyn Iterator<Item = Result<ObjectVersionDetails>> + 'a>,
     ) {
         let mut out = BufWriter::new(io::stdout());
+        let isatty = atty::is(atty::Stream::Stdout);
         let mut has_errors = false;
         let mut header_printed = false;
 
@@ -142,7 +143,7 @@ impl ListCmd {
             }
 
             let _ = writeln!(out, "{}", line);
-            if atty::is(atty::Stream::Stdout) {
+            if isatty {
                 let _ = out.flush();
             }
         }

@@ -132,6 +132,7 @@ impl ValidateCmd {
     ) -> Result<()> {
         let mut validator = repo.validate_repo(!self.no_fixity_check)?;
         let mut out = BufWriter::new(io::stdout());
+        let isatty = atty::is(atty::Stream::Stdout);
 
         let mut obj_count = 0;
         let mut invalid_count = 0;
@@ -181,7 +182,7 @@ impl ValidateCmd {
                             }
                         );
 
-                        if atty::is(atty::Stream::Stdout) {
+                        if isatty {
                             let _ = out.flush();
                         }
                     }
