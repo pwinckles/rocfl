@@ -6,15 +6,20 @@ use std::hash::{Hash, Hasher};
 use std::io;
 use std::io::{Read, Write};
 
-use blake2::{Blake2b, VarBlake2b};
-use digest::{Digest, DynDigest, VariableOutput};
+use blake2::digest::consts::{U20, U32, U48};
+use blake2::{Blake2b, Blake2b512};
+use digest::{Digest, DynDigest};
 use md5::Md5;
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
-use sha2::{Sha256, Sha512, Sha512Trunc256};
+use sha2::{Sha256, Sha512, Sha512_256};
 use strum_macros::{Display as EnumDisplay, EnumString};
 
-use crate::ocfl::error::{Result, RocflError};
+use crate::ocfl::error::Result;
+
+type Blake2b160 = Blake2b<U20>;
+type Blake2b256 = Blake2b<U32>;
+type Blake2b384 = Blake2b<U48>;
 
 /// Enum of all valid digest algorithms
 #[derive(
@@ -75,82 +80,32 @@ pub struct HexDigest(String);
 impl DigestAlgorithm {
     /// Hashes the input and returns its hex encoded digest
     pub fn hash_hex(&self, data: &mut impl Read) -> Result<HexDigest> {
-        // This ugliness is because the variable length blake2b algorithms don't work with DynDigest
-        let bytes = match self {
-            DigestAlgorithm::Md5 => {
-                let mut hasher = Md5::new();
-                io::copy(data, &mut hasher)?;
-                hasher.finalize().to_vec()
-            }
-            DigestAlgorithm::Sha1 => {
-                let mut hasher = Sha1::new();
-                io::copy(data, &mut hasher)?;
-                hasher.finalize().to_vec()
-            }
-            DigestAlgorithm::Sha256 => {
-                let mut hasher = Sha256::new();
-                io::copy(data, &mut hasher)?;
-                hasher.finalize().to_vec()
-            }
-            DigestAlgorithm::Sha512 => {
-                let mut hasher = Sha512::new();
-                io::copy(data, &mut hasher)?;
-                hasher.finalize().to_vec()
-            }
-            DigestAlgorithm::Sha512_256 => {
-                let mut hasher = Sha512Trunc256::new();
-                io::copy(data, &mut hasher)?;
-                hasher.finalize().to_vec()
-            }
-            DigestAlgorithm::Blake2b512 => {
-                let mut hasher = Blake2b::new();
-                io::copy(data, &mut hasher)?;
-                hasher.finalize().to_vec()
-            }
-            DigestAlgorithm::Blake2b160 => {
-                let mut hasher = VarBlake2b::new(20).unwrap();
-                io::copy(data, &mut hasher)?;
-                hasher.finalize_boxed().to_vec()
-            }
-            DigestAlgorithm::Blake2b256 => {
-                let mut hasher = VarBlake2b::new(32).unwrap();
-                io::copy(data, &mut hasher)?;
-                hasher.finalize_boxed().to_vec()
-            }
-            DigestAlgorithm::Blake2b384 => {
-                let mut hasher = VarBlake2b::new(48).unwrap();
-                io::copy(data, &mut hasher)?;
-                hasher.finalize_boxed().to_vec()
-            }
-        };
-
-        Ok(bytes.into())
+        let mut hasher = self.reader(data);
+        io::copy(&mut hasher, &mut io::sink())?;
+        Ok(hasher.finalize_hex())
     }
 
-    /// Wraps the specified reader in a `DigestReader`. Does not support blake2b because of the
-    /// DynDigest problem.
-    pub fn reader<R: Read>(&self, reader: R) -> Result<DigestReader<R>> {
-        let digest = self.new_digest()?;
-        Ok(DigestReader::new(digest, reader))
+    /// Wraps the specified reader in a `DigestReader`
+    pub fn reader<R: Read>(&self, reader: R) -> DigestReader<R> {
+        DigestReader::new(self.new_digest(), reader)
     }
 
-    /// Wraps the specified reader in a `DigestReader`. Does not support blake2b because of the
-    /// DynDigest problem.
-    pub fn writer<W: Write>(&self, writer: W) -> Result<DigestWriter<W>> {
-        let digest = self.new_digest()?;
-        Ok(DigestWriter::new(digest, writer))
+    /// Wraps the specified writer in a `DigestWriter`
+    pub fn writer<W: Write>(&self, writer: W) -> DigestWriter<W> {
+        DigestWriter::new(self.new_digest(), writer)
     }
 
-    fn new_digest(&self) -> Result<Box<dyn DynDigest>> {
+    fn new_digest(&self) -> Box<dyn DynDigest> {
         match self {
-            DigestAlgorithm::Md5 => Ok(Box::new(Md5::new())),
-            DigestAlgorithm::Sha1 => Ok(Box::new(Sha1::new())),
-            DigestAlgorithm::Sha256 => Ok(Box::new(Sha256::new())),
-            DigestAlgorithm::Sha512 => Ok(Box::new(Sha512::new())),
-            DigestAlgorithm::Sha512_256 => Ok(Box::new(Sha512Trunc256::new())),
-            _ => Err(RocflError::General(
-                "Blake2b is not supported for streaming digest.".to_string(),
-            )),
+            DigestAlgorithm::Md5 => Box::new(Md5::new()),
+            DigestAlgorithm::Sha1 => Box::new(Sha1::new()),
+            DigestAlgorithm::Sha256 => Box::new(Sha256::new()),
+            DigestAlgorithm::Sha512 => Box::new(Sha512::new()),
+            DigestAlgorithm::Sha512_256 => Box::new(Sha512_256::new()),
+            DigestAlgorithm::Blake2b512 => Box::new(Blake2b512::new()),
+            DigestAlgorithm::Blake2b160 => Box::new(Blake2b160::new()),
+            DigestAlgorithm::Blake2b256 => Box::new(Blake2b256::new()),
+            DigestAlgorithm::Blake2b384 => Box::new(Blake2b384::new()),
         }
     }
 }
@@ -213,8 +168,7 @@ impl<W: Write> MultiDigestWriter<W> {
     pub fn new(algorithms: &[DigestAlgorithm], writer: W) -> Self {
         let mut digests = HashMap::with_capacity(algorithms.len());
         for algorithm in algorithms {
-            // TODO unwrap this is here due to the blake2b problem
-            digests.insert(*algorithm, algorithm.new_digest().unwrap());
+            digests.insert(*algorithm, algorithm.new_digest());
         }
 
         Self {
@@ -353,7 +307,7 @@ mod tests {
         let input = "testing\n".to_string();
         let mut output: Vec<u8> = Vec::new();
 
-        let mut reader = DigestAlgorithm::Sha512.reader(input.as_bytes())?;
+        let mut reader = DigestAlgorithm::Sha512.reader(input.as_bytes());
 
         io::copy(&mut reader, &mut output)?;
 
@@ -378,7 +332,7 @@ mod tests {
         let input = "testing\n".to_string();
         let output: Vec<u8> = Vec::new();
 
-        let mut writer = DigestAlgorithm::Sha512.writer(output)?;
+        let mut writer = DigestAlgorithm::Sha512.writer(output);
 
         io::copy(&mut input.as_bytes(), &mut writer)?;
 
@@ -433,5 +387,36 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn blake2b_test() {
+        let digest = DigestAlgorithm::Blake2b160
+            .hash_hex(&mut "test".as_bytes())
+            .unwrap();
+        assert_eq!(
+            "a34fc3b6d2cce8beb3216c2bbb5e55739e8121ed".to_string(),
+            digest.to_string()
+        );
+
+        let digest = DigestAlgorithm::Blake2b256
+            .hash_hex(&mut "test".as_bytes())
+            .unwrap();
+        assert_eq!(
+            "928b20366943e2afd11ebc0eae2e53a93bf177a4fcf35bcc64d503704e65e202".to_string(),
+            digest.to_string()
+        );
+
+        let digest = DigestAlgorithm::Blake2b384
+            .hash_hex(&mut "test".as_bytes())
+            .unwrap();
+        assert_eq!("8a84b8666c8fcfb69f2ec41f578d7c85fbdb504ea6510fb05b50fcbf7ed8153c77943bc2da73abb136834e1a0d4f22cb".to_string(),
+                   digest.to_string());
+
+        let digest = DigestAlgorithm::Blake2b512
+            .hash_hex(&mut "test".as_bytes())
+            .unwrap();
+        assert_eq!("a71079d42853dea26e453004338670a53814b78137ffbed07603a41d76a483aa9bc33b582f77d30a65e6f29a896c0411f38312e1d66e0bf16386c86a89bea572".to_string(),
+                   digest.to_string());
     }
 }

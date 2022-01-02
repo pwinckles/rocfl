@@ -1202,7 +1202,7 @@ impl<S: Storage> Validator<S> {
 
         if files.contains(&Listing::file(INVENTORY_FILE)) {
             let inventory_path = paths::join(version_dir, INVENTORY_FILE);
-            let mut digester = inventory.digest_algorithm.writer(Vec::new()).unwrap();
+            let mut digester = inventory.digest_algorithm.writer(Vec::new());
             self.storage.read(&inventory_path, &mut digester)?;
 
             let digest = digester.finalize_hex();

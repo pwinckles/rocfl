@@ -671,7 +671,7 @@ impl StagingStore for FsOcflStore {
 
         let mut inv_writer = inventory
             .digest_algorithm
-            .writer(File::create(&inventory_path)?)?;
+            .writer(File::create(&inventory_path)?);
 
         if pretty_print {
             serde_json::to_writer_pretty(&mut inv_writer, &inventory)?;
