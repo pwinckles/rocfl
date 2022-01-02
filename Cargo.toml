@@ -50,8 +50,7 @@ remove_dir_all = "0.7" # https://github.com/rust-lang/rust/issues/29497
 walkdir = "2"
 
 # CLI
-structopt = "0.3"
-clap = "2"
+clap = { version = "3", features = ["derive"] }
 ansi_term = "0.12"
 ctrlc = "3"
 atty = "0.2"

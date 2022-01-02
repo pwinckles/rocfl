@@ -8,6 +8,9 @@ use predicates::str::{ContainsPredicate, IsEmptyPredicate};
 
 mod common;
 
+// TODO rewrite these tests using https://docs.rs/trycmd/latest/trycmd/
+// TODO backfill more cli sanity tests
+
 #[test]
 fn basic_create_sanity_check() {
     let root = TempDir::new().unwrap();
@@ -260,8 +263,6 @@ fn validate_repo_quiet() {
         .stdout(contains_str("Invalid objects: 1"))
         .stdout(contains_str("Storage issues:  10"));
 }
-
-// TODO backfill more cli sanity tests
 
 fn init(path: impl AsRef<Path>) -> Command {
     rocfl(path, "init")

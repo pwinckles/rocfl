@@ -1,14 +1,14 @@
 use std::process;
 
+use clap::Parser;
 use log::{error, LevelFilter};
 use rocfl::cmd::opts::*;
 use rocfl::config::Config;
 use rocfl::ocfl::RocflError;
 use rocfl::{cmd, config};
-use structopt::StructOpt;
 
 fn main() {
-    let mut args = RocflArgs::from_args();
+    let mut args = RocflArgs::parse();
 
     let log_level = if args.quiet {
         LevelFilter::Off

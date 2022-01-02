@@ -2,13 +2,11 @@ use std::fmt::{self, Display, Formatter};
 use std::num::ParseIntError;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::string::ToString;
 
 use chrono::{DateTime, Local};
-use clap::arg_enum;
+use clap::AppSettings::UseLongFormatForHelpSubcommand;
+use clap::{ArgEnum, Args, Parser, Subcommand};
 use enum_dispatch::enum_dispatch;
-use structopt::clap::AppSettings::{ColorAuto, ColoredHelp, DisableVersion};
-use structopt::StructOpt;
 use strum::VariantNames;
 use strum_macros::{Display as EnumDisplay, EnumString, EnumVariantNames};
 
@@ -29,22 +27,22 @@ use crate::ocfl::{ErrorCode, VersionNum, WarnCode};
 /// are described here. A number of these options, such as repository location information,
 /// can be defined in a configuration file so that they do not needed to be specified on
 /// every invocation. The easiest way to do this is by invoking: 'rocfl config'.
-#[derive(Debug, StructOpt)]
-#[structopt(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>")]
-#[structopt(setting(ColorAuto), setting(ColoredHelp))]
+#[derive(Debug, Parser)]
+#[clap(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>", version)]
+#[clap(setting(UseLongFormatForHelpSubcommand))]
 pub struct RocflArgs {
     /// Name of the repository to access
     ///
     /// Repository names are used to load repository specific configuration in the rocfl config
     /// file. For example, a repository's root could be defined in the config and referenced
     /// here by name so that the root does not need to be specified with every command.
-    #[structopt(short, long, value_name = "NAME")]
+    #[clap(short, long, value_name = "NAME")]
     pub name: Option<String>,
 
     /// Absolute or relative path to the repository's storage root
     ///
     /// By default, this is the current directory.
-    #[structopt(short, long, value_name = "ROOT_PATH")]
+    #[clap(short, long, value_name = "ROOT_PATH")]
     pub root: Option<String>,
 
     /// Absolute or relative path to the staging directory
@@ -53,76 +51,76 @@ pub struct RocflArgs {
     /// This is the recommended configuration. If the repository is in S3, then versions are
     /// staged in an OS specific user home directory. Staging directories should NOT be shared
     /// by multiple different repositories.
-    #[structopt(short, long, value_name = "STAGING_PATH")]
+    #[clap(short, long, value_name = "STAGING_PATH")]
     pub staging_root: Option<String>,
 
     /// AWS region identifier. Must specify when using S3.
-    #[structopt(short = "R", long, value_name = "REGION")]
+    #[clap(short = 'R', long, value_name = "REGION")]
     pub region: Option<String>,
 
     /// S3 bucket name. Must specify when using S3.
-    #[structopt(short, long, value_name = "BUCKET")]
+    #[clap(short, long, value_name = "BUCKET")]
     pub bucket: Option<String>,
 
     /// Custom S3 endpoint URL. Only specify when using a custom region.
-    #[structopt(short, long, value_name = "ENDPOINT")]
+    #[clap(short, long, value_name = "ENDPOINT")]
     pub endpoint: Option<String>,
 
     /// AWS profile to load credentials from.
-    #[structopt(short, long, value_name = "PROFILE")]
+    #[clap(short, long, value_name = "PROFILE")]
     pub profile: Option<String>,
 
     /// Suppress error messages and other command specific logging
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub quiet: bool,
 
     /// Increase log level
-    #[structopt(short = "V", long)]
+    #[clap(short = 'V', long)]
     pub verbose: bool,
 
     /// Disable all output styling
-    #[structopt(short = "S", long)]
+    #[clap(short = 'S', long)]
     pub no_styles: bool,
 
     /// Subcommand to execute
-    #[structopt(subcommand)]
+    #[clap(subcommand)]
     pub command: Command,
 }
 
 #[enum_dispatch(Cmd)]
-#[derive(Debug, StructOpt)]
+#[derive(Subcommand, Debug)]
 pub enum Command {
-    #[structopt(name = "config")]
+    #[clap(name = "config")]
     Config(ConfigCmd),
-    #[structopt(name = "ls")]
+    #[clap(name = "ls")]
     List(ListCmd),
-    #[structopt(name = "log")]
+    #[clap(name = "log")]
     Log(LogCmd),
-    #[structopt(name = "show")]
+    #[clap(name = "show")]
     Show(ShowCmd),
-    #[structopt(name = "diff")]
+    #[clap(name = "diff")]
     Diff(DiffCmd),
-    #[structopt(name = "cat")]
+    #[clap(name = "cat")]
     Cat(CatCmd),
-    #[structopt(name = "init")]
+    #[clap(name = "init")]
     Init(InitCmd),
-    #[structopt(name = "new")]
+    #[clap(name = "new")]
     New(NewCmd),
-    #[structopt(name = "cp")]
+    #[clap(name = "cp")]
     Copy(CopyCmd),
-    #[structopt(name = "mv")]
+    #[clap(name = "mv")]
     Move(MoveCmd),
-    #[structopt(name = "rm")]
+    #[clap(name = "rm")]
     Remove(RemoveCmd),
-    #[structopt(name = "reset")]
+    #[clap(name = "reset")]
     Reset(ResetCmd),
-    #[structopt(name = "commit")]
+    #[clap(name = "commit")]
     Commit(CommitCmd),
-    #[structopt(name = "status")]
+    #[clap(name = "status")]
     Status(StatusCmd),
-    #[structopt(name = "purge")]
+    #[clap(name = "purge")]
     Purge(PurgeCmd),
-    #[structopt(name = "validate")]
+    #[clap(name = "validate")]
     Validate(ValidateCmd),
 }
 
@@ -136,8 +134,7 @@ pub enum Command {
 /// Global configuration is always active, and named configuration is activated by invoking
 /// rocfl with '-n NAME'. When resolving configuration, command line arguments have highest
 /// precedence, followed by named configuration, and finally global configuration.
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+#[derive(Args, Debug)]
 pub struct ConfigCmd {}
 
 /// List objects or files within objects
@@ -149,161 +146,159 @@ pub struct ConfigCmd {}
 ///
 /// This command supports glob expressions. When you use globs, it is usually a good idea to
 /// quote them so that your shell does not attempt to expand them.
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+#[derive(Args, Debug)]
 pub struct ListCmd {
     /// Interpret logical path parts as logical directories
     ///
     /// Instead of listing all of the paths in the object, only the paths that are direct
     /// logical children of the query are returned. This is analogous to executing ls on
     /// the local filesystem.
-    #[structopt(short = "D", long)]
+    #[clap(short = 'D', long)]
     pub logical_dirs: bool,
 
     /// Enable long output
     ///
     /// Format: Version, Updated, Name (Object ID or Logical Path)
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub long: bool,
 
     /// Display the physical path to the item relative the repository storage root
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub physical: bool,
 
     /// Display the digest of the item in the format 'algorithm:digest'
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub digest: bool,
 
     /// Display a header row
-    #[structopt(short, long)]
+    #[clap(short = 'H', long)]
     pub header: bool,
 
     /// Tab separate the output
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub tsv: bool,
 
     /// List staged objects or the contents of a specific staged object
-    #[structopt(short = "S", long, conflicts_with = "version")]
+    #[clap(short = 'S', long, conflicts_with = "version")]
     pub staged: bool,
 
     /// Version of the object to list
-    #[structopt(short, long, value_name = "VERSION")]
+    #[clap(short, long, value_name = "VERSION")]
     pub version: Option<VersionNum>,
 
     /// Field to sort on. By default, objects are unsorted and object contents are sorted on name.
-    #[structopt(short, long,
-    value_name = "FIELD",
-    possible_values = &Field::variants(),
-    default_value = "Default",
-    case_insensitive = true)]
+    #[clap(
+        arg_enum,
+        short,
+        long,
+        value_name = "FIELD",
+        default_value = "default",
+        ignore_case = true
+    )]
     pub sort: Field,
 
     /// Reverse the order of the sort
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub reverse: bool,
 
     /// List only objects; not their contents. Useful when glob matching on object IDs
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub objects: bool,
 
     /// ID of the object to list. May be a glob when used with '-o'.
-    #[structopt(name = "OBJ_ID")]
+    #[clap(name = "OBJ_ID")]
     pub object_id: Option<String>,
 
     /// Path glob of files to list. Requires an object to be specified.
-    #[structopt(name = "PATH")]
+    #[clap(name = "PATH")]
     pub path: Option<String>,
 }
 
 /// Display version history of an object or file.
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+#[derive(Args, Debug)]
 pub struct LogCmd {
     /// Compact format
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub compact: bool,
 
     /// Display a header row, only with compact format
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub header: bool,
 
     /// Tab separate the output, only with compact format
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub tsv: bool,
 
     /// Reverse the order the versions are displayed
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub reverse: bool,
 
     /// Limit the number of versions displayed
-    #[structopt(short, long, value_name = "NUM", default_value)]
+    #[clap(short, long, value_name = "NUM", default_value_t)]
     pub num: Num,
 
     /// ID of the object
-    #[structopt(name = "OBJ_ID")]
+    #[clap(name = "OBJ_ID")]
     pub object_id: String,
 
     /// Optional path to a file
-    #[structopt(name = "PATH")]
+    #[clap(name = "PATH")]
     pub path: Option<String>,
 }
 
 /// Show a summary of changes in a version
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+#[derive(Args, Debug)]
 pub struct ShowCmd {
     /// Show the changes in the staged version of the object, if it exists
-    #[structopt(short = "S", long, conflicts_with = "version")]
+    #[clap(short = 'S', long, conflicts_with = "version")]
     pub staged: bool,
 
     /// Suppress the version details output
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub minimal: bool,
 
     /// ID of the object
-    #[structopt(name = "OBJ_ID")]
+    #[clap(name = "OBJ_ID")]
     pub object_id: String,
 
     /// The version to show. The most recent version is shown by default
-    #[structopt(name = "VERSION")]
+    #[clap(name = "VERSION")]
     pub version: Option<VersionNum>,
 }
 
 /// Show the files that changed between two versions
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+#[derive(Args, Debug)]
 pub struct DiffCmd {
     /// ID of the object
-    #[structopt(name = "OBJ_ID")]
+    #[clap(name = "OBJ_ID")]
     pub object_id: String,
 
     /// Left-hand side version
-    #[structopt(name = "LEFT_VERSION")]
+    #[clap(name = "LEFT_VERSION")]
     pub left: VersionNum,
 
     /// Right-hand side version
-    #[structopt(name = "RIGHT_VERSION")]
+    #[clap(name = "RIGHT_VERSION")]
     pub right: VersionNum,
 }
 
 /// Print the specified file to stdout
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+#[derive(Args, Debug)]
 pub struct CatCmd {
     /// Cat the contents of a staged file
-    #[structopt(short = "S", long, conflicts_with = "version")]
+    #[clap(short = 'S', long, conflicts_with = "version")]
     pub staged: bool,
 
     /// The version of the object to retrieve the file from
-    #[structopt(short, long, value_name = "VERSION")]
+    #[clap(short, long, value_name = "VERSION")]
     pub version: Option<VersionNum>,
 
     /// ID of the object
-    #[structopt(name = "OBJ_ID")]
+    #[clap(name = "OBJ_ID")]
     pub object_id: String,
 
     /// Logical path of the file
-    #[structopt(name = "PATH")]
+    #[clap(name = "PATH")]
     pub path: String,
 }
 
@@ -316,22 +311,20 @@ pub struct CatCmd {
 /// are configured to use the storage layout extension 0004-hashed-n-tuple-storage-layout.
 /// You should change this up front if you do not want to use this extension as it is
 /// difficult to change a repository's layout after objects have been created.
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+#[derive(Args, Debug)]
 pub struct InitCmd {
     /// Path to a custom storage layout extension config JSON file.
-    #[structopt(short, long, value_name = "LAYOUT_CONFIG")]
+    #[clap(short, long, value_name = "LAYOUT_CONFIG")]
     pub config_file: Option<PathBuf>,
 
     /// OCFL storage layout extension to use
     ///
     /// The default extension configuration for the extension is used. Custom configuration
     /// may be specified using '--config-file'.
-    #[structopt(short, long,
+    #[clap(short, long,
     value_name = "LAYOUT",
-    possible_values = &Layout::VARIANTS,
     default_value = "0004-hashed-n-tuple-storage-layout",
-    case_insensitive = true)]
+    possible_values = &*Layout::VARIANTS)]
     pub layout: Layout,
 }
 
@@ -339,27 +332,29 @@ pub struct InitCmd {
 ///
 /// New objects are created in staging and must be committed before they are available in the
 /// main repository.
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+#[derive(Args, Debug)]
 pub struct NewCmd {
     /// Digest algorithm to use for the inventory digest
-    #[structopt(short, long,
-    value_name = "ALGORITHM",
-    possible_values = &DigestAlgorithm::variants(),
-    default_value = "Sha512",
-    case_insensitive = true)]
+    #[clap(
+        arg_enum,
+        short,
+        long,
+        value_name = "ALGORITHM",
+        default_value = "sha512",
+        ignore_case = true
+    )]
     pub digest_algorithm: DigestAlgorithm,
 
     /// Name of the object's content directory
-    #[structopt(short, long, value_name = "PATH", default_value = "content")]
+    #[clap(short, long, value_name = "PATH", default_value = "content")]
     pub content_directory: String,
 
     /// Width for zero-padded version numbers, eg. v0001 has a width of 4
-    #[structopt(short, long, value_name = "WIDTH", default_value = "0")]
+    #[clap(short, long, value_name = "WIDTH", default_value = "0")]
     pub zero_padding: u32,
 
     /// ID of the object to create.
-    #[structopt(name = "OBJ_ID")]
+    #[clap(name = "OBJ_ID")]
     pub object_id: String,
 }
 
@@ -368,15 +363,14 @@ pub struct NewCmd {
 /// If the target object does not already have a staged version, a new staged version is created,
 /// and the files are copied to it. The changes must be committed before they are reflected in a
 /// new OCFL version in the object in the main repository.
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+#[derive(Args, Debug)]
 pub struct CopyCmd {
     /// Source directories should be copied recursively.
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub recursive: bool,
 
     /// Source paths should be interpreted as logical paths internal to the object
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub internal: bool,
 
     /// Version of the object to copy the source paths from. Default: most recent
@@ -385,19 +379,19 @@ pub struct CopyCmd {
     /// the most recent version is the staged version, if a staged version already exists, or
     /// the most recent version of the object in the main repository if there is no staged
     /// version.
-    #[structopt(short, long, value_name = "VERSION", requires = "internal")]
+    #[clap(short, long, value_name = "VERSION", requires = "internal")]
     pub version: Option<VersionNum>,
 
     /// ID of the object to copy files into
-    #[structopt(name = "OBJ_ID")]
+    #[clap(name = "OBJ_ID")]
     pub object_id: String,
 
     /// Source files to copy. Glob patterns are supported.
-    #[structopt(name = "SRC", required = true)]
+    #[clap(name = "SRC", required = true)]
     pub source: Vec<String>,
 
     /// Destination logical path. Specify '/' to copy into the object's root
-    #[structopt(name = "DST", last = true)]
+    #[clap(name = "DST", last = true)]
     pub destination: String,
 }
 
@@ -406,23 +400,22 @@ pub struct CopyCmd {
 /// If the target object does not already have a staged version, a new staged version is created,
 /// and the files are moved to it. The changes must be committed before they are reflected in a
 /// new OCFL version in the object in the main repository.
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+#[derive(Args, Debug)]
 pub struct MoveCmd {
     /// Source paths should be interpreted as logical paths internal to the object
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub internal: bool,
 
     /// ID of the object to move files into
-    #[structopt(name = "OBJ_ID")]
+    #[clap(name = "OBJ_ID")]
     pub object_id: String,
 
     /// Source files to move. Glob patterns are supported.
-    #[structopt(name = "SRC", required = true)]
+    #[clap(name = "SRC", required = true)]
     pub source: Vec<String>,
 
     /// Destination logical path. Specify '/' to move into the object's root
-    #[structopt(name = "DST", last = true)]
+    #[clap(name = "DST", last = true)]
     pub destination: String,
 }
 
@@ -434,19 +427,18 @@ pub struct MoveCmd {
 ///
 /// Removing files from a staged version that were new to that staged version will permanently
 /// remove them from the object.
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+#[derive(Args, Debug)]
 pub struct RemoveCmd {
     /// Logical directories should be removed recursively
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub recursive: bool,
 
     /// ID of the object to remove files from
-    #[structopt(name = "OBJ_ID")]
+    #[clap(name = "OBJ_ID")]
     pub object_id: String,
 
     /// Logical paths of files to remove. Glob patterns are supported.
-    #[structopt(name = "PATH", required = true)]
+    #[clap(name = "PATH", required = true)]
     pub paths: Vec<String>,
 }
 
@@ -460,40 +452,39 @@ pub struct RemoveCmd {
 ///
 /// If the repository is not using a known storage layout, and a new object is being committed,
 /// then the storage root relative path to the object's root must be specified.
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+#[derive(Args, Debug)]
 pub struct CommitCmd {
     /// Pretty print the version's inventory.json file
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub pretty_print: bool,
 
     /// Name of the user to attribute the changes to
-    #[structopt(short = "n", long, value_name = "NAME")]
+    #[clap(short = 'n', long, value_name = "NAME")]
     pub user_name: Option<String>,
 
     /// Address URI of the user to attribute the changes to. For example, mailto:test@example.com
-    #[structopt(short = "a", long, value_name = "ADDRESS")]
+    #[clap(short = 'a', long, value_name = "ADDRESS")]
     pub user_address: Option<String>,
 
     /// Message describing the changes
-    #[structopt(short, long, value_name = "MESSAGE")]
+    #[clap(short, long, value_name = "MESSAGE")]
     pub message: Option<String>,
 
     /// RFC 3339 creation timestamp of the version. Default: now
     ///
     /// Example timestamp: 2020-12-23T10:11:12-06:00
-    #[structopt(short, long, value_name = "TIMESTAMP")]
+    #[clap(short, long, value_name = "TIMESTAMP")]
     pub created: Option<DateTime<Local>>,
 
     /// Storage root relative path to the object's root
     ///
     /// Should only be specified for new objects in repositories without defined storage
     /// layouts, and is otherwise ignored.
-    #[structopt(short = "r", long, value_name = "OBJ_ROOT")]
+    #[clap(short = 'r', long, value_name = "OBJ_ROOT")]
     pub object_root: Option<String>,
 
     /// ID of the object to commit changes for
-    #[structopt(name = "OBJ_ID")]
+    #[clap(name = "OBJ_ID")]
     pub object_id: String,
 }
 
@@ -502,20 +493,19 @@ pub struct CommitCmd {
 /// Additions are removed, deletions are restored, and modifications are returned to their
 /// original state. Use this to return an object to its state at the time the staged version
 /// was originally created.
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+#[derive(Args, Debug)]
 pub struct ResetCmd {
     /// Logical directories should be reset recursively
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub recursive: bool,
 
     /// ID of the object to reset
-    #[structopt(name = "OBJ_ID")]
+    #[clap(name = "OBJ_ID")]
     pub object_id: String,
 
     /// Logical paths of the files to reset. Glob patterns are supported. If no paths are
     /// specified, the entire object is reset.
-    #[structopt(name = "PATH")]
+    #[clap(name = "PATH")]
     pub paths: Vec<String>,
 }
 
@@ -523,26 +513,24 @@ pub struct ResetCmd {
 ///
 /// This command is a simplified version of 'ls --staged' and 'show -staged'. Use the other commands
 /// if you need more options.
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+#[derive(Args, Debug)]
 pub struct StatusCmd {
     /// ID of the object to show staged changes for
-    #[structopt(name = "OBJ_ID")]
+    #[clap(name = "OBJ_ID")]
     pub object_id: Option<String>,
 }
 
 /// Permanently delete an object
 ///
 /// Purged objects are permanently deleted from the repository. This operation cannot be undone.
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+#[derive(Args, Debug)]
 pub struct PurgeCmd {
     /// Purge without prompting for confirmation
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub force: bool,
 
     /// ID of the object to purge
-    #[structopt(name = "OBJ_ID")]
+    #[clap(name = "OBJ_ID")]
     pub object_id: String,
 }
 
@@ -558,52 +546,52 @@ pub struct PurgeCmd {
 ///
 /// If warnings or errors are suppressed and an object has no remaining issues after suppression,
 /// then the object is reported as valid.
-#[derive(Debug, StructOpt)]
-#[structopt(setting(ColorAuto), setting(ColoredHelp), setting(DisableVersion))]
+#[derive(Args, Debug)]
 pub struct ValidateCmd {
     /// Interpret positional parameters as paths to object roots relative the repository root
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub paths: bool,
 
     /// Disable fixity check on stored files
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub no_fixity_check: bool,
 
     /// The log level to use when printing validation results. 'Warn' suppresses output from valid
     /// objects; 'Error' suppresses valid objects and warnings.
-    #[structopt(short,
+    #[clap(
+        arg_enum,
+        short,
         long,
         value_name = "LEVEL",
-        default_value = "Info",
-        possible_values = &Level::variants(),
-        case_insensitive = true
+        default_value = "info",
+        ignore_case = true
     )]
     pub level: Level,
 
     /// Do not report the specified warning
-    #[structopt(
-        short = "w",
+    #[clap(
+        short = 'w',
         long,
         value_name = "CODE",
-        multiple = true,
+        multiple_occurrences = true,
         number_of_values = 1,
-        case_insensitive = true
+        ignore_case = true
     )]
     pub suppress_warning: Vec<WarnCode>,
 
     /// Do not report the specified error
-    #[structopt(
-        short = "e",
+    #[clap(
+        short = 'e',
         long,
         value_name = "CODE",
-        multiple = true,
+        multiple_occurrences = true,
         number_of_values = 1,
-        case_insensitive = true
+        ignore_case = true
     )]
     pub suppress_error: Vec<ErrorCode>,
 
     /// IDs of the objects to validate, or paths object roots when used with '--paths'
-    #[structopt(name = "OBJ_ID/PATH")]
+    #[clap(name = "OBJ_ID/PATH")]
     pub object_ids: Vec<String>,
 }
 
@@ -612,20 +600,18 @@ pub struct ValidateCmd {
 #[derive(Debug)]
 pub struct Num(pub usize);
 
-arg_enum! {
-    #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-    pub enum Field {
-        Default,
-        Name,
-        Version,
-        Updated,
-        Physical,
-        Digest,
-        None
-    }
+#[derive(ArgEnum, Debug, Clone, Copy, Eq, PartialEq)]
+pub enum Field {
+    Default,
+    Name,
+    Version,
+    Updated,
+    Physical,
+    Digest,
+    None,
 }
 
-#[derive(Debug, Clone, Copy, EnumDisplay, EnumString, EnumVariantNames)]
+#[derive(Debug, Clone, Copy, EnumString, EnumDisplay, EnumVariantNames)]
 pub enum Layout {
     #[strum(serialize = "None", serialize = "none")]
     None,
@@ -639,21 +625,17 @@ pub enum Layout {
     FlatOmitPrefix,
 }
 
-arg_enum! {
-    #[derive(Debug, Clone, Copy)]
-    pub enum DigestAlgorithm {
-        Sha256,
-        Sha512,
-    }
+#[derive(ArgEnum, Debug, Clone, Copy)]
+pub enum DigestAlgorithm {
+    Sha256,
+    Sha512,
 }
 
-arg_enum! {
-    #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-    pub enum Level {
-        Info,
-        Warn,
-        Error,
-    }
+#[derive(ArgEnum, Debug, Clone, Copy, Eq, PartialEq)]
+pub enum Level {
+    Info,
+    Warn,
+    Error,
 }
 
 impl Default for Num {
