@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 use std::io;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::sync::atomic::AtomicBool;
 
 use log::info;
@@ -9,7 +9,7 @@ use crate::cmd::opts::{
     CatCmd, CommitCmd, ConfigCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, Field, InitCmd,
     ListCmd, MoveCmd, NewCmd, PurgeCmd, RemoveCmd, ResetCmd, ShowCmd, StatusCmd,
 };
-use crate::cmd::{print, println, Cmd, GlobalArgs};
+use crate::cmd::{Cmd, GlobalArgs};
 use crate::config::Config;
 use crate::ocfl::{CommitMeta, DigestAlgorithm, OcflRepo, Result};
 
@@ -225,16 +225,19 @@ impl Cmd for PurgeCmd {
         _config: &Config,
         _terminate: &AtomicBool,
     ) -> Result<()> {
+        let mut out = BufWriter::new(io::stdout());
+
         if !self.force {
-            print(format!(
+            let _ = write!(
+                out,
                 "Permanently delete '{}'? This cannot be undone. [y/N]: ",
                 self.object_id
-            ));
-            let _ = io::stdout().flush();
+            );
+            let _ = out.flush();
             let mut response = String::new();
             io::stdin().read_line(&mut response)?;
             if !response.trim().eq_ignore_ascii_case("y") {
-                println("Aborted");
+                let _ = writeln!(out, "Aborted");
                 return Ok(());
             }
         }

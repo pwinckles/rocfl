@@ -103,10 +103,6 @@ fn println(value: impl Display) {
     let _ = writeln!(io::stdout(), "{}", value);
 }
 
-fn print(value: impl Display) {
-    let _ = write!(io::stdout(), "{}", value);
-}
-
 fn paint<'b, I, S: 'b + ToOwned + ?Sized>(
     no_styles: bool,
     style: Style,
