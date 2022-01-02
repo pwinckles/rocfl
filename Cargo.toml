@@ -41,8 +41,8 @@ uriparse = "0.6"
 
 # Enum features
 enum_dispatch = "0.3"
-strum = "0.22"
-strum_macros = "0.22"
+strum = "0.23"
+strum_macros = "0.23"
 
 # Path handling
 pathdiff = "0.2"
