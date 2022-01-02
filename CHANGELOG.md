@@ -12,8 +12,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Updated to [digest](https://crates.io/crates/digest) `0.10.0`, which
-  now allows for blake2b to be supported the same as the other algorithms
+- Upgraded to [digest](https://crates.io/crates/digest) `0.10.0`, which
+  now allows for blake2b to be supported the same as the other
+  algorithms
+- Upgraded to [clap](https://crates.io/crates/clap) `3.0.0`
 
 ## [1.6.2] - 2021-11-09
 

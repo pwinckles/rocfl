@@ -46,7 +46,7 @@ pub enum RocflError {
     Io(io::Error),
 
     #[error("{0}")]
-    Wrapped(Box<dyn error::Error>),
+    Wrapped(Box<dyn error::Error + Sync + Send>),
 }
 
 pub struct MultiError(pub Vec<String>);
@@ -137,7 +137,7 @@ impl From<ParseRegionError> for RocflError {
 }
 
 #[cfg(feature = "s3")]
-impl<T: error::Error + 'static> From<RusotoError<T>> for RocflError {
+impl<T: error::Error + Sync + Send + 'static> From<RusotoError<T>> for RocflError {
     fn from(e: RusotoError<T>) -> Self {
         RocflError::Wrapped(Box::new(e))
     }
