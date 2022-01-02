@@ -1043,7 +1043,7 @@ impl OcflRepo {
         logical_path: LogicalPath,
         inventory: &mut Inventory,
     ) -> Result<()> {
-        let mut reader = inventory.digest_algorithm.reader(File::open(&file)?)?;
+        let mut reader = inventory.digest_algorithm.reader(File::open(&file)?);
 
         info!(
             "Copying file {} into object at {}",

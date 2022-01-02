@@ -61,12 +61,12 @@ log = "0.4"
 env_logger = "0.9"
 
 # Digests
-digest = "0.9"
-blake2 = "0.9"
+digest = "0.10"
+blake2 = "0.10"
 hex = "0.4"
-md-5 = "0.9"
-sha-1 = "0.9"
-sha2 = "0.9"
+md-5 = "0.10"
+sha-1 = "0.10"
+sha2 = "0.10"
 
 # Search
 globset = "0.4"
