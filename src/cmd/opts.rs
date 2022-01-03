@@ -623,6 +623,8 @@ pub enum Layout {
     HashedNTupleObjectId,
     #[strum(serialize = "0006-flat-omit-prefix-storage-layout")]
     FlatOmitPrefix,
+    #[strum(serialize = "0007-n-tuple-omit-prefix-storage-layout")]
+    NTupleOmitPrefix,
 }
 
 #[derive(ArgEnum, Debug, Clone, Copy)]

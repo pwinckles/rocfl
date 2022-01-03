@@ -20,6 +20,7 @@ them easy to interact with in a unix-like way.
 - [0005-mutable-head](https://ocfl.github.io/extensions/0005-mutable-head.html):
   Only read is supported; not write.
 - [0006-flat-omit-prefix-storage-layout](https://ocfl.github.io/extensions/0006-flat-omit-prefix-storage-layout.html)
+- [0007-n-tuple-omit-prefix-storage-layout](https://ocfl.github.io/extensions/0007-n-tuple-omit-prefix-storage-layout.html)
 
 Additionally, it uses the following extensions for write support that
 have not been specified:

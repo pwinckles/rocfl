@@ -195,6 +195,10 @@ fn create_layout(layout_name: Layout, config_file: Option<&Path>) -> Result<Opti
             LayoutExtensionName::FlatOmitPrefixLayout,
             config_bytes.as_deref(),
         )?),
+        Layout::NTupleOmitPrefix => Some(StorageLayout::new(
+            LayoutExtensionName::NTupleOmitPrefixLayout,
+            config_bytes.as_deref(),
+        )?),
     };
 
     Ok(layout)
