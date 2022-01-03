@@ -598,7 +598,6 @@ impl NTupleOmitPrefixLayoutExtension {
                    object_id, self.config.extension_name);
         }
 
-        // TODO need to validate ascii only
         let test_id = if self.case_matters {
             Cow::Owned(object_id.to_lowercase())
         } else {
