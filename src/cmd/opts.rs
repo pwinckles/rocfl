@@ -7,8 +7,7 @@ use chrono::{DateTime, Local};
 use clap::AppSettings::UseLongFormatForHelpSubcommand;
 use clap::{ArgEnum, Args, Parser, Subcommand};
 use enum_dispatch::enum_dispatch;
-use strum::VariantNames;
-use strum_macros::{Display as EnumDisplay, EnumString, EnumVariantNames};
+use strum_macros::{Display as EnumDisplay, EnumString};
 
 use crate::ocfl::{ErrorCode, VersionNum, WarnCode};
 
@@ -321,10 +320,14 @@ pub struct InitCmd {
     ///
     /// The default extension configuration for the extension is used. Custom configuration
     /// may be specified using '--config-file'.
-    #[clap(short, long,
-    value_name = "LAYOUT",
-    default_value = "0004-hashed-n-tuple-storage-layout",
-    possible_values = &*Layout::VARIANTS)]
+    #[clap(
+        arg_enum,
+        short,
+        long,
+        value_name = "LAYOUT",
+        default_value = "0004-hashed-n-tuple-storage-layout",
+        ignore_case = true
+    )]
     pub layout: Layout,
 }
 
@@ -611,19 +614,25 @@ pub enum Field {
     None,
 }
 
-#[derive(Debug, Clone, Copy, EnumString, EnumDisplay, EnumVariantNames)]
+#[derive(ArgEnum, Debug, Clone, Copy, EnumString, EnumDisplay)]
 pub enum Layout {
     #[strum(serialize = "None", serialize = "none")]
+    #[clap(name = "none")]
     None,
     #[strum(serialize = "0002-flat-direct-storage-layout")]
+    #[clap(name = "0002-flat-direct-storage-layout")]
     FlatDirect,
     #[strum(serialize = "0004-hashed-n-tuple-storage-layout")]
+    #[clap(name = "0004-hashed-n-tuple-storage-layout")]
     HashedNTuple,
     #[strum(serialize = "0003-hash-and-id-n-tuple-storage-layout")]
+    #[clap(name = "0003-hash-and-id-n-tuple-storage-layout")]
     HashedNTupleObjectId,
     #[strum(serialize = "0006-flat-omit-prefix-storage-layout")]
+    #[clap(name = "0006-flat-omit-prefix-storage-layout")]
     FlatOmitPrefix,
     #[strum(serialize = "0007-n-tuple-omit-prefix-storage-layout")]
+    #[clap(name = "0007-n-tuple-omit-prefix-storage-layout")]
     NTupleOmitPrefix,
 }
 
