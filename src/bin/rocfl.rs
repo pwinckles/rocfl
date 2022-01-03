@@ -22,6 +22,7 @@ fn main() {
         .filter_level(log_level)
         .format_timestamp(None)
         .format_module_path(false)
+        .format_target(false)
         .init();
 
     let config = match config::load_config(&args.name) {
