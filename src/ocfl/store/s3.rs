@@ -442,7 +442,7 @@ impl OcflStore for S3OcflStore {
                 "Cannot create version {} in object {} because the current version is at {}",
                 version_str,
                 inventory.id,
-                existing_inventory.head.to_string()
+                existing_inventory.head
             )));
         }
 
