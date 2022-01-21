@@ -312,7 +312,7 @@ impl Inventory {
     /// paths that are removed from the manifest are returned.
     pub fn dedup_head(&mut self) -> Vec<Rc<ContentPath>> {
         let mut removed = Vec::new();
-        let prefix = format!("{}/", self.head.to_string());
+        let prefix = format!("{}/", self.head);
 
         let mut matches: HashMap<Rc<HexDigest>, HashSet<Rc<ContentPath>>> = HashMap::new();
 

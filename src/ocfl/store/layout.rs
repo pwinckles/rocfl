@@ -695,8 +695,8 @@ fn validate_extension_name(
     if actual != expected {
         Err(RocflError::InvalidConfiguration(format!(
             "Expected layout extension name {}; Found: {}",
-            expected.to_string(),
-            actual.to_string()
+            expected,
+            actual
         )))
     } else {
         Ok(())
@@ -729,7 +729,7 @@ fn validate_digest_algorithm(
             tuple_size,
             number_of_tuples,
             total_tuples_length,
-            algorithm.to_string(),
+            algorithm,
             digest.len()
         )))
     } else {

@@ -521,7 +521,7 @@ impl<'a> AsRow<'a> for ContentListing {
                 ColumnId::PhysicalPath => TextCell::new(&self.details.storage_path),
                 ColumnId::Digest => TextCell::new(format!(
                     "{}:{}",
-                    self.details.digest_algorithm.to_string(),
+                    self.details.digest_algorithm,
                     self.details.digest
                 )),
                 _ => TextCell::blank(),
