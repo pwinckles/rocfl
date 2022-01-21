@@ -46,7 +46,6 @@ strum_macros = "0.23"
 
 # Path handling
 pathdiff = "0.2"
-remove_dir_all = "0.7" # https://github.com/rust-lang/rust/issues/29497
 walkdir = "2"
 
 # CLI
