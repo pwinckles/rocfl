@@ -413,7 +413,7 @@ impl OcflStore for FsOcflStore {
         );
 
         if storage_path.exists() {
-            if let Err(e) = remove_dir_all::remove_dir_all(&storage_path) {
+            if let Err(e) = fs::remove_dir_all(&storage_path) {
                 return Err(RocflError::CorruptObject {
                     object_id: object_id.to_string(),
                     message: format!("Failed to purge object at {}. This object may need to be removed manually. Error: {}",
