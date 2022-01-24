@@ -10,6 +10,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased] - ReleaseDate
 
+### Changed
+
+- Updated dependencies
+
+### Fixed
+
+- Corrected print order of `show` command
+
 ## [1.6.3] - 2022-01-03
 
 ### Added

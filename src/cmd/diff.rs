@@ -99,6 +99,7 @@ impl Cmd for ShowCmd {
                     "{}",
                     FormatVersion::new(&object.version_details, !args.no_styles)
                 );
+                out.flush()?;
             }
 
             let diffs = repo.diff_staged(&self.object_id)?;
@@ -118,6 +119,7 @@ impl Cmd for ShowCmd {
                     "{}",
                     FormatVersion::new(&object.version_details, !args.no_styles)
                 );
+                out.flush()?;
             }
 
             let right = object.version_details.version_num;
