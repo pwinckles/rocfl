@@ -17,6 +17,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Corrected print order of `show` command
+- Corrected argument value names, which fixes a panic that was
+  introduced in the `show` command
 
 ## [1.6.3] - 2022-01-03
 
