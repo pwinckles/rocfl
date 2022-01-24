@@ -205,11 +205,11 @@ pub struct ListCmd {
     pub objects: bool,
 
     /// ID of the object to list. May be a glob when used with '-o'.
-    #[clap(name = "OBJ_ID")]
+    #[clap(value_name = "OBJ_ID")]
     pub object_id: Option<String>,
 
     /// Path glob of files to list. Requires an object to be specified.
-    #[clap(name = "PATH")]
+    #[clap(value_name = "PATH")]
     pub path: Option<String>,
 }
 
@@ -237,11 +237,11 @@ pub struct LogCmd {
     pub num: Num,
 
     /// ID of the object
-    #[clap(name = "OBJ_ID")]
+    #[clap(value_name = "OBJ_ID")]
     pub object_id: String,
 
     /// Optional path to a file
-    #[clap(name = "PATH")]
+    #[clap(value_name = "PATH")]
     pub path: Option<String>,
 }
 
@@ -257,11 +257,11 @@ pub struct ShowCmd {
     pub minimal: bool,
 
     /// ID of the object
-    #[clap(name = "OBJ_ID")]
+    #[clap(value_name = "OBJ_ID")]
     pub object_id: String,
 
     /// The version to show. The most recent version is shown by default
-    #[clap(name = "VERSION")]
+    #[clap(value_name = "VERSION")]
     pub version: Option<VersionNum>,
 }
 
@@ -269,15 +269,15 @@ pub struct ShowCmd {
 #[derive(Args, Debug)]
 pub struct DiffCmd {
     /// ID of the object
-    #[clap(name = "OBJ_ID")]
+    #[clap(value_name = "OBJ_ID")]
     pub object_id: String,
 
     /// Left-hand side version
-    #[clap(name = "LEFT_VERSION")]
+    #[clap(value_name = "LEFT_VERSION")]
     pub left: VersionNum,
 
     /// Right-hand side version
-    #[clap(name = "RIGHT_VERSION")]
+    #[clap(value_name = "RIGHT_VERSION")]
     pub right: VersionNum,
 }
 
@@ -293,11 +293,11 @@ pub struct CatCmd {
     pub version: Option<VersionNum>,
 
     /// ID of the object
-    #[clap(name = "OBJ_ID")]
+    #[clap(value_name = "OBJ_ID")]
     pub object_id: String,
 
     /// Logical path of the file
-    #[clap(name = "PATH")]
+    #[clap(value_name = "PATH")]
     pub path: String,
 }
 
@@ -357,7 +357,7 @@ pub struct NewCmd {
     pub zero_padding: u32,
 
     /// ID of the object to create.
-    #[clap(name = "OBJ_ID")]
+    #[clap(value_name = "OBJ_ID")]
     pub object_id: String,
 }
 
@@ -386,15 +386,15 @@ pub struct CopyCmd {
     pub version: Option<VersionNum>,
 
     /// ID of the object to copy files into
-    #[clap(name = "OBJ_ID")]
+    #[clap(value_name = "OBJ_ID")]
     pub object_id: String,
 
     /// Source files to copy. Glob patterns are supported.
-    #[clap(name = "SRC", required = true)]
+    #[clap(value_name = "SRC", required = true)]
     pub source: Vec<String>,
 
     /// Destination logical path. Specify '/' to copy into the object's root
-    #[clap(name = "DST", last = true)]
+    #[clap(value_name = "DST", last = true)]
     pub destination: String,
 }
 
@@ -410,15 +410,15 @@ pub struct MoveCmd {
     pub internal: bool,
 
     /// ID of the object to move files into
-    #[clap(name = "OBJ_ID")]
+    #[clap(value_name = "OBJ_ID")]
     pub object_id: String,
 
     /// Source files to move. Glob patterns are supported.
-    #[clap(name = "SRC", required = true)]
+    #[clap(value_name = "SRC", required = true)]
     pub source: Vec<String>,
 
     /// Destination logical path. Specify '/' to move into the object's root
-    #[clap(name = "DST", last = true)]
+    #[clap(value_name = "DST", last = true)]
     pub destination: String,
 }
 
@@ -437,11 +437,11 @@ pub struct RemoveCmd {
     pub recursive: bool,
 
     /// ID of the object to remove files from
-    #[clap(name = "OBJ_ID")]
+    #[clap(value_name = "OBJ_ID")]
     pub object_id: String,
 
     /// Logical paths of files to remove. Glob patterns are supported.
-    #[clap(name = "PATH", required = true)]
+    #[clap(value_name = "PATH", required = true)]
     pub paths: Vec<String>,
 }
 
@@ -487,7 +487,7 @@ pub struct CommitCmd {
     pub object_root: Option<String>,
 
     /// ID of the object to commit changes for
-    #[clap(name = "OBJ_ID")]
+    #[clap(value_name = "OBJ_ID")]
     pub object_id: String,
 }
 
@@ -503,12 +503,12 @@ pub struct ResetCmd {
     pub recursive: bool,
 
     /// ID of the object to reset
-    #[clap(name = "OBJ_ID")]
+    #[clap(value_name = "OBJ_ID")]
     pub object_id: String,
 
     /// Logical paths of the files to reset. Glob patterns are supported. If no paths are
     /// specified, the entire object is reset.
-    #[clap(name = "PATH")]
+    #[clap(value_name = "PATH")]
     pub paths: Vec<String>,
 }
 
@@ -519,7 +519,7 @@ pub struct ResetCmd {
 #[derive(Args, Debug)]
 pub struct StatusCmd {
     /// ID of the object to show staged changes for
-    #[clap(name = "OBJ_ID")]
+    #[clap(value_name = "OBJ_ID")]
     pub object_id: Option<String>,
 }
 
@@ -533,7 +533,7 @@ pub struct PurgeCmd {
     pub force: bool,
 
     /// ID of the object to purge
-    #[clap(name = "OBJ_ID")]
+    #[clap(value_name = "OBJ_ID")]
     pub object_id: String,
 }
 
@@ -594,7 +594,7 @@ pub struct ValidateCmd {
     pub suppress_error: Vec<ErrorCode>,
 
     /// IDs of the objects to validate, or paths object roots when used with '--paths'
-    #[clap(name = "OBJ_ID/PATH")]
+    #[clap(value_name = "OBJ_ID/PATH")]
     pub object_ids: Vec<String>,
 }
 
