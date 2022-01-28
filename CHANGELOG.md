@@ -10,6 +10,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased] - ReleaseDate
 
+## [1.6.5] - 2022-01-28
+
 ### Fixed
 
 - Corrected how the max zero-padded version is calculated
@@ -196,7 +198,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Initial release
 
 <!-- next-url -->
-[Unreleased]: https://github.com/pwinckles/rocfl/compare/v1.6.4...HEAD
+[Unreleased]: https://github.com/pwinckles/rocfl/compare/v1.6.5...HEAD
+[1.6.5]: https://github.com/pwinckles/rocfl/compare/v1.6.4...v1.6.5
 [1.6.4]: https://github.com/pwinckles/rocfl/compare/v1.6.3...v1.6.4
 [1.6.3]: https://github.com/pwinckles/rocfl/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/pwinckles/rocfl/compare/v1.6.1...v1.6.2
