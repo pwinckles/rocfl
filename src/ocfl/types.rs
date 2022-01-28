@@ -216,7 +216,7 @@ impl VersionNum {
     pub fn next(&self) -> Result<VersionNum> {
         let max = match self.width {
             0 => u32::MAX,
-            _ => (10 * (self.width - 1)) - 1,
+            _ => u32::pow(10, self.width -1) - 1,
         };
 
         if self.number + 1 > max as u32 {
@@ -1187,7 +1187,20 @@ fn convert_path_separator(use_backslashes: bool, path: String) -> String {
 mod tests {
     use std::convert::{TryFrom, TryInto};
 
-    use crate::ocfl::LogicalPath;
+    use crate::ocfl::{LogicalPath, VersionNum};
+
+    #[test]
+    fn allow_next_version_when_zero_padded_and_less_than_max() {
+        let current = VersionNum::try_from("v00039").unwrap();
+        current.next().unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Version cannot be greater than 9999")]
+    fn enforce_max_version_when_padded() {
+        let current = VersionNum::try_from("v09999").unwrap();
+        current.next().unwrap();
+    }
 
     #[test]
     fn create_logical_path_when_valid() {

@@ -10,6 +10,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased] - ReleaseDate
 
+### Fixed
+
+- Corrected how the max zero-padded version is calculated
+
 ## [1.6.4] - 2022-01-24
 
 ### Changed
