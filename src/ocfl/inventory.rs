@@ -34,6 +34,7 @@ pub struct Inventory {
     // TODO this would be better as a specific type that only allows sha256/sha512 -- but is a bit of a pain to change
     pub digest_algorithm: DigestAlgorithm,
     pub head: VersionNum,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub content_directory: Option<String>,
     manifest: PathBiMap<ContentPath>,
     pub versions: BTreeMap<VersionNum, Version>,
@@ -84,6 +85,7 @@ pub struct Version {
 #[derive(Deserialize, Serialize, Debug, Clone, Eq, PartialEq)]
 pub struct User {
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub address: Option<String>,
 }
 
