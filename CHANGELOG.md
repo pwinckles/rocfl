@@ -10,6 +10,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased] - ReleaseDate
 
+### Fixed
+
+- Ensure `null` fields are never serialized
+
 ## [1.6.5] - 2022-01-28
 
 ### Fixed
