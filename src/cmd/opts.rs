@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use chrono::{DateTime, Local};
-use clap::AppSettings::UseLongFormatForHelpSubcommand;
 use clap::{ArgEnum, Args, Parser, Subcommand};
 use enum_dispatch::enum_dispatch;
 use strum_macros::{Display as EnumDisplay, EnumString};
@@ -28,7 +27,6 @@ use crate::ocfl::{ErrorCode, VersionNum, WarnCode};
 /// every invocation. The easiest way to do this is by invoking: 'rocfl config'.
 #[derive(Debug, Parser)]
 #[clap(name = "rocfl", author = "Peter Winckles <pwinckles@pm.me>", version)]
-#[clap(setting(UseLongFormatForHelpSubcommand))]
 pub struct RocflArgs {
     /// Name of the repository to access
     ///
