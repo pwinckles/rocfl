@@ -21,7 +21,16 @@ s3 = ["bytes", "futures", "rusoto_core", "rusoto_credential", "rusoto_s3", "toki
 name = "rocfl"
 path = "src/bin/rocfl.rs"
 
+[profile.release]
+strip = true
+
 [dependencies]
+
+# TODO consider https://crates.io/crates/termtree for tree display
+# TODO consider https://github.com/mitsuhiko/similar for file diffing
+# TODO https://crates.io/crates/content_inspector for binary/text detection
+# TODO consider https://crates.io/crates/wild for windows globing
+
 # General
 once_cell = "1"
 
@@ -34,7 +43,7 @@ thiserror = "1"
 
 # Strings
 natord = "1"
-percent-encoding="2"
+percent-encoding = "2"
 regex = "1"
 unicode-width = "0.1"
 uriparse = "0.6"

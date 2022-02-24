@@ -792,10 +792,11 @@ impl S3Client {
             let key = join(&self.prefix, path);
             info!(
                 "Putting {} in S3 at {}",
-                file_path.as_ref().to_string_lossy(),
+                file_path.as_ref().display(),
                 key
             );
 
+            #[allow(clippy::unnecessary_to_owned)]
             let stream = tokio::fs::read(file_path.as_ref().to_path_buf())
                 .into_stream()
                 .map_ok(Bytes::from);

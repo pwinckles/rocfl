@@ -1178,7 +1178,7 @@ fn join(use_backslashes: bool, parent: &str, child: &str) -> String {
 /// Changes `/` to `\` on Windows
 fn convert_path_separator(use_backslashes: bool, path: String) -> String {
     if use_backslashes && path::MAIN_SEPARATOR == '\\' {
-        return path.replace("/", "\\");
+        return path.replace('/', "\\");
     }
     path
 }
