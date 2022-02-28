@@ -649,7 +649,7 @@ pub enum Level {
 
 impl Default for Num {
     fn default() -> Self {
-        Self (usize::MAX)
+        Self(usize::MAX)
     }
 }
 

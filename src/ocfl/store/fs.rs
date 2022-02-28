@@ -354,9 +354,7 @@ impl OcflStore for FsOcflStore {
         if existing_inventory.head != inventory.head.previous().unwrap() {
             return Err(RocflError::IllegalState(format!(
                 "Cannot create version {} in object {} because the current version is at {}",
-                version_str,
-                inventory.id,
-                existing_inventory.head
+                version_str, inventory.id, existing_inventory.head
             )));
         }
 

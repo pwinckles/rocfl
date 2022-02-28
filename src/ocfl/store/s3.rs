@@ -36,7 +36,8 @@ use crate::ocfl::paths::{join, join_with_trailing_slash};
 use crate::ocfl::store::{Listing, Storage};
 use crate::ocfl::validate::{IncrementalValidator, ObjectValidationResult, Validator};
 use crate::ocfl::{
-    paths, specs, util, InventoryPath, LayoutExtensionName, LogicalPath, VersionRef,
+    paths, specs, util, DigestAlgorithm, InventoryPath, LayoutExtensionName, LogicalPath,
+    VersionRef,
 };
 
 const TYPE_PLAIN: &str = "text/plain; charset=UTF-8";
@@ -267,15 +268,16 @@ impl S3OcflStore {
 
     fn install_inventory_in_root_with_rollback(
         &self,
-        inventory: &Inventory,
+        object_root: &str,
+        digest_algorithm: DigestAlgorithm,
         version_path: impl AsRef<Path>,
         uploaded: Vec<String>,
     ) -> Result<()> {
         let inventory_src = paths::inventory_path(&version_path);
-        let sidecar_src = paths::sidecar_path(&version_path, inventory.digest_algorithm);
-        let inventory_dst = join(&inventory.object_root, INVENTORY_FILE);
+        let sidecar_src = paths::sidecar_path(&version_path, digest_algorithm);
+        let inventory_dst = join(object_root, INVENTORY_FILE);
         let sidecar_dst = join(
-            &inventory.object_root,
+            object_root,
             &sidecar_src.file_name().unwrap().to_string_lossy(),
         );
 
@@ -440,9 +442,7 @@ impl OcflStore for S3OcflStore {
         if existing_inventory.head != inventory.head.previous().unwrap() {
             return Err(RocflError::IllegalState(format!(
                 "Cannot create version {} in object {} because the current version is at {}",
-                version_str,
-                inventory.id,
-                existing_inventory.head
+                version_str, inventory.id, existing_inventory.head
             )));
         }
 
@@ -460,7 +460,12 @@ impl OcflStore for S3OcflStore {
         );
 
         let uploaded = self.upload_all_files_with_rollback(&version_dst_path, version_path)?;
-        self.install_inventory_in_root_with_rollback(inventory, version_path, uploaded)?;
+        self.install_inventory_in_root_with_rollback(
+            &existing_inventory.object_root,
+            inventory.digest_algorithm,
+            version_path,
+            uploaded,
+        )?;
 
         inventory.storage_path = existing_inventory.storage_path;
 
@@ -790,11 +795,7 @@ impl S3Client {
             self.multipart_put_file(path, file_path, content_length, content_type)?;
         } else {
             let key = join(&self.prefix, path);
-            info!(
-                "Putting {} in S3 at {}",
-                file_path.as_ref().display(),
-                key
-            );
+            info!("Putting {} in S3 at {}", file_path.as_ref().display(), key);
 
             #[allow(clippy::unnecessary_to_owned)]
             let stream = tokio::fs::read(file_path.as_ref().to_path_buf())

@@ -13,6 +13,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Ensure `null` fields are never serialized
+- Fix bug where the incorrect object storage path was being calculated
+  when updating objects in S3
 
 ## [1.6.5] - 2022-01-28
 
