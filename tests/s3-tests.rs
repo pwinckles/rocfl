@@ -1,6 +1,11 @@
 // TODO fix this so the tests can be run in parallel
 //! These tests **MUST** be run sequentially with `cargo test -- --test-threads=1` because of
 //! https://github.com/hyperium/hyper/issues/2112
+//!
+//! The following env variables must be set for the tests to run:
+//! - AWS_ACCESS_KEY_ID
+//! - AWS_SECRET_ACCESS_KEY
+//! - OCFL_TEST_S3_BUCKET
 #![cfg(feature = "s3")]
 
 use std::panic::UnwindSafe;
@@ -31,6 +36,14 @@ const ACCESS_VAR: &str = "AWS_ACCESS_KEY_ID";
 const ACCESS_HASH: &str = "20cdc6f24747a49e6d295082e4bcaa81612a31e27d5916540429720bc0a43226";
 const REGION: Region = Region::UsEast2;
 
+const DEFAULT_LAYOUT: &str = r#"{
+  "extensionName": "0004-hashed-n-tuple-storage-layout",
+  "digestAlgorithm": "sha512",
+  "tupleSize": 5,
+  "numberOfTuples": 2,
+  "shortObjectRoot": true
+}"#;
+
 #[test]
 fn create_new_repo_empty_dir() {
     skip_or_run_s3_test(
@@ -49,13 +62,7 @@ fn create_new_repo_empty_dir() {
                 &s3_client,
                 &prefix,
                 "0004-hashed-n-tuple-storage-layout",
-                r#"{
-  "extensionName": "0004-hashed-n-tuple-storage-layout",
-  "digestAlgorithm": "sha256",
-  "tupleSize": 3,
-  "numberOfTuples": 3,
-  "shortObjectRoot": false
-}"#,
+                DEFAULT_LAYOUT,
             );
 
             let object_id = "s3-object";
@@ -75,8 +82,8 @@ fn create_new_repo_empty_dir() {
             assert_file_exists(
                 &s3_client,
                 &prefix,
-                "eb0/07b/776/eb007b776561e27481743c3a4d40568fee20eae5\
-        949b99c2235946004246bc60/0=ocfl_object_1.0",
+                "a7aba/e5855/9c91bb9cca7697aca8789730e82ad82e1c1a63736e52dafc99ba4b7e3896276d5266ca\
+                5947374b59d15735e38d6e5b8d131268509bf601bdad8d4c/0=ocfl_object_1.0",
             );
         },
     );
@@ -829,7 +836,13 @@ fn default_repo(prefix: &str, staging: impl AsRef<Path>) -> OcflRepo {
     init_repo(
         prefix,
         staging,
-        Some(StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None).unwrap()),
+        Some(
+            StorageLayout::new(
+                LayoutExtensionName::HashedNTupleLayout,
+                Some(DEFAULT_LAYOUT.as_bytes()),
+            )
+            .unwrap(),
+        ),
     )
 }
 

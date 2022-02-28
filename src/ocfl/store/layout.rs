@@ -695,8 +695,7 @@ fn validate_extension_name(
     if actual != expected {
         Err(RocflError::InvalidConfiguration(format!(
             "Expected layout extension name {}; Found: {}",
-            expected,
-            actual
+            expected, actual
         )))
     } else {
         Ok(())

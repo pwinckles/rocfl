@@ -216,7 +216,7 @@ impl VersionNum {
     pub fn next(&self) -> Result<VersionNum> {
         let max = match self.width {
             0 => u32::MAX,
-            _ => u32::pow(10, self.width -1) - 1,
+            _ => u32::pow(10, self.width - 1) - 1,
         };
 
         if self.number + 1 > max as u32 {
