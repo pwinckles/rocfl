@@ -1,6 +1,6 @@
 [package]
 name = "rocfl"
-version = "1.6.6"
+version = "1.6.7-dev"
 authors = ["Peter Winckles <pwinckles@pm.me>"]
 edition = "2021"
 description= "A CLI for OCFL repositories"
