@@ -420,7 +420,7 @@ fn inconsistent_id() {
         &result,
         &[version_error(
             "v1",
-            ErrorCode::E037,
+            ErrorCode::E110,
             "Inventory 'id' is inconsistent. Expected: urn:example-2; Found: urn:example-two",
         )],
     );
