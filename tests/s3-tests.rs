@@ -20,7 +20,8 @@ use fs_extra::dir::CopyOptions;
 use rand::Rng;
 use rocfl::ocfl::{
     CommitMeta, DigestAlgorithm, ErrorCode, FileDetails, LayoutExtensionName, OcflRepo,
-    ProblemLocation, RocflError, StorageLayout, ValidationError, VersionNum, VersionRef, WarnCode,
+    ProblemLocation, RocflError, SpecVersion, StorageLayout, ValidationError, VersionNum,
+    VersionRef, WarnCode,
 };
 use rusoto_core::Region;
 use rusoto_s3::{
@@ -847,7 +848,16 @@ fn default_repo(prefix: &str, staging: impl AsRef<Path>) -> OcflRepo {
 }
 
 fn init_repo(prefix: &str, staging: impl AsRef<Path>, layout: Option<StorageLayout>) -> OcflRepo {
-    OcflRepo::init_s3_repo(REGION, &bucket(), Some(prefix), staging, layout, None).unwrap()
+    OcflRepo::init_s3_repo(
+        SpecVersion::Ocfl1_0,
+        REGION,
+        &bucket(),
+        Some(prefix),
+        staging,
+        layout,
+        None,
+    )
+    .unwrap()
 }
 
 fn s3_prefix() -> String {

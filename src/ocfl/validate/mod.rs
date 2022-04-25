@@ -830,10 +830,7 @@ impl<S: Storage> Validator<S> {
         found
     }
 
-    fn identify_object_spec_version(
-        &self,
-        files: &[Listing],
-    ) -> Option<SpecVersion> {
+    fn identify_object_spec_version(&self, files: &[Listing]) -> Option<SpecVersion> {
         for file in files {
             if let Listing::File(path) = file {
                 if let Ok(version) = SpecVersion::try_from_object_namaste_name(path.as_ref()) {
@@ -845,6 +842,7 @@ impl<S: Storage> Validator<S> {
         None
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn validate_inventory_and_sidecar(
         &self,
         object_id: Option<&str>,
@@ -960,7 +958,12 @@ impl<S: Storage> Validator<S> {
             ParseResult::Ok(parse_result, inv) => {
                 result.object_id(&inv.id);
 
-                self.validate_inv_type(&inv, required_spec_version, max_spec_version, &parse_result);
+                self.validate_inv_type(
+                    &inv,
+                    required_spec_version,
+                    max_spec_version,
+                    &parse_result,
+                );
 
                 if let Some(version) = version {
                     if inv.head != version {
@@ -1370,6 +1373,7 @@ impl<S: Storage> Validator<S> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn validate_version(
         &self,
         version_num: VersionNum,

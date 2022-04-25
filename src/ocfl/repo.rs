@@ -105,7 +105,9 @@ impl OcflRepo {
     ) -> Result<Self> {
         Ok(Self {
             staging_root: staging_root.as_ref().to_path_buf(),
-            store: Box::new(S3OcflStore::init(version, region, bucket, prefix, layout, profile)?),
+            store: Box::new(S3OcflStore::init(
+                version, region, bucket, prefix, layout, profile,
+            )?),
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
             use_backslashes: false,

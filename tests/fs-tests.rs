@@ -13,7 +13,7 @@ use maplit::hashmap;
 use rocfl::ocfl::{
     CommitMeta, ContentPath, Diff, DigestAlgorithm, FileDetails, InventoryPath,
     LayoutExtensionName, ObjectVersion, ObjectVersionDetails, OcflRepo, Result, RocflError,
-    StorageLayout, ValidationResult, VersionDetails, VersionNum, VersionRef,
+    SpecVersion, StorageLayout, ValidationResult, VersionDetails, VersionNum, VersionRef,
 };
 
 mod common;
@@ -558,6 +558,7 @@ fn create_new_repo_empty_dir() -> Result<()> {
     let repo = OcflRepo::init_fs_repo(
         root.path(),
         None,
+        SpecVersion::Ocfl1_0,
         Some(StorageLayout::new(
             LayoutExtensionName::HashedNTupleLayout,
             None,
@@ -598,6 +599,7 @@ fn create_new_flat_repo_empty_dir() -> Result<()> {
     let repo = OcflRepo::init_fs_repo(
         root.path(),
         None,
+        SpecVersion::Ocfl1_0,
         Some(StorageLayout::new(
             LayoutExtensionName::FlatDirectLayout,
             None,
@@ -630,6 +632,7 @@ fn create_new_hash_id_repo_empty_dir() -> Result<()> {
     let repo = OcflRepo::init_fs_repo(
         root.path(),
         None,
+        SpecVersion::Ocfl1_0,
         Some(StorageLayout::new(
             LayoutExtensionName::HashedNTupleObjectIdLayout,
             None,
@@ -677,6 +680,7 @@ fn create_new_repo_empty_dir_custom_layout() -> Result<()> {
     let repo = OcflRepo::init_fs_repo(
         root.path(),
         None,
+        SpecVersion::Ocfl1_0,
         Some(StorageLayout::new(
             LayoutExtensionName::HashedNTupleLayout,
             Some(layout.as_bytes()),
@@ -711,6 +715,7 @@ fn fail_new_repo_creation_when_non_empty_root() {
     let _repo = OcflRepo::init_fs_repo(
         root.path(),
         None,
+        SpecVersion::Ocfl1_0,
         Some(StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None).unwrap()),
     )
     .unwrap();
@@ -4378,7 +4383,7 @@ fn create_and_update_object_in_repo_with_no_layout() {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
 
-    let repo = OcflRepo::init_fs_repo(root.path(), None, None).unwrap();
+    let repo = OcflRepo::init_fs_repo(root.path(), None, SpecVersion::Ocfl1_0, None).unwrap();
 
     let object_id = "no layout";
     let object_root = "random/path/to/obj";
@@ -4456,6 +4461,7 @@ fn fail_when_incorrect_object_in_root() {
     let repo = OcflRepo::init_fs_repo(
         root.path(),
         None,
+        SpecVersion::Ocfl1_0,
         Some(StorageLayout::new(LayoutExtensionName::FlatDirectLayout, None).unwrap()),
     )
     .unwrap();
@@ -4808,6 +4814,7 @@ fn default_repo(root: impl AsRef<Path>) -> OcflRepo {
     OcflRepo::init_fs_repo(
         root,
         None,
+        SpecVersion::Ocfl1_0,
         Some(StorageLayout::new(LayoutExtensionName::HashedNTupleLayout, None).unwrap()),
     )
     .unwrap()
