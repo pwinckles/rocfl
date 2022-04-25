@@ -87,12 +87,12 @@ impl S3OcflStore {
 
     /// Initializes a new OCFL repository at the specified location
     pub fn init(
-        version: SpecVersion,
         region: Region,
         bucket: &str,
         prefix: Option<&str>,
-        layout: Option<StorageLayout>,
         profile: Option<&str>,
+        version: SpecVersion,
+        layout: Option<StorageLayout>,
     ) -> Result<Self> {
         let s3_client = S3Client::new(region, bucket, prefix, profile)?;
 

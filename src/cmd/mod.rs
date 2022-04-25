@@ -135,7 +135,7 @@ pub fn init_repo(cmd: &InitCmd, args: &RocflArgs, config: &Config) -> Result<()>
         let _ = OcflRepo::init_fs_repo(
             config.root.as_ref().unwrap(),
             config.staging_root.as_ref().map(Path::new),
-            // TODO from cli
+            // TODO 1.1 from cli
             SpecVersion::Ocfl1_0,
             create_layout(cmd.layout, cmd.config_file.as_deref())?,
         )?;
@@ -235,14 +235,14 @@ fn init_s3_repo(config: &Config, layout: Option<StorageLayout>) -> Result<OcflRe
     let region = resolve_region(config)?;
 
     OcflRepo::init_s3_repo(
-        // TODO from cli
-        SpecVersion::Ocfl1_0,
         region,
         config.bucket.as_ref().unwrap(),
         config.root.as_deref(),
-        config.staging_root.as_ref().unwrap(),
-        layout,
         config.profile.as_deref(),
+        config.staging_root.as_ref().unwrap(),
+        // TODO 1.1 from cli
+        SpecVersion::Ocfl1_0,
+        layout,
     )
 }
 

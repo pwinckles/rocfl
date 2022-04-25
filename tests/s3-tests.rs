@@ -849,13 +849,13 @@ fn default_repo(prefix: &str, staging: impl AsRef<Path>) -> OcflRepo {
 
 fn init_repo(prefix: &str, staging: impl AsRef<Path>, layout: Option<StorageLayout>) -> OcflRepo {
     OcflRepo::init_s3_repo(
-        SpecVersion::Ocfl1_0,
         REGION,
         &bucket(),
         Some(prefix),
-        staging,
-        layout,
         None,
+        staging,
+        SpecVersion::Ocfl1_0,
+        layout,
     )
     .unwrap()
 }
