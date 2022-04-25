@@ -10,6 +10,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased] - ReleaseDate
 
+### Changed
+
+- Invalid `fixity` block validation code changed to `E111`
+
 ## [1.6.6] - 2022-03-01
 
 ### Fixed
