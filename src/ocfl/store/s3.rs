@@ -542,7 +542,7 @@ impl OcflStore for S3OcflStore {
         let object_root = self.lookup_or_find_object_root_path(object_id)?;
 
         self.validator
-            .validate_object(Some(object_id), &object_root, fixity_check)
+            .validate_object(Some(object_id), &object_root, None, fixity_check)
     }
 
     /// Validates the specified object at the specified path, relative the storage root, and
@@ -554,7 +554,7 @@ impl OcflStore for S3OcflStore {
         fixity_check: bool,
     ) -> Result<ObjectValidationResult> {
         self.validator
-            .validate_object(None, object_root, fixity_check)
+            .validate_object(None, object_root, None, fixity_check)
     }
 
     /// Validates the structure of an OCFL repository as well as all of the objects in the repository
