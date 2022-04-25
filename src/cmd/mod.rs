@@ -14,7 +14,7 @@ use rusoto_core::Region;
 
 use crate::cmd::opts::*;
 use crate::config::{self, Config};
-use crate::ocfl::{LayoutExtensionName, OcflRepo, Result, RocflError, StorageLayout};
+use crate::ocfl::{LayoutExtensionName, OcflRepo, Result, RocflError, SpecVersion, StorageLayout};
 
 mod cmds;
 mod diff;
@@ -135,6 +135,8 @@ pub fn init_repo(cmd: &InitCmd, args: &RocflArgs, config: &Config) -> Result<()>
         let _ = OcflRepo::init_fs_repo(
             config.root.as_ref().unwrap(),
             config.staging_root.as_ref().map(Path::new),
+            // TODO from cli
+            SpecVersion::Ocfl1_0,
             create_layout(cmd.layout, cmd.config_file.as_deref())?,
         )?;
     }
@@ -233,6 +235,8 @@ fn init_s3_repo(config: &Config, layout: Option<StorageLayout>) -> Result<OcflRe
     let region = resolve_region(config)?;
 
     OcflRepo::init_s3_repo(
+        // TODO from cli
+        SpecVersion::Ocfl1_0,
         region,
         config.bucket.as_ref().unwrap(),
         config.root.as_deref(),

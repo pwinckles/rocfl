@@ -1,11 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use crate::ocfl::consts::{
-    EXTENSIONS_DIR, INVENTORY_FILE, OBJECT_NAMASTE_FILE, OCFL_LAYOUT_FILE, OCFL_SPEC_FILE,
-    REPO_NAMASTE_FILE, ROCFL_LOCKS_EXTENSION, ROCFL_STAGING_EXTENSION,
-};
+use crate::ocfl::consts::*;
 use crate::ocfl::inventory::Inventory;
-use crate::ocfl::{DigestAlgorithm, VersionNum};
+use crate::ocfl::{DigestAlgorithm, SpecVersion, VersionNum};
 
 /// Returns the path to `inventory.json` within the specified directory
 pub fn inventory_path<P>(dir: P) -> PathBuf
@@ -29,11 +26,11 @@ pub fn sidecar_name(algorithm: DigestAlgorithm) -> String {
 }
 
 /// Returns the path to an object's namaste file
-pub fn object_namaste_path<P>(dir: P) -> PathBuf
+pub fn object_namaste_path<P>(dir: P, version: SpecVersion) -> PathBuf
 where
     P: AsRef<Path>,
 {
-    dir.as_ref().join(OBJECT_NAMASTE_FILE)
+    dir.as_ref().join(version.object_namaste().filename)
 }
 
 /// Returns the path to the version directory within the object root
@@ -99,19 +96,19 @@ where
 }
 
 /// Returns the path to the OCFL root namaste file
-pub fn root_namaste_path<P>(storage_root: P) -> PathBuf
+pub fn root_namaste_path<P>(storage_root: P, version: SpecVersion) -> PathBuf
 where
     P: AsRef<Path>,
 {
-    storage_root.as_ref().join(REPO_NAMASTE_FILE)
+    storage_root.as_ref().join(version.root_namaste().filename)
 }
 
 /// Returns the path to the OCFL spec file
-pub fn ocfl_spec_path<P>(storage_root: P) -> PathBuf
+pub fn ocfl_spec_path<P>(storage_root: P, version: SpecVersion) -> PathBuf
 where
     P: AsRef<Path>,
 {
-    storage_root.as_ref().join(OCFL_SPEC_FILE)
+    storage_root.as_ref().join(version.spec_filename())
 }
 
 /// Joins two string path parts, inserting at `/` if needed

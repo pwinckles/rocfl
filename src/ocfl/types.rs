@@ -18,7 +18,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use VersionRef::Head;
 
 use crate::ocfl::bimap::PathBiMap;
-use crate::ocfl::consts::MUTABLE_HEAD_EXT_DIR;
+use crate::ocfl::consts::*;
 use crate::ocfl::digest::HexDigest;
 use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::{Inventory, Version};
@@ -40,6 +40,92 @@ pub struct VersionNum {
 pub enum VersionRef {
     Number(VersionNum),
     Head,
+}
+
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub enum SpecVersion {
+    Ocfl1_0,
+    Ocfl1_1,
+}
+
+// TODO move
+impl SpecVersion {
+    pub fn try_from_root_namaste_name(name: &str) -> Result<SpecVersion> {
+        match name {
+            ROOT_NAMASTE_FILE_1_0 => Ok(SpecVersion::Ocfl1_0),
+            ROOT_NAMASTE_FILE_1_1 => Ok(SpecVersion::Ocfl1_1),
+            _ => Err(RocflError::InvalidValue(name.to_string())),
+        }
+    }
+
+    pub fn try_from_object_namaste_name(name: &str) -> Result<SpecVersion> {
+        match name {
+            OBJECT_NAMASTE_FILE_1_0 => Ok(SpecVersion::Ocfl1_0),
+            OBJECT_NAMASTE_FILE_1_1 => Ok(SpecVersion::Ocfl1_1),
+            _ => Err(RocflError::InvalidValue(name.to_string())),
+        }
+    }
+
+    pub fn try_from_inventory_type(name: &str) -> Result<SpecVersion> {
+        match name {
+            INVENTORY_TYPE_1_0 => Ok(SpecVersion::Ocfl1_0),
+            INVENTORY_TYPE_1_1 => Ok(SpecVersion::Ocfl1_1),
+            _ => Err(RocflError::InvalidValue(name.to_string())),
+        }
+    }
+
+    pub fn version(self) -> &'static str {
+        match self {
+            SpecVersion::Ocfl1_0 => "1.0",
+            SpecVersion::Ocfl1_1 => "1.1",
+        }
+    }
+
+    pub(crate) fn root_namaste(self) -> Namaste {
+        match self {
+            SpecVersion::Ocfl1_0 => Namaste::new(ROOT_NAMASTE_FILE_1_0, ROOT_NAMASTE_CONTENT_1_0),
+            SpecVersion::Ocfl1_1 => Namaste::new(ROOT_NAMASTE_FILE_1_1, ROOT_NAMASTE_CONTENT_1_1),
+        }
+    }
+
+    pub(crate) fn object_namaste(self) -> Namaste {
+        match self {
+            SpecVersion::Ocfl1_0 => {
+                Namaste::new(OBJECT_NAMASTE_FILE_1_0, OBJECT_NAMASTE_CONTENT_1_0)
+            }
+            SpecVersion::Ocfl1_1 => {
+                Namaste::new(OBJECT_NAMASTE_FILE_1_1, OBJECT_NAMASTE_CONTENT_1_1)
+            }
+        }
+    }
+
+    // TODO reconsider if I want this as an enum too
+    pub(crate) fn inventory_type(self) -> &'static str {
+        match self {
+            SpecVersion::Ocfl1_0 => INVENTORY_TYPE_1_0,
+            SpecVersion::Ocfl1_1 => INVENTORY_TYPE_1_1,
+        }
+    }
+
+    pub(crate) fn spec_filename(self) -> &'static str {
+        match self {
+            SpecVersion::Ocfl1_0 => OCFL_SPEC_FILE_1_0,
+            SpecVersion::Ocfl1_1 => OCFL_SPEC_FILE_1_1,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct Namaste {
+    pub(crate) filename: &'static str,
+    pub(crate) content: &'static str,
+}
+
+// TODO move
+impl Namaste {
+    fn new(filename: &'static str, content: &'static str) -> Self {
+        Self { filename, content }
+    }
 }
 
 pub trait InventoryPath {

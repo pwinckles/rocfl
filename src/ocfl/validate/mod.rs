@@ -19,7 +19,7 @@ use crate::ocfl::inventory::Inventory;
 use crate::ocfl::store::{Listing, OcflLayout, Storage};
 use crate::ocfl::{
     paths, util, ContentPath, ContentPathVersion, DigestAlgorithm, InventoryPath, PrettyPrintSet,
-    VersionNum,
+    SpecVersion, VersionNum,
 };
 
 mod serde;
@@ -165,6 +165,15 @@ pub enum ErrorCode {
     E100,
     E101,
     E102,
+    E103,
+    E104,
+    E105,
+    E106,
+    E107,
+    E108,
+    E109,
+    E110,
+    E111,
 }
 
 /// OCFL validation codes for warnings: https://ocfl.io/1.0/spec/validation-codes.html
@@ -300,6 +309,7 @@ pub struct IncrementalValidatorImpl<'a, S: Storage> {
     storage_hierarchy_result: StorageValidationResult,
     validator: &'a Validator<S>,
     storage: &'a S,
+    root_version: Option<SpecVersion>,
     fixity_check: bool,
     dir_iters: Vec<Dir<'a>>,
     current_iter: Option<Dir<'a>>,
@@ -538,13 +548,15 @@ impl<S: Storage> Validator<S> {
             util::convert_backslash_to_forward(object_root).to_string(),
         );
 
-        self.validate_object_namaste(object_root, &root_files, &mut result);
+        let object_version = self.validate_object_namaste(object_root, &root_files, &mut result);
 
         let (inventory, sidecar_file, digest) = self.validate_inventory_and_sidecar(
             object_id,
             None,
             object_root,
             &root_files,
+            object_version,
+            None,
             &mut result,
         )?;
 
@@ -554,6 +566,7 @@ impl<S: Storage> Validator<S> {
             self.validate_object_root_contents(
                 object_root,
                 &root_files,
+                object_version,
                 &inventory,
                 &sidecar_file,
                 &mut result,
@@ -588,6 +601,9 @@ impl<S: Storage> Validator<S> {
                             &inventory,
                             &inventories,
                             &content_files,
+                            None,
+                            // TODO max needs to be based on the prior version
+                            object_version,
                             &mut result,
                         )?;
                         if let Some(inv) = inv {
@@ -620,7 +636,8 @@ impl<S: Storage> Validator<S> {
         let mut root_result = StorageValidationResult::new();
         let files = self.storage.list("", false)?;
 
-        self.validate_root_namaste(&files, &mut root_result);
+        // TODO need to feed object validator
+        let root_version = self.validate_root_namaste(&files, &mut root_result);
 
         if files.contains(&Listing::dir(EXTENSIONS_DIR)) {
             let ext_files = self.storage.list(EXTENSIONS_DIR, false)?;
@@ -645,54 +662,65 @@ impl<S: Storage> Validator<S> {
             root_result,
             self,
             &self.storage,
+            root_version,
             fixity_check,
             files,
             self.closed.clone(),
         ))
     }
 
-    // TODO this should resolve the OCFL object version
-    fn validate_root_namaste(&self, files: &[Listing], result: &mut StorageValidationResult) {
-        if files.contains(&Listing::file(REPO_NAMASTE_FILE)) {
-            // TODO only valid for 1.0
-            let mut bytes: Vec<u8> = Vec::new();
-            if self.storage.read(REPO_NAMASTE_FILE, &mut bytes).is_ok() {
-                match String::from_utf8(bytes) {
-                    Ok(contents) => {
-                        // TODO only valid for 1.0
-                        if contents != REPO_NAMASTE_CONTENTS_1_0 {
+    fn validate_root_namaste(
+        &self,
+        files: &[Listing],
+        result: &mut StorageValidationResult,
+    ) -> Option<SpecVersion> {
+        let version = self.identify_root_spec_version(files, result);
+
+        match version {
+            Some(version) => {
+                let namaste = version.root_namaste();
+                let mut bytes: Vec<u8> = Vec::new();
+                if self.storage.read(namaste.filename, &mut bytes).is_ok() {
+                    match String::from_utf8(bytes) {
+                        Ok(contents) => {
+                            if contents != namaste.content {
+                                result.error(
+                                    ProblemLocation::StorageRoot,
+                                    ErrorCode::E080,
+                                    format!(
+                                        "Root version declaration is invalid. Expected: {}; Found: {}",
+                                        namaste.content.trim_end(), contents.trim_end()
+                                    ),
+                                );
+                            }
+                        }
+                        Err(_) => {
                             result.error(
                                 ProblemLocation::StorageRoot,
                                 ErrorCode::E080,
-                                format!(
-                                    "Root version declaration is invalid. Expected: {}; Found: {}",
-                                    OCFL_VERSION, contents
-                                ),
+                                "Root version declaration contains invalid UTF-8 content"
+                                    .to_string(),
                             );
                         }
                     }
-                    Err(_) => {
-                        result.error(
-                            ProblemLocation::StorageRoot,
-                            ErrorCode::E080,
-                            "Root version declaration contains invalid UTF-8 content".to_string(),
-                        );
-                    }
+                } else {
+                    result.error(
+                        ProblemLocation::StorageRoot,
+                        ErrorCode::E069,
+                        "Root version declaration does not exist".to_string(),
+                    );
                 }
-            } else {
+            }
+            None => {
                 result.error(
                     ProblemLocation::StorageRoot,
                     ErrorCode::E069,
                     "Root version declaration does not exist".to_string(),
                 );
             }
-        } else {
-            result.error(
-                ProblemLocation::StorageRoot,
-                ErrorCode::E069,
-                "Root version declaration does not exist".to_string(),
-            );
         }
+
+        version
     }
 
     fn validate_ocfl_layout(&self, files: &[Listing], result: &mut StorageValidationResult) {
@@ -720,54 +748,101 @@ impl<S: Storage> Validator<S> {
         }
     }
 
-    // TODO this should resolve the OCFL object version
     fn validate_object_namaste(
         &self,
         object_root: &str,
         files: &[Listing],
         result: &mut ObjectValidationResult,
-    ) {
-        if files.contains(&Listing::file(OBJECT_NAMASTE_FILE)) {
-            // TODO only valid for 1.0
-            let path = paths::join(object_root, OBJECT_NAMASTE_FILE);
-            let mut bytes: Vec<u8> = Vec::new();
-            if self.storage.read(&path, &mut bytes).is_ok() {
-                match String::from_utf8(bytes) {
-                    Ok(contents) => {
-                        // TODO only valid for 1.0
-                        if contents != OBJECT_NAMASTE_CONTENTS_1_0 {
+    ) -> Option<SpecVersion> {
+        // TODO validate <= root version
+        let version = self.identify_object_spec_version(files);
+
+        match version {
+            Some(version) => {
+                let namaste = version.object_namaste();
+                let path = paths::join(object_root, namaste.filename);
+                let mut bytes: Vec<u8> = Vec::new();
+                if self.storage.read(&path, &mut bytes).is_ok() {
+                    match String::from_utf8(bytes) {
+                        Ok(contents) => {
+                            if contents != namaste.content {
+                                result.error(
+                                    ProblemLocation::ObjectRoot,
+                                    ErrorCode::E007,
+                                    format!(
+                                        "Object version declaration is invalid. Expected: {}; Found: {}",
+                                        namaste.content.trim_end(), contents.trim_end()
+                                    ),
+                                );
+                            }
+                        }
+                        Err(_) => {
                             result.error(
                                 ProblemLocation::ObjectRoot,
                                 ErrorCode::E007,
-                                format!(
-                                    "Object version declaration is invalid. Expected: {}; Found: {}",
-                                    OCFL_OBJECT_VERSION, contents
-                                ),
+                                "Object version declaration contains invalid UTF-8 content"
+                                    .to_string(),
                             );
                         }
                     }
-                    Err(_) => {
-                        result.error(
-                            ProblemLocation::ObjectRoot,
-                            ErrorCode::E007,
-                            "Object version declaration contains invalid UTF-8 content".to_string(),
-                        );
-                    }
+                } else {
+                    result.error(
+                        ProblemLocation::ObjectRoot,
+                        ErrorCode::E003,
+                        "Object version declaration does not exist".to_string(),
+                    );
                 }
-            } else {
+            }
+            None => {
                 result.error(
                     ProblemLocation::ObjectRoot,
                     ErrorCode::E003,
                     "Object version declaration does not exist".to_string(),
                 );
             }
-        } else {
-            result.error(
-                ProblemLocation::ObjectRoot,
-                ErrorCode::E003,
-                "Object version declaration does not exist".to_string(),
-            );
         }
+
+        version
+    }
+
+    fn identify_root_spec_version(
+        &self,
+        files: &[Listing],
+        result: &mut StorageValidationResult,
+    ) -> Option<SpecVersion> {
+        let mut found = None;
+
+        for file in files {
+            if let Listing::File(path) = file {
+                if let Ok(version) = SpecVersion::try_from_root_namaste_name(path.as_ref()) {
+                    if found.is_some() {
+                        result.error(
+                            ProblemLocation::StorageRoot,
+                            ErrorCode::E076,
+                            "Multiple root version declarations found".to_string(),
+                        );
+                    }
+                    found = Some(version)
+                }
+            }
+        }
+
+        found
+    }
+
+    fn identify_object_spec_version(
+        &self,
+        files: &[Listing],
+    ) -> Option<SpecVersion> {
+        for file in files {
+            if let Listing::File(path) = file {
+                if let Ok(version) = SpecVersion::try_from_object_namaste_name(path.as_ref()) {
+                    return Some(version);
+                }
+            }
+        }
+
+        None
     }
 
     fn validate_inventory_and_sidecar(
@@ -776,6 +851,8 @@ impl<S: Storage> Validator<S> {
         version_num: Option<VersionNum>,
         path: &str,
         files: &[Listing],
+        required_spec_version: Option<SpecVersion>,
+        max_spec_version: Option<SpecVersion>,
         result: &mut ObjectValidationResult,
     ) -> Result<(Option<Inventory>, Option<String>, Option<HexDigest>)> {
         let mut inventory = None;
@@ -799,6 +876,8 @@ impl<S: Storage> Validator<S> {
                 &paths::join(path, INVENTORY_FILE),
                 version_num,
                 &algorithms,
+                required_spec_version,
+                max_spec_version,
                 result,
             )?;
             inventory = inv;
@@ -866,6 +945,8 @@ impl<S: Storage> Validator<S> {
         inventory_path: &str,
         version: Option<VersionNum>,
         algorithms: &[DigestAlgorithm],
+        required_spec_version: Option<SpecVersion>,
+        max_spec_version: Option<SpecVersion>,
         result: &mut ObjectValidationResult,
     ) -> Result<(Option<Inventory>, Option<HexDigest>)> {
         let mut inventory = None;
@@ -879,16 +960,7 @@ impl<S: Storage> Validator<S> {
             ParseResult::Ok(parse_result, inv) => {
                 result.object_id(&inv.id);
 
-                // TODO this is only valid for 1.0
-                if inv.type_declaration != INVENTORY_TYPE {
-                    parse_result.error(
-                        ErrorCode::E038,
-                        format!(
-                            "Inventory 'type' must equal '{}'. Found: {}",
-                            INVENTORY_TYPE, inv.type_declaration
-                        ),
-                    );
-                }
+                self.validate_inv_type(&inv, required_spec_version, max_spec_version, &parse_result);
 
                 if let Some(version) = version {
                     if inv.head != version {
@@ -920,6 +992,45 @@ impl<S: Storage> Validator<S> {
         }
 
         Ok((inventory, digest))
+    }
+
+    fn validate_inv_type(
+        &self,
+        inv: &Inventory,
+        required_spec_version: Option<SpecVersion>,
+        max_spec_version: Option<SpecVersion>,
+        parse_result: &ParseValidationResult,
+    ) {
+        if let Ok(spec_version) = SpecVersion::try_from_inventory_type(&inv.type_declaration) {
+            if let Some(required) = required_spec_version {
+                if required != spec_version {
+                    parse_result.error(
+                        ErrorCode::E038,
+                        format!(
+                            "Inventory 'type' must be '{}'. Found: {}",
+                            required.inventory_type(),
+                            inv.type_declaration
+                        ),
+                    );
+                }
+            } else if let Some(max) = max_spec_version {
+                if spec_version > max {
+                    parse_result.error(
+                        ErrorCode::E103,
+                        format!(
+                            "Inventory 'type' must be '{}' or earlier. Found: {}",
+                            max.inventory_type(),
+                            inv.type_declaration
+                        ),
+                    );
+                }
+            }
+        } else {
+            parse_result.error(
+                ErrorCode::E038,
+                format!("Unknown inventory 'type'. Found: {}", inv.type_declaration),
+            );
+        }
     }
 
     fn validate_sidecar(
@@ -968,13 +1079,16 @@ impl<S: Storage> Validator<S> {
         &self,
         object_root: &str,
         files: &[Listing],
+        version: Option<SpecVersion>,
         inventory: &Option<Inventory>,
         sidecar_file: &Option<String>,
         result: &mut ObjectValidationResult,
     ) -> Result<()> {
         let mut expected_files = Vec::with_capacity(5);
 
-        expected_files.push(Listing::file(OBJECT_NAMASTE_FILE));
+        if let Some(version) = version {
+            expected_files.push(Listing::file(version.object_namaste().filename));
+        }
         expected_files.push(Listing::file(INVENTORY_FILE));
         expected_files.push(Listing::dir(LOGS_DIR));
         expected_files.push(Listing::dir(EXTENSIONS_DIR));
@@ -1001,18 +1115,28 @@ impl<S: Storage> Validator<S> {
             };
 
             if !found && !expected_files.contains(entry) {
-                if let Listing::Other(path) = entry {
-                    result.error(
-                        ProblemLocation::ObjectRoot,
-                        ErrorCode::E090,
-                        format!("Object root contains an illegal file: {}", path),
-                    );
-                } else {
-                    result.error(
-                        ProblemLocation::ObjectRoot,
-                        ErrorCode::E001,
-                        format!("Unexpected file in object root: {}", entry.path()),
-                    );
+                match entry {
+                    Listing::Other(path) => {
+                        result.error(
+                            ProblemLocation::ObjectRoot,
+                            ErrorCode::E090,
+                            format!("Object root contains an illegal file: {}", path),
+                        );
+                    }
+                    Listing::File(path) if path.starts_with(OBJECT_NAMASTE_FILE_PREFIX) => {
+                        result.error(
+                            ProblemLocation::ObjectRoot,
+                            ErrorCode::E003,
+                            format!("Unexpected object version declaration: {}", entry.path()),
+                        );
+                    }
+                    _ => {
+                        result.error(
+                            ProblemLocation::ObjectRoot,
+                            ErrorCode::E001,
+                            format!("Unexpected file in object root: {}", entry.path()),
+                        );
+                    }
                 }
             }
         }
@@ -1253,6 +1377,8 @@ impl<S: Storage> Validator<S> {
         root_inventory: &Inventory,
         inventories: &HashMap<DigestAlgorithm, Inventory>,
         content_files: &ContentPaths,
+        required_spec_version: Option<SpecVersion>,
+        max_spec_version: Option<SpecVersion>,
         result: &mut ObjectValidationResult,
     ) -> Result<Option<Inventory>> {
         let mut inventory_opt = None;
@@ -1266,6 +1392,8 @@ impl<S: Storage> Validator<S> {
                 Some(version_num),
                 version_dir,
                 &files,
+                required_spec_version,
+                max_spec_version,
                 result,
             )?;
 
@@ -1664,6 +1792,7 @@ impl<'a, S: Storage> IncrementalValidatorImpl<'a, S> {
         storage_root_result: StorageValidationResult,
         validator: &'a Validator<S>,
         storage: &'a S,
+        root_version: Option<SpecVersion>,
         fixity_check: bool,
         root_files: Vec<Listing<'a>>,
         closed: Arc<AtomicBool>,
@@ -1673,6 +1802,7 @@ impl<'a, S: Storage> IncrementalValidatorImpl<'a, S> {
             storage_hierarchy_result: StorageValidationResult::new(),
             validator,
             storage,
+            root_version,
             fixity_check,
             dir_iters: vec![Dir::new("".to_string(), root_files.into_iter())],
             current_iter: None,
@@ -1683,8 +1813,7 @@ impl<'a, S: Storage> IncrementalValidatorImpl<'a, S> {
 
     fn is_object_root(&self, path: &Listing) -> bool {
         if let Listing::File(name) = path {
-            // TODO only true for 1.0
-            name == OBJECT_NAMASTE_FILE
+            name.starts_with(OBJECT_NAMASTE_FILE_PREFIX)
         } else {
             false
         }
