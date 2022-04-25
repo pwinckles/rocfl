@@ -27,7 +27,9 @@ use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::store::{Listing, Storage};
 use crate::ocfl::validate::{IncrementalValidator, ObjectValidationResult, Validator};
-use crate::ocfl::{paths, specs, util, ContentPath, InventoryPath, LogicalPath, VersionRef};
+use crate::ocfl::{
+    paths, specs, util, ContentPath, InventoryPath, LogicalPath, SpecVersion, VersionRef,
+};
 
 static OBJECT_ID_MATCHER: Lazy<RegexMatcher> =
     Lazy::new(|| RegexMatcher::new(r#""id"\s*:\s*"([^"]+)""#).unwrap());
@@ -80,10 +82,12 @@ impl FsOcflStore {
     }
 
     /// Initializes a new OCFL repository at the specified location
-    pub fn init(root: impl AsRef<Path>, layout: Option<StorageLayout>) -> Result<Self> {
+    pub fn init(root: impl AsRef<Path>,
+                version: SpecVersion,
+                layout: Option<StorageLayout>) -> Result<Self> {
         let root = root.as_ref().to_path_buf();
 
-        init_new_repo(&root, layout.as_ref())?;
+        init_new_repo(&root, version, layout.as_ref())?;
 
         Ok(Self {
             validator: Validator::new(FsStorage::new(root.clone())),
@@ -100,9 +104,11 @@ impl FsOcflStore {
         let root = root.as_ref().to_path_buf();
 
         if root.exists() && root.is_dir() && !util::dir_is_empty(&root)? {
+            // TODO how to upgrade spec version?
             Self::new(root)
         } else {
-            Self::init(root, Some(layout))
+            // TODO this needs to be based on parent repo
+            Self::init(root, SpecVersion::Ocfl1_0, Some(layout))
         }
     }
 
@@ -514,6 +520,8 @@ impl StagingStore for FsOcflStore {
 
         info!("Staging OCFL object {} {}", &inventory.id, &inventory.head);
 
+        let version = SpecVersion::try_from_inventory_type(&inventory.type_declaration)?;
+
         // Staging layout may differ from main repo
         let object_root = self.require_layout()?.map_object_id(&inventory.id);
         inventory.object_root = object_root;
@@ -527,9 +535,9 @@ impl StagingStore for FsOcflStore {
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(paths::object_namaste_path(&storage_path))?;
+            .open(paths::object_namaste_path(&storage_path, version))?;
 
-        writeln!(file, "{}", OCFL_OBJECT_VERSION)?;
+        write!(file, "{}", version.object_namaste().content)?;
         self.stage_inventory(inventory, false, false)?;
 
         Ok(())
@@ -920,7 +928,12 @@ impl Storage for FsStorage {
 fn is_object_root<P: AsRef<Path>>(path: P) -> Result<bool> {
     for entry in fs::read_dir(path)? {
         let entry_path = entry?.path();
-        if entry_path.is_file() && entry_path.file_name().unwrap_or_default() == OBJECT_NAMASTE_FILE
+        if entry_path.is_file()
+            && entry_path
+                .file_name()
+                .unwrap_or_default()
+                .to_str()
+                .map_or(false, |name| name.starts_with(OBJECT_NAMASTE_FILE_PREFIX))
         {
             return Ok(true);
         }
@@ -1092,7 +1105,11 @@ fn read_layout_config<P: AsRef<Path>>(storage_root: P, layout: &OcflLayout) -> O
     None
 }
 
-fn init_new_repo(root: impl AsRef<Path>, layout: Option<&StorageLayout>) -> Result<()> {
+fn init_new_repo(
+    root: impl AsRef<Path>,
+    version: SpecVersion,
+    layout: Option<&StorageLayout>,
+) -> Result<()> {
     let root = root.as_ref().to_path_buf();
 
     if root.exists() {
@@ -1115,16 +1132,21 @@ fn init_new_repo(root: impl AsRef<Path>, layout: Option<&StorageLayout>) -> Resu
 
     fs::create_dir_all(&root)?;
 
-    writeln!(
-        File::create(paths::root_namaste_path(&root))?,
+    write!(
+        File::create(paths::root_namaste_path(&root, version))?,
         "{}",
-        OCFL_VERSION
+        version.root_namaste().content
     )?;
 
+    let spec = match version {
+        SpecVersion::Ocfl1_0 => specs::OCFL_1_0_SPEC,
+        SpecVersion::Ocfl1_1 => specs::OCFL_1_1_SPEC,
+    };
+
     write!(
-        File::create(paths::ocfl_spec_path(&root))?,
+        File::create(paths::ocfl_spec_path(&root, version))?,
         "{}",
-        specs::OCFL_1_0_SPEC
+        spec
     )?;
 
     if let Some(layout) = layout {

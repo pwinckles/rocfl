@@ -28,8 +28,8 @@ use crate::ocfl::store::{OcflStore, StagingStore};
 use crate::ocfl::validate::ObjectValidationResult;
 use crate::ocfl::{
     paths, util, validate, CommitMeta, ContentPath, Diff, DigestAlgorithm, IncrementalValidator,
-    InventoryPath, LogicalPath, ObjectVersion, ObjectVersionDetails, VersionDetails, VersionNum,
-    VersionRef,
+    InventoryPath, LogicalPath, ObjectVersion, ObjectVersionDetails, SpecVersion, VersionDetails,
+    VersionNum, VersionRef,
 };
 
 /// OCFL repository
@@ -72,6 +72,7 @@ impl OcflRepo {
     pub fn init_fs_repo(
         storage_root: impl AsRef<Path>,
         staging: Option<&Path>,
+        version: SpecVersion,
         layout: Option<StorageLayout>,
     ) -> Result<Self> {
         let staging_root = match staging {
@@ -81,7 +82,7 @@ impl OcflRepo {
 
         Ok(Self {
             staging_root,
-            store: Box::new(FsOcflStore::init(storage_root, layout)?),
+            store: Box::new(FsOcflStore::init(storage_root, version, layout)?),
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
             use_backslashes: util::BACKSLASH_SEPARATOR,
@@ -93,6 +94,7 @@ impl OcflRepo {
     /// most not already exist.
     #[cfg(feature = "s3")]
     pub fn init_s3_repo(
+        version: SpecVersion,
         region: Region,
         bucket: &str,
         prefix: Option<&str>,
@@ -103,7 +105,7 @@ impl OcflRepo {
     ) -> Result<Self> {
         Ok(Self {
             staging_root: staging_root.as_ref().to_path_buf(),
-            store: Box::new(S3OcflStore::init(region, bucket, prefix, layout, profile)?),
+            store: Box::new(S3OcflStore::init(version, region, bucket, prefix, layout, profile)?),
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
             use_backslashes: false,
@@ -485,7 +487,8 @@ impl OcflRepo {
 
         let version_num = VersionNum::v1_with_width(padding_width);
 
-        let mut inventory = Inventory::builder(object_id)
+        // TODO make version configurable; default to 1.1
+        let mut inventory = Inventory::builder(object_id, SpecVersion::Ocfl1_0)
             .with_digest_algorithm(digest_algorithm)
             .with_content_directory(content_dir)
             .with_head(version_num)

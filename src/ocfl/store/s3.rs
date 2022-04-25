@@ -10,10 +10,10 @@ use std::sync::{Arc, RwLock};
 use std::vec::IntoIter;
 
 use bytes::Bytes;
+use const_format::concatcp;
 use futures::{FutureExt, TryStreamExt};
 use globset::GlobBuilder;
 use log::{debug, error, info, warn};
-use once_cell::sync::Lazy;
 use rusoto_core::credential::{AutoRefreshingProvider, ChainProvider, ProfileProvider};
 use rusoto_core::{ByteStream, Client, HttpClient, Region, RusotoError};
 use rusoto_s3::{
@@ -37,17 +37,16 @@ use crate::ocfl::store::{Listing, Storage};
 use crate::ocfl::validate::{IncrementalValidator, ObjectValidationResult, Validator};
 use crate::ocfl::{
     paths, specs, util, DigestAlgorithm, InventoryPath, LayoutExtensionName, LogicalPath,
-    VersionRef,
+    SpecVersion, VersionRef,
 };
 
 const TYPE_PLAIN: &str = "text/plain; charset=UTF-8";
 const TYPE_MARKDOWN: &str = "text/markdown; charset=UTF-8";
 const TYPE_JSON: &str = "application/json; charset=UTF-8";
-const ROOT_NAMASTE_CONTENT: &str = "ocfl_1.0\n";
 
 const PART_SIZE: u64 = 1024 * 1024 * 5;
 
-static EXTENSIONS_DIR_SUFFIX: Lazy<String> = Lazy::new(|| format!("/{}", EXTENSIONS_DIR));
+const EXTENSIONS_DIR_SUFFIX: &str = concatcp!("/", EXTENSIONS_DIR);
 
 pub struct S3OcflStore {
     s3_client: Arc<S3Client>,
@@ -88,6 +87,7 @@ impl S3OcflStore {
 
     /// Initializes a new OCFL repository at the specified location
     pub fn init(
+        version: SpecVersion,
         region: Region,
         bucket: &str,
         prefix: Option<&str>,
@@ -96,7 +96,7 @@ impl S3OcflStore {
     ) -> Result<Self> {
         let s3_client = S3Client::new(region, bucket, prefix, profile)?;
 
-        init_new_repo(&s3_client, layout.as_ref())?;
+        init_new_repo(&s3_client, version, layout.as_ref())?;
 
         let s3_client = Arc::new(s3_client);
 
@@ -1019,7 +1019,7 @@ impl<'a> Iterator for InventoryIter<'a> {
                     self.current.replace(None);
                 }
                 Some(entry) => {
-                    if entry.ends_with(&*EXTENSIONS_DIR_SUFFIX) {
+                    if entry.ends_with(EXTENSIONS_DIR_SUFFIX) {
                         continue;
                     }
 
@@ -1128,7 +1128,11 @@ fn create_rusoto_client(region: Region, profile: Option<&str>) -> RusotoS3Client
     }
 }
 
-fn init_new_repo(s3_client: &S3Client, layout: Option<&StorageLayout>) -> Result<()> {
+fn init_new_repo(
+    s3_client: &S3Client,
+    version: SpecVersion,
+    layout: Option<&StorageLayout>,
+) -> Result<()> {
     if !s3_client.list_dir("")?.is_empty() {
         return Err(RocflError::IllegalState(
             "Cannot create new repository. Storage root must be empty".to_string(),
@@ -1140,15 +1144,22 @@ fn init_new_repo(s3_client: &S3Client, layout: Option<&StorageLayout>) -> Result
         s3_client.bucket, s3_client.prefix
     );
 
+    let root_namaste = version.root_namaste();
+
     s3_client.put_object_bytes(
-        REPO_NAMASTE_FILE,
-        Bytes::from(ROOT_NAMASTE_CONTENT.as_bytes()),
+        root_namaste.filename,
+        Bytes::from(root_namaste.content.as_bytes()),
         Some(TYPE_PLAIN),
     )?;
 
+    let spec = match version {
+        SpecVersion::Ocfl1_0 => specs::OCFL_1_0_SPEC,
+        SpecVersion::Ocfl1_1 => specs::OCFL_1_1_SPEC,
+    };
+
     s3_client.put_object_bytes(
-        OCFL_SPEC_FILE,
-        Bytes::from(specs::OCFL_1_0_SPEC.as_bytes()),
+        version.spec_filename(),
+        Bytes::from(spec.as_bytes()),
         Some(TYPE_PLAIN),
     )?;
 
@@ -1265,7 +1276,7 @@ fn load_layout_extension(layout: OcflLayout, s3_client: &S3Client) -> Option<Sto
 
 fn is_object_dir(objects: &[String]) -> bool {
     for object in objects {
-        if object.ends_with(OBJECT_NAMASTE_FILE) {
+        if object.ends_with(OBJECT_NAMASTE_FILE_1_0) || object.ends_with(OBJECT_NAMASTE_FILE_1_1) {
             return true;
         }
     }

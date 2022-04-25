@@ -1,21 +1,36 @@
 use std::collections::HashSet;
 
+use const_format::concatcp;
 use once_cell::sync::Lazy;
 
-pub const REPO_NAMASTE_FILE: &str = "0=ocfl_1.0";
-pub const OBJECT_NAMASTE_FILE: &str = "0=ocfl_object_1.0";
+const NAMASTE_FILE_PREFIX: &str = "0=";
+const ROOT_NAMASTE_PREFIX: &str = "ocfl_";
+const OBJECT_NAMASTE_PREFIX: &str = "ocfl_object_";
+pub const ROOT_NAMASTE_FILE_PREFIX: &str = concatcp!(NAMASTE_FILE_PREFIX, ROOT_NAMASTE_PREFIX);
+pub const OBJECT_NAMASTE_FILE_PREFIX: &str = concatcp!(NAMASTE_FILE_PREFIX, OBJECT_NAMASTE_PREFIX);
+
+// 1.0
+pub const ROOT_NAMASTE_FILE_1_0: &str = concatcp!(ROOT_NAMASTE_FILE_PREFIX, "1.0");
+pub const OBJECT_NAMASTE_FILE_1_0: &str = concatcp!(OBJECT_NAMASTE_FILE_PREFIX, "1.0");
+pub const ROOT_NAMASTE_CONTENT_1_0: &str = concatcp!(ROOT_NAMASTE_PREFIX, "1.0\n");
+pub const OBJECT_NAMASTE_CONTENT_1_0: &str = concatcp!(OBJECT_NAMASTE_PREFIX, "1.0\n");
+pub const INVENTORY_TYPE_1_0: &str = "https://ocfl.io/1.0/spec/#inventory";
+pub const OCFL_SPEC_FILE_1_0: &str = "ocfl_1.0.txt";
+
+// 1.1
+pub const ROOT_NAMASTE_FILE_1_1: &str = concatcp!(ROOT_NAMASTE_FILE_PREFIX, "1.1");
+pub const OBJECT_NAMASTE_FILE_1_1: &str = concatcp!(OBJECT_NAMASTE_FILE_PREFIX, "1.1");
+pub const ROOT_NAMASTE_CONTENT_1_1: &str = concatcp!(ROOT_NAMASTE_PREFIX, "1.1\n");
+pub const OBJECT_NAMASTE_CONTENT_1_1: &str = concatcp!(OBJECT_NAMASTE_PREFIX, "1.1\n");
+pub const INVENTORY_TYPE_1_1: &str = "https://ocfl.io/1.1/spec/#inventory";
+pub const OCFL_SPEC_FILE_1_1: &str = "ocfl_1.1.txt";
+
 pub const INVENTORY_FILE: &str = "inventory.json";
 pub const INVENTORY_SIDECAR_PREFIX: &str = "inventory.json.";
 pub const OCFL_LAYOUT_FILE: &str = "ocfl_layout.json";
-pub const OCFL_SPEC_FILE: &str = "ocfl_1.0.txt";
 pub const EXTENSIONS_DIR: &str = "extensions";
 pub const LOGS_DIR: &str = "logs";
 pub const EXTENSIONS_CONFIG_FILE: &str = "config.json";
-pub const OCFL_VERSION: &str = "ocfl_1.0";
-pub const OCFL_OBJECT_VERSION: &str = "ocfl_object_1.0";
-pub const OBJECT_NAMASTE_CONTENTS_1_0: &str = "ocfl_object_1.0\n";
-pub const REPO_NAMASTE_CONTENTS_1_0: &str = "ocfl_1.0\n";
-pub const INVENTORY_TYPE: &str = "https://ocfl.io/1.0/spec/#inventory";
 
 pub const DEFAULT_CONTENT_DIR: &str = "content";
 

@@ -12,12 +12,12 @@ use once_cell::unsync::OnceCell;
 use serde::{Deserialize, Serialize};
 
 use crate::ocfl::bimap::PathBiMap;
-use crate::ocfl::consts::{DEFAULT_CONTENT_DIR, INVENTORY_TYPE};
+use crate::ocfl::consts::DEFAULT_CONTENT_DIR;
 use crate::ocfl::digest::{DigestAlgorithm, HexDigest};
 use crate::ocfl::error::{not_found, not_found_path, Result, RocflError};
 use crate::ocfl::{
     validate, CommitMeta, ContentPath, ContentPathVersion, Diff, InventoryPath, LogicalPath,
-    VersionNum, VersionRef,
+    SpecVersion, VersionNum, VersionRef,
 };
 
 const STAGING_MESSAGE: &str = "Staging new version";
@@ -29,6 +29,7 @@ const ROCFL_ADDRESS: &str = "https://github.com/pwinckles/rocfl";
 #[serde(rename_all = "camelCase")]
 pub struct Inventory {
     pub id: String,
+    // TODO consider if this should be an enum
     #[serde(rename = "type")]
     pub type_declaration: String,
     // TODO this would be better as a specific type that only allows sha256/sha512 -- but is a bit of a pain to change
@@ -131,8 +132,8 @@ impl Inventory {
     }
 
     /// Returns a new inventory builder
-    pub fn builder(object_id: &str) -> InventoryBuilder {
-        InventoryBuilder::new(object_id)
+    pub fn builder(object_id: &str, version: SpecVersion) -> InventoryBuilder {
+        InventoryBuilder::new(object_id, version)
     }
 
     /// Creates a new HEAD version, copying over the state of the previous HEAD.
@@ -543,10 +544,10 @@ impl Inventory {
 }
 
 impl InventoryBuilder {
-    pub fn new(object_id: &str) -> Self {
+    pub fn new(object_id: &str, version: SpecVersion) -> Self {
         Self {
             id: object_id.to_string(),
-            type_declaration: INVENTORY_TYPE.to_string(),
+            type_declaration: version.inventory_type().to_string(),
             digest_algorithm: DigestAlgorithm::Sha512,
             head: VersionNum::v1(),
             content_directory: DEFAULT_CONTENT_DIR.to_string(),
