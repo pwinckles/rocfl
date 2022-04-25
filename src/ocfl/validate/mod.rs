@@ -526,6 +526,7 @@ impl<S: Storage> Validator<S> {
         &self,
         object_id: Option<&str>,
         object_root: &str,
+        root_version: Option<SpecVersion>,
         fixity_check: bool,
     ) -> Result<ObjectValidationResult> {
         info!("Validating object at {}", object_root);
@@ -548,7 +549,8 @@ impl<S: Storage> Validator<S> {
             util::convert_backslash_to_forward(object_root).to_string(),
         );
 
-        let object_version = self.validate_object_namaste(object_root, &root_files, &mut result);
+        let object_version =
+            self.validate_object_namaste(object_root, &root_files, root_version, &mut result);
 
         let (inventory, sidecar_file, digest) = self.validate_inventory_and_sidecar(
             object_id,
@@ -574,6 +576,7 @@ impl<S: Storage> Validator<S> {
 
             if let (Some(inventory), Some(digest)) = (inventory, digest) {
                 let mut inventories = HashMap::new();
+                let mut max_version = object_version;
 
                 let content_files =
                     self.find_all_content_files(object_root, &inventory, &mut result)?;
@@ -602,11 +605,22 @@ impl<S: Storage> Validator<S> {
                             &inventories,
                             &content_files,
                             None,
-                            // TODO max needs to be based on the prior version
-                            object_version,
+                            max_version,
                             &mut result,
                         )?;
                         if let Some(inv) = inv {
+                            if let Ok(spec_version) =
+                                SpecVersion::try_from_inventory_type(&inv.type_declaration)
+                            {
+                                if let Some(max) = max_version {
+                                    if spec_version < max {
+                                        max_version = Some(spec_version);
+                                    }
+                                } else {
+                                    max_version = Some(spec_version);
+                                }
+                            }
+
                             inventories.entry(inv.digest_algorithm).or_insert(inv);
                         }
                     }
@@ -636,7 +650,6 @@ impl<S: Storage> Validator<S> {
         let mut root_result = StorageValidationResult::new();
         let files = self.storage.list("", false)?;
 
-        // TODO need to feed object validator
         let root_version = self.validate_root_namaste(&files, &mut root_result);
 
         if files.contains(&Listing::dir(EXTENSIONS_DIR)) {
@@ -752,13 +765,26 @@ impl<S: Storage> Validator<S> {
         &self,
         object_root: &str,
         files: &[Listing],
+        root_version: Option<SpecVersion>,
         result: &mut ObjectValidationResult,
     ) -> Option<SpecVersion> {
-        // TODO validate <= root version
         let version = self.identify_object_spec_version(files);
 
         match version {
             Some(version) => {
+                if let Some(root_version) = root_version {
+                    if version > root_version {
+                        result.error(
+                            ProblemLocation::ObjectRoot,
+                            ErrorCode::E081,
+                            format!(
+                                "Object version declaration must be less than or equal to {}. Found: {}",
+                                root_version.version(), version.version()
+                            ),
+                        );
+                    }
+                }
+
                 let namaste = version.object_namaste();
                 let path = paths::join(object_root, namaste.filename);
                 let mut bytes: Vec<u8> = Vec::new();
@@ -1892,10 +1918,10 @@ impl<'a, S: Storage> Iterator for IncrementalValidatorImpl<'a, S> {
 
                                     for entry in &listing {
                                         if self.is_object_root(entry) {
-                                            // TODO E081 object ocfl versions must be same or earlier
                                             return match self.validator.validate_object(
                                                 None,
                                                 &path,
+                                                self.root_version,
                                                 self.fixity_check,
                                             ) {
                                                 Ok(result) => {
