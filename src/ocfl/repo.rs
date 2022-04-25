@@ -94,19 +94,19 @@ impl OcflRepo {
     /// most not already exist.
     #[cfg(feature = "s3")]
     pub fn init_s3_repo(
-        version: SpecVersion,
         region: Region,
         bucket: &str,
         prefix: Option<&str>,
+        profile: Option<&str>,
         // TODO fix the AsRef<Path> stuff to call inner methods -- I might just wait for https://github.com/rust-lang/rust/issues/77960
         staging_root: impl AsRef<Path>,
+        version: SpecVersion,
         layout: Option<StorageLayout>,
-        profile: Option<&str>,
     ) -> Result<Self> {
         Ok(Self {
             staging_root: staging_root.as_ref().to_path_buf(),
             store: Box::new(S3OcflStore::init(
-                version, region, bucket, prefix, layout, profile,
+                region, bucket, prefix, profile, version, layout,
             )?),
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
@@ -489,7 +489,7 @@ impl OcflRepo {
 
         let version_num = VersionNum::v1_with_width(padding_width);
 
-        // TODO make version configurable; default to 1.1
+        // TODO 1.1 make version configurable; default to 1.1
         let mut inventory = Inventory::builder(object_id, SpecVersion::Ocfl1_0)
             .with_digest_algorithm(digest_algorithm)
             .with_content_directory(content_dir)

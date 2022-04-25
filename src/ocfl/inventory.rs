@@ -29,7 +29,6 @@ const ROCFL_ADDRESS: &str = "https://github.com/pwinckles/rocfl";
 #[serde(rename_all = "camelCase")]
 pub struct Inventory {
     pub id: String,
-    // TODO consider if this should be an enum
     #[serde(rename = "type")]
     pub type_declaration: String,
     // TODO this would be better as a specific type that only allows sha256/sha512 -- but is a bit of a pain to change
@@ -149,6 +148,11 @@ impl Inventory {
     /// Returns true if the HEAD version is equal to 1
     pub fn is_new(&self) -> bool {
         self.head.number == 1
+    }
+
+    /// Returns the OCFL spec version the inventory adheres to, or None if the version is unknown
+    pub fn spec_version(&self) -> Option<SpecVersion> {
+        SpecVersion::try_from_inventory_type(&self.type_declaration).ok()
     }
 
     /// Returns a reference to the HEAD version

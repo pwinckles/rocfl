@@ -106,7 +106,7 @@ impl FsOcflStore {
         let root = root.as_ref().to_path_buf();
 
         if root.exists() && root.is_dir() && !util::dir_is_empty(&root)? {
-            // TODO how to upgrade spec version?
+            // TODO 1.1 how to upgrade spec version?
             Self::new(root)
         } else {
             // TODO this needs to be based on parent repo

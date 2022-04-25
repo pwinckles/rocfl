@@ -609,9 +609,7 @@ impl<S: Storage> Validator<S> {
                             &mut result,
                         )?;
                         if let Some(inv) = inv {
-                            if let Ok(spec_version) =
-                                SpecVersion::try_from_inventory_type(&inv.type_declaration)
-                            {
+                            if let Some(spec_version) = inv.spec_version() {
                                 if let Some(max) = max_version {
                                     if spec_version < max {
                                         max_version = Some(spec_version);
@@ -1030,7 +1028,7 @@ impl<S: Storage> Validator<S> {
         max_spec_version: Option<SpecVersion>,
         parse_result: &ParseValidationResult,
     ) {
-        if let Ok(spec_version) = SpecVersion::try_from_inventory_type(&inv.type_declaration) {
+        if let Some(spec_version) = inv.spec_version() {
             if let Some(required) = required_spec_version {
                 if required != spec_version {
                     parse_result.error(
