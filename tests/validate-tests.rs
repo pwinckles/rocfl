@@ -138,7 +138,7 @@ fn bad_declaration_contents() {
     has_errors(&result, &[
         root_error(
             ErrorCode::E007,
-            "Object version declaration is invalid. Expected: ocfl_object_1.0; Found: This is not the right content!\n",
+            "Object version declaration is invalid. Expected: ocfl_object_1.0; Found: This is not the right content!",
         ),
     ]);
     has_warnings(

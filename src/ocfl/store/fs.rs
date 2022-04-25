@@ -82,9 +82,11 @@ impl FsOcflStore {
     }
 
     /// Initializes a new OCFL repository at the specified location
-    pub fn init(root: impl AsRef<Path>,
-                version: SpecVersion,
-                layout: Option<StorageLayout>) -> Result<Self> {
+    pub fn init(
+        root: impl AsRef<Path>,
+        version: SpecVersion,
+        layout: Option<StorageLayout>,
+    ) -> Result<Self> {
         let root = root.as_ref().to_path_buf();
 
         init_new_repo(&root, version, layout.as_ref())?;
