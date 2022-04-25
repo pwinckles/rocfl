@@ -1431,7 +1431,7 @@ impl<S: Storage> Validator<S> {
                 if inventory.id != root_inventory.id {
                     result.error(
                         version_num.into(),
-                        ErrorCode::E037,
+                        ErrorCode::E110,
                         format!(
                             "Inventory 'id' is inconsistent. Expected: {}; Found: {}",
                             root_inventory.id, inventory.id
