@@ -370,7 +370,7 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                                     Ok(value) => fixity = Some(value),
                                     Err(_) => {
                                         self.result.error(
-                                            ErrorCode::E057,
+                                            ErrorCode::E111,
                                             "Inventory 'fixity' must be a map of maps of arrays"
                                                 .to_string(),
                                         );
@@ -2050,7 +2050,7 @@ mod tests {
             ParseResult::Ok(_, _) => panic!("Expected parse failure"),
             ParseResult::Error(result) => {
                 has_error(
-                    ErrorCode::E057,
+                    ErrorCode::E111,
                     "Inventory 'fixity' must be a map of maps of arrays",
                     &result,
                 );
