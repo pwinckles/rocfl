@@ -582,7 +582,7 @@ fn bad_version_block_values() {
     no_warnings(&result);
 }
 
-// TODO this is _not_ a 1.0 requirement
+// TODO 1.1 this is _not_ a 1.0 requirement
 // #[test]
 #[allow(dead_code)]
 fn file_in_manifest_not_used() {
@@ -1036,6 +1036,20 @@ fn monotonically_increasing_versions() {
 }
 
 #[test]
+fn multiple_object_version_declarations() {
+    let result = official_error_test("E003_multiple_decl");
+
+    has_errors(
+        &result,
+        &[root_error(
+            ErrorCode::E003,
+            "Multiple object version declarations found",
+        )],
+    );
+    no_warnings(&result);
+}
+
+#[test]
 fn zero_padded_versions() {
     let result = official_warn_test("W001_W004_W005_zero_padded_versions");
 
@@ -1394,6 +1408,31 @@ fn validate_invalid_repo() {
         ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/inventory.json".to_string()),
         ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/inventory.json.sha512".to_string()),
     ]);
+    no_warnings_storage(validator.storage_hierarchy_result());
+}
+
+#[test]
+fn multiple_root_version_declarations() {
+    let repo = new_repo(&repo_test_path("multiple-root-decls"));
+    let mut validator = repo.validate_repo(true).unwrap();
+
+    has_errors_storage(
+        &validator.storage_root_result(),
+        &[ValidationError::new(
+            ProblemLocation::StorageRoot,
+            ErrorCode::E076,
+            "Multiple root version declarations found".to_string(),
+        )],
+    );
+    no_warnings_storage(validator.storage_root_result());
+
+    for result in &mut validator {
+        let result = result.unwrap();
+        no_errors(&result);
+        no_warnings(&result);
+    }
+
+    no_errors_storage(validator.storage_hierarchy_result());
     no_warnings_storage(validator.storage_hierarchy_result());
 }
 

@@ -260,18 +260,16 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                                 map.next_value::<Value>()?;
                             } else {
                                 match map.next_value::<&str>() {
-                                    Ok(value) => {
-                                        match VersionNum::try_from(value) {
-                                            Ok(num) => head = Some(num),
-                                            Err(_) => {
-                                                self.result.error(
+                                    Ok(value) => match VersionNum::try_from(value) {
+                                        Ok(num) => head = Some(num),
+                                        Err(_) => {
+                                            self.result.error(
                                                     ErrorCode::E104,
                                                     format!("Inventory 'head' must be a valid version number. Found: {}", value),
                                                 );
-                                                head_failed = true;
-                                            }
+                                            head_failed = true;
                                         }
-                                    }
+                                    },
                                     Err(e) => {
                                         self.result.error(
                                             ErrorCode::E040,
