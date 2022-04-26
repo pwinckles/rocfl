@@ -1021,6 +1021,21 @@ fn non_unique_content_paths() {
 }
 
 #[test]
+fn monotonically_increasing_versions() {
+    let result = official_error_test("E103_inconsistent_ocfl_versions");
+
+    has_errors(
+        &result,
+        &[version_error(
+            "v2",
+            ErrorCode::E103,
+            "Inventory 'type' must be 'https://ocfl.io/1.0/spec/#inventory' or earlier. Found: https://ocfl.io/1.1/spec/#inventory",
+        )],
+    );
+    no_warnings(&result);
+}
+
+#[test]
 fn zero_padded_versions() {
     let result = official_warn_test("W001_W004_W005_zero_padded_versions");
 
@@ -1279,6 +1294,7 @@ fn official_valid() {
         "spec-ex-full",
         "updates_all_actions",
         "updates_three_versions_one_file",
+        "ocfl_version_change",
     ];
 
     for name in names {
