@@ -324,7 +324,7 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                                     Err(e) => {
                                         if e.to_string().contains(ERROR_MARKER) {
                                             self.result.error(
-                                                ErrorCode::E033,
+                                                ErrorCode::E106,
                                                 "Inventory 'manifest' must be an object"
                                                     .to_string(),
                                             );
@@ -444,7 +444,7 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                     }
                 }
 
-                // TODO validate that every manifest entry is in a version state: https://github.com/OCFL/spec/issues/537
+                // TODO 1.1 E107 validate that every manifest entry is in a version state: https://github.com/OCFL/spec/issues/537
 
                 if let (Some(manifest), Some(versions)) = (&manifest, &versions) {
                     for (num, version) in &versions.map {
