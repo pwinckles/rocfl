@@ -17,6 +17,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Invalid `manifest` block validation code changed to `E106`
 - Invalid version number validation code changed to `E104`
 
+### Added
+
+- Validate object spec versions are monotonically increasing
+- Validate only one object/root version declaration
+
 ## [1.6.6] - 2022-03-01
 
 ### Fixed

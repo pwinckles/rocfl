@@ -1154,7 +1154,7 @@ impl<S: Storage> Validator<S> {
                         result.error(
                             ProblemLocation::ObjectRoot,
                             ErrorCode::E003,
-                            format!("Unexpected object version declaration: {}", entry.path()),
+                            "Multiple object version declarations found".to_string(),
                         );
                     }
                     _ => {
