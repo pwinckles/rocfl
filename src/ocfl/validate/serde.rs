@@ -264,9 +264,8 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                                         match VersionNum::try_from(value) {
                                             Ok(num) => head = Some(num),
                                             Err(_) => {
-                                                // TODO this is not the right code https://github.com/OCFL/spec/issues/532
                                                 self.result.error(
-                                                    ErrorCode::E011,
+                                                    ErrorCode::E104,
                                                     format!("Inventory 'head' must be a valid version number. Found: {}", value),
                                                 );
                                                 head_failed = true;
@@ -546,7 +545,7 @@ impl<'de: 'b, 'a, 'b> DeserializeSeed<'de> for VersionsSeed<'a, 'b> {
                                 }
                                 Err(_) => {
                                     self.result.error(
-                                        ErrorCode::E046,
+                                        ErrorCode::E104,
                                         format!("Inventory 'versions' contains an invalid version number. Found: {}", version_num),
                                     );
                                     None
@@ -1904,7 +1903,7 @@ mod tests {
             ParseResult::Ok(_, _) => panic!("Expected parse failure"),
             ParseResult::Error(result) => {
                 has_error(
-                    ErrorCode::E033,
+                    ErrorCode::E106,
                     "Inventory 'manifest' must be an object",
                     &result,
                 );
