@@ -66,11 +66,11 @@ fn invalid_version_format() {
 
     has_errors(&result, &[
         root_error(
-            ErrorCode::E011,
+            ErrorCode::E104,
             "Inventory 'head' must be a valid version number. Found: 1",
         ),
         root_error(
-            ErrorCode::E046,
+            ErrorCode::E104,
             "Inventory 'versions' contains an invalid version number. Found: 1",
         ),
         root_error(
