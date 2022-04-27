@@ -79,12 +79,24 @@ fn invalid_version_format() {
         ),
         root_error(
             ErrorCode::E099,
-            "Inventory manifest key 'ffc150e7944b5cf5ddb899b2f48efffbd490f97632fc258434aefc4afb92aef2e3441ddcceae11404e5805e1b6c804083c9398c28f061c9ba42dd4bac53d5a2e' contains a path containing an illegal path part. Found: 1/content/my_content/dracula.txt",
+            "Inventory manifest key 'ffc150e7944b5cf5ddb899b2f48efffbd490f97632fc258434aefc4afb92aef2e3441ddcceae11404e5805e1b6c804083c9398c28f061c9ba42dd4bac53d5a2e' \
+            contains a path containing an illegal path part. Found: 1/content/my_content/dracula.txt",
         ),
         root_error(
             ErrorCode::E099,
-            "Inventory manifest key '69f54f2e9f4568f7df4a4c3b07e4cbda4ba3bba7913c5218add6dea891817a80ce829b877d7a84ce47f93cbad8aa522bf7dd8eda2778e16bdf3c47cf49ee3bdf' contains a path containing an illegal path part. Found: 1/content/my_content/poe.txt",
-        )
+            "Inventory manifest key '69f54f2e9f4568f7df4a4c3b07e4cbda4ba3bba7913c5218add6dea891817a80ce829b877d7a84ce47f93cbad8aa522bf7dd8eda2778e16bdf3c47cf49ee3bdf' \
+            contains a path containing an illegal path part. Found: 1/content/my_content/poe.txt",
+        ),
+        root_error(
+            ErrorCode::E107,
+            "Inventory manifest contains a digest that is not referenced in any valid version. \
+            Found: 69f54f2e9f4568f7df4a4c3b07e4cbda4ba3bba7913c5218add6dea891817a80ce829b877d7a84ce47f93cbad8aa522bf7dd8eda2778e16bdf3c47cf49ee3bdf",
+        ),
+        root_error(
+            ErrorCode::E107,
+            "Inventory manifest contains a digest that is not referenced in any valid version. \
+            Found: ffc150e7944b5cf5ddb899b2f48efffbd490f97632fc258434aefc4afb92aef2e3441ddcceae11404e5805e1b6c804083c9398c28f061c9ba42dd4bac53d5a2e",
+        ),
     ]);
     no_warnings(&result);
 }
@@ -551,6 +563,11 @@ fn created_no_timezone() {
             ErrorCode::E049,
             "Inventory version v1 'created' must be an RFC3339 formatted date. Found: 2019-01-01T02:03:04",
         ),
+        root_error(
+            ErrorCode::E107,
+            "Inventory manifest contains a digest that is not referenced in any valid version. \
+            Found: 43a43fe8a8a082d3b5343dfaf2fd0c8b8e370675b1f376e92e9994612c33ea255b11298269d72f797399ebb94edeefe53df243643676548f584fb8603ca53a0f",
+        ),
     ]);
     no_warnings(&result);
 }
@@ -563,6 +580,11 @@ fn created_not_to_seconds() {
         root_error(
             ErrorCode::E049,
             "Inventory version v1 'created' must be an RFC3339 formatted date. Found: 2019-01-01T01:02Z",
+        ),
+        root_error(
+            ErrorCode::E107,
+            "Inventory manifest contains a digest that is not referenced in any valid version. \
+            Found: 43a43fe8a8a082d3b5343dfaf2fd0c8b8e370675b1f376e92e9994612c33ea255b11298269d72f797399ebb94edeefe53df243643676548f584fb8603ca53a0f",
         ),
     ]);
     no_warnings(&result);
@@ -582,14 +604,24 @@ fn bad_version_block_values() {
     no_warnings(&result);
 }
 
-// TODO 1.1 this is _not_ a 1.0 requirement
-// #[test]
-#[allow(dead_code)]
+#[test]
 fn file_in_manifest_not_used() {
     let result = official_error_test("E050_file_in_manifest_not_used");
 
-    has_errors(&result, &[]);
-    no_warnings(&result);
+    has_errors(&result, &[
+        root_error(
+            ErrorCode::E107,
+            "Inventory manifest contains a digest that is not referenced in any valid version. \
+            Found: dfe9a0bbfdaab7173036571a1d9e34e2465b1e3a52e8b707bbf6dea9239a9a55b0fc9e511fc24882d7f493cd950a9dbef1de13e08a007909b21cd5ba54dc4888",
+        ),
+    ]);
+    has_warnings(
+        &result,
+        &[root_warning(
+            WarnCode::W009,
+            "Inventory version v1 user 'address' should be a URI. Found: somewhere",
+        )],
+    );
 }
 
 #[test]
@@ -598,11 +630,18 @@ fn manifest_digest_wrong_case() {
 
     has_errors(
         &result,
-        &[root_error(
-            ErrorCode::E050,
-            "Inventory version v1 state contains a digest that is not present in the manifest. Found: 24F950AAC7B9EA9B3CB728228A0C82B67C39E96B4B344798870D5DAEE93E3AE5931BAAE8C7CACFEA4B629452C38026A81D138BC7AAD1AF3EF7BFD5EC646D6C28",
-        )],
-    );
+        &[
+            root_error(
+                ErrorCode::E050,
+                "Inventory version v1 state contains a digest that is not present in the manifest. \
+            Found: 24F950AAC7B9EA9B3CB728228A0C82B67C39E96B4B344798870D5DAEE93E3AE5931BAAE8C7CACFEA4B629452C38026A81D138BC7AAD1AF3EF7BFD5EC646D6C28",
+            ),
+            root_error(
+                ErrorCode::E107,
+                "Inventory manifest contains a digest that is not referenced in any valid version. \
+                Found: 24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7cacfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28",
+            ),
+    ]);
     no_warnings(&result);
 }
 
@@ -613,15 +652,33 @@ fn invalid_logical_paths() {
     has_errors(&result, &[
         root_error(
             ErrorCode::E053,
-            "In inventory version v1, state key '07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1' contains a path with a leading/trailing '/'. Found: /file-1.txt",
+            "In inventory version v1, state key '07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1' \
+            contains a path with a leading/trailing '/'. Found: /file-1.txt",
         ),
         root_error(
             ErrorCode::E052,
-            "In inventory version v1, state key '9fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5' contains a path containing an illegal path part. Found: ../../file-2.txt",
+            "In inventory version v1, state key '9fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5' \
+            contains a path containing an illegal path part. Found: ../../file-2.txt",
         ),
         root_error(
             ErrorCode::E053,
-            "In inventory version v1, state key 'b3b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2' contains a path with a leading/trailing '/'. Found: //file-3.txt",
+            "In inventory version v1, state key 'b3b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2' \
+            contains a path with a leading/trailing '/'. Found: //file-3.txt",
+        ),
+        root_error(
+            ErrorCode::E107,
+            "Inventory manifest contains a digest that is not referenced in any valid version. \
+            Found: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
+        ),
+        root_error(
+            ErrorCode::E107,
+            "Inventory manifest contains a digest that is not referenced in any valid version. \
+            Found: b3b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2",
+        ),
+        root_error(
+            ErrorCode::E107,
+            "Inventory manifest contains a digest that is not referenced in any valid version. \
+            Found: 9fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5",
         ),
     ]);
     no_warnings(&result);
@@ -648,7 +705,8 @@ fn root_inventory_digest_mismatch() {
     has_errors(&result, &[
         root_error(
             ErrorCode::E060,
-            "Inventory does not match expected digest. Expected: cb7a451c595050e0e50d979b79bce86e28728b8557a3cf4ea430114278b5411c7bad6a7ecc1f4d0250e94f9d8add3b648194d75a74c0cb14c4439f427829569e; Found: 5bf08b6519f6692cc83f3d275de1f02414a41972d069ac167c5cf34468fad82ae621c67e1ff58a8ef15d5f58a193aa1f037f588372bdfc33ae6c38a2b349d846",
+            "Inventory does not match expected digest. Expected: cb7a451c595050e0e50d979b79bce86e28728b8557a3cf4ea430114278b5411c7bad6a7ecc1f4d0250e94f9d8add3b648194d75a74c0cb14c4439f427829569e; \
+            Found: 5bf08b6519f6692cc83f3d275de1f02414a41972d069ac167c5cf34468fad82ae621c67e1ff58a8ef15d5f58a193aa1f037f588372bdfc33ae6c38a2b349d846",
         ),
     ]);
     no_warnings(&result);
@@ -662,7 +720,8 @@ fn version_inventory_digest_mismatch() {
         version_error(
             "v1",
             ErrorCode::E060,
-            "Inventory does not match expected digest. Expected: cb7a451c595050e0e50d979b79bce86e28728b8557a3cf4ea430114278b5411c7bad6a7ecc1f4d0250e94f9d8add3b648194d75a74c0cb14c4439f427829569e; Found: 5bf08b6519f6692cc83f3d275de1f02414a41972d069ac167c5cf34468fad82ae621c67e1ff58a8ef15d5f58a193aa1f037f588372bdfc33ae6c38a2b349d846",
+            "Inventory does not match expected digest. Expected: cb7a451c595050e0e50d979b79bce86e28728b8557a3cf4ea430114278b5411c7bad6a7ecc1f4d0250e94f9d8add3b648194d75a74c0cb14c4439f427829569e; \
+            Found: 5bf08b6519f6692cc83f3d275de1f02414a41972d069ac167c5cf34468fad82ae621c67e1ff58a8ef15d5f58a193aa1f037f588372bdfc33ae6c38a2b349d846",
         ),
     ]);
     has_warnings(
@@ -720,7 +779,8 @@ fn algorithm_change_state_mismatch() {
         version_error(
             "v1",
             ErrorCode::E066,
-            "In inventory version v1, path 'file-3.txt' maps to different content paths than it does in later inventories. Expected: [v1/content/file-2.txt]; Found: [v1/content/file-3.txt]",
+            "In inventory version v1, path 'file-3.txt' maps to different content paths than it \
+            does in later inventories. Expected: [v1/content/file-2.txt]; Found: [v1/content/file-3.txt]",
         ),
         version_error(
             "v1",
@@ -730,7 +790,8 @@ fn algorithm_change_state_mismatch() {
         version_error(
             "v1",
             ErrorCode::E066,
-            "In inventory version v1, path 'file-2.txt' maps to different content paths than it does in later inventories. Expected: [v1/content/file-3.txt]; Found: [v1/content/file-2.txt]",
+            "In inventory version v1, path 'file-2.txt' maps to different content paths than it \
+            does in later inventories. Expected: [v1/content/file-3.txt]; Found: [v1/content/file-2.txt]",
         ),
         version_error(
             "v1",
@@ -755,16 +816,20 @@ fn old_manifest_digest_incorrect() {
         version_error(
             "v1",
             ErrorCode::E066,
-            "In inventory version v1, path 'file-1.txt' does not match the digest in later inventories. Expected: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1; Found: 17e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
+            "In inventory version v1, path 'file-1.txt' does not match the digest in later inventories. \
+            Expected: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1; Found: 17e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
         ),
         version_error(
             "v1",
             ErrorCode::E092,
-            "Inventory manifest entry for content path 'v1/content/file-1.txt' differs from later versions. Expected: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1; Found: 17e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
+            "Inventory manifest entry for content path 'v1/content/file-1.txt' differs from later versions. \
+            Expected: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1; Found: 17e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
         ),
         root_error(
             ErrorCode::E092,
-            "Content file v1/content/file-1.txt failed sha512 fixity check. Expected: 17e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1; Found: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
+            "Content file v1/content/file-1.txt failed sha512 fixity check. Expected: \
+            17e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1; \
+            Found: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
         ),
     ]);
     no_warnings(&result);
@@ -834,15 +899,21 @@ fn algorithm_change_incorrect_digest() {
     has_errors(&result, &[
         root_error(
             ErrorCode::E092,
-            "Content file v1/content/file-3.txt failed sha512 fixity check. Expected: 13b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2; Found: b3b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2",
+            "Content file v1/content/file-3.txt failed sha512 fixity check. Expected: \
+            13b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2; \
+            Found: b3b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2",
         ),
         root_error(
             ErrorCode::E092,
-            "Content file v1/content/file-1.txt failed sha512 fixity check. Expected: 17e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1; Found: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
+            "Content file v1/content/file-1.txt failed sha512 fixity check. Expected: \
+            17e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1; \
+            Found: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
         ),
         root_error(
             ErrorCode::E092,
-            "Content file v1/content/file-2.txt failed sha512 fixity check. Expected: 1fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5; Found: 9fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5",
+            "Content file v1/content/file-2.txt failed sha512 fixity check. \
+            Expected: 1fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5; \
+            Found: 9fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5",
         ),
     ]);
     has_warnings(
@@ -861,7 +932,9 @@ fn content_file_digest_mismatch() {
     has_errors(&result, &[
         root_error(
             ErrorCode::E092,
-            "Content file v1/content/test.txt failed sha512 fixity check. Expected: 24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7cacfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28; Found: 1277a792c8196a2504007a40f31ed93bf826e71f16273d8503f7d3e46503d00b8d8cda0a59d6a33b9c1aebc84ea6a79f7062ee080f4a9587055a7b6fb92f5fa8",
+            "Content file v1/content/test.txt failed sha512 fixity check. Expected: \
+            24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7cacfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28; \
+            Found: 1277a792c8196a2504007a40f31ed93bf826e71f16273d8503f7d3e46503d00b8d8cda0a59d6a33b9c1aebc84ea6a79f7062ee080f4a9587055a7b6fb92f5fa8",
         ),
     ]);
     no_warnings(&result);
@@ -891,7 +964,8 @@ fn fixity_digest_mismatch() {
     has_errors(&result, &[
         root_error(
             ErrorCode::E093,
-            "Content file v1/content/test.txt failed md5 fixity check. Expected: 9eacfb9289073dd9c9a8c4cdf820ac71; Found: eb1a3227cdc3fedbaec2fe38bf6c044a",
+            "Content file v1/content/test.txt failed md5 fixity check. Expected: 9eacfb9289073dd9c9a8c4cdf820ac71; \
+            Found: eb1a3227cdc3fedbaec2fe38bf6c044a",
         ),
     ]);
     no_warnings(&result);
@@ -904,7 +978,8 @@ fn conflicting_logical_paths() {
     has_errors(&result, &[
         root_error(
             ErrorCode::E095,
-            "In inventory version v1, state contains a path, 'sub-path/a_file.txt', that conflicts with another path, 'sub-path'",
+            "In inventory version v1, state contains a path, 'sub-path/a_file.txt', that conflicts \
+            with another path, 'sub-path'",
         ),
     ]);
     no_warnings(&result);
@@ -925,6 +1000,11 @@ fn non_unique_logical_paths() {
                 ErrorCode::E095,
                 "In inventory version v1, state contains duplicate path 'file-3.txt'",
             ),
+            root_error(
+                ErrorCode::E107,
+                "Inventory manifest contains a digest that is not referenced in any valid version. \
+                Found: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
+            ),
         ],
     );
     no_warnings(&result);
@@ -942,6 +1022,11 @@ fn manifest_duplicate_digests() {
         root_error(
             ErrorCode::E096,
             "Inventory manifest contains a duplicate key '24F950AAC7B9EA9B3CB728228A0C82B67C39E96B4B344798870D5DAEE93E3AE5931BAAE8C7CACFEA4B629452C38026A81D138BC7AAD1AF3EF7BFD5EC646D6C28'",
+        ),
+        root_error(
+            ErrorCode::E107,
+            "Inventory manifest contains a digest that is not referenced in any valid version. \
+            Found: 24F950AAC7B9EA9B3CB728228A0C82B67C39E96B4B344798870D5DAEE93E3AE5931BAAE8C7CACFEA4B629452C38026A81D138BC7AAD1AF3EF7BFD5EC646D6C28",
         ),
     ]);
     no_warnings(&result);
@@ -992,15 +1077,18 @@ fn manifest_invalid_content_paths() {
     has_errors(&result, &[
         root_error(
             ErrorCode::E100,
-            "Inventory manifest key 'b3b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2' contains a path with a leading/trailing '/'. Found: /v1/content/file-3.txt",
+            "Inventory manifest key 'b3b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2' \
+            contains a path with a leading/trailing '/'. Found: /v1/content/file-3.txt",
         ),
         root_error(
             ErrorCode::E099,
-            "Inventory manifest key '07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1' contains a path containing an illegal path part. Found: v1/content/../content/file-1.txt",
+            "Inventory manifest key '07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1' \
+            contains a path containing an illegal path part. Found: v1/content/../content/file-1.txt",
         ),
         root_error(
             ErrorCode::E099,
-            "Inventory manifest key '9fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5' contains a path containing an illegal path part. Found: v1/content//file-2.txt",
+            "Inventory manifest key '9fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5' \
+            contains a path containing an illegal path part. Found: v1/content//file-2.txt",
         ),
     ]);
     no_warnings(&result);
@@ -1235,9 +1323,14 @@ fn user_address_not_uri() {
     let result = official_warn_test("W009_user_address_not_uri");
 
     no_errors(&result);
-    has_warnings(&result, &[
-        root_warning(WarnCode::W009, "Inventory version v1 user 'address' should be a URI. Found: 1 Wonky Way, Wibblesville, WW"),
-    ]);
+    has_warnings(
+        &result,
+        &[root_warning(
+            WarnCode::W009,
+            "Inventory version v1 user 'address' should be a URI. \
+        Found: 1 Wonky Way, Wibblesville, WW",
+        )],
+    );
 }
 
 #[test]
@@ -1399,14 +1492,29 @@ fn validate_invalid_repo() {
     }
 
     has_errors_storage(&validator.storage_hierarchy_result(), &[
-        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b01/0ba/world.txt".to_string()),
-        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/v1/content/dir/sub/file3.txt".to_string()),
-        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/v1/content/dir/file2.txt".to_string()),
-        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/v1/content/file1.txt".to_string()),
-        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/v1/inventory.json".to_string()),
-        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/v1/inventory.json.sha512".to_string()),
-        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/inventory.json".to_string()),
-        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072, "Found a file in the storage hierarchy: b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/inventory.json.sha512".to_string()),
+        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072,
+                             "Found a file in the storage hierarchy: b01/0ba/world.txt".to_string()),
+        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072,
+                             "Found a file in the storage hierarchy: \
+                             b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/v1/content/dir/sub/file3.txt".to_string()),
+        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072,
+                             "Found a file in the storage hierarchy: \
+                             b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/v1/content/dir/file2.txt".to_string()),
+        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072,
+                             "Found a file in the storage hierarchy: \
+                             b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/v1/content/file1.txt".to_string()),
+        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072,
+                             "Found a file in the storage hierarchy: \
+                             b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/v1/inventory.json".to_string()),
+        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072,
+                             "Found a file in the storage hierarchy: \
+                             b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/v1/inventory.json.sha512".to_string()),
+        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072,
+                             "Found a file in the storage hierarchy: \
+                             b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/inventory.json".to_string()),
+        ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072,
+                             "Found a file in the storage hierarchy: \
+                             b99/7a6/7ea/b997a67eacd839691ff9d6e490c5654e14a1783d460e4a4ef8d027547ddbf9e2/inventory.json.sha512".to_string()),
     ]);
     no_warnings_storage(validator.storage_hierarchy_result());
 }
