@@ -801,6 +801,10 @@ impl OcflRepo {
             }
 
             if let Some(previous_num) = previous_num {
+                // In the case of a modification we need to delete the new file
+                if let Some(content_path) = inventory.remove_logical_path_from_head(&path) {
+                    staging.rm_staged_files(&inventory, &[&content_path])?;
+                }
                 inventory.copy_file_to_head(previous_num, &path, path.as_ref().clone())?;
             }
         }

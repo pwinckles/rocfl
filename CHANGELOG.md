@@ -21,6 +21,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Validate object spec versions are monotonically increasing
 - Validate only one object/root version declaration
+- Validate all manifest entries are used at least once
+
+### Fixed
+
+- Resetting staged updates now correctly removes the reset file from
+  the manifest
 
 ## [1.6.6] - 2022-03-01
 

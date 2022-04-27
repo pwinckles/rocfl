@@ -441,12 +441,14 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                     }
                 }
 
-                // TODO 1.1 E107 validate that every manifest entry is in a version state: https://github.com/OCFL/spec/issues/537
-
                 if let (Some(manifest), Some(versions)) = (&manifest, &versions) {
+                    let mut unseen = manifest.digests.clone();
+
                     for (num, version) in &versions.map {
                         for (_, digest) in version.state_iter() {
-                            if !manifest.digests.contains(&(**digest).as_ref()) {
+                            let digest = (**digest).as_ref();
+                            unseen.remove(digest);
+                            if !manifest.digests.contains(digest) {
                                 self.result.error(
                                     ErrorCode::E050,
                                     format!("Inventory version {} state contains a digest that is not present in the manifest. Found: {}",
@@ -454,6 +456,14 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                                 );
                             }
                         }
+                    }
+
+                    for digest in unseen {
+                        self.result.error(
+                            ErrorCode::E107,
+                            format!("Inventory manifest contains a digest that is not referenced in any valid version. Found: {}",
+                                    digest),
+                        );
                     }
                 }
 
@@ -2279,7 +2289,7 @@ mod tests {
                     "Inventory 'versions' contains a version that is not an object",
                     &result,
                 );
-                error_count(1, &result);
+                error_count(2, &result);
                 warning_count(0, &result);
             }
         }
