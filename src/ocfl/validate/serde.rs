@@ -458,6 +458,7 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                         }
                     }
 
+                    // TODO 1.1 this should only validate if there have been no prior issues
                     for digest in unseen {
                         self.result.error(
                             ErrorCode::E107,
