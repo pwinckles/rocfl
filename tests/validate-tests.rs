@@ -87,16 +87,6 @@ fn invalid_version_format() {
             "Inventory manifest key '69f54f2e9f4568f7df4a4c3b07e4cbda4ba3bba7913c5218add6dea891817a80ce829b877d7a84ce47f93cbad8aa522bf7dd8eda2778e16bdf3c47cf49ee3bdf' \
             contains a path containing an illegal path part. Found: 1/content/my_content/poe.txt",
         ),
-        root_error(
-            ErrorCode::E107,
-            "Inventory manifest contains a digest that is not referenced in any valid version. \
-            Found: 69f54f2e9f4568f7df4a4c3b07e4cbda4ba3bba7913c5218add6dea891817a80ce829b877d7a84ce47f93cbad8aa522bf7dd8eda2778e16bdf3c47cf49ee3bdf",
-        ),
-        root_error(
-            ErrorCode::E107,
-            "Inventory manifest contains a digest that is not referenced in any valid version. \
-            Found: ffc150e7944b5cf5ddb899b2f48efffbd490f97632fc258434aefc4afb92aef2e3441ddcceae11404e5805e1b6c804083c9398c28f061c9ba42dd4bac53d5a2e",
-        ),
     ]);
     no_warnings(&result);
 }
@@ -563,11 +553,6 @@ fn created_no_timezone() {
             ErrorCode::E049,
             "Inventory version v1 'created' must be an RFC3339 formatted date. Found: 2019-01-01T02:03:04",
         ),
-        root_error(
-            ErrorCode::E107,
-            "Inventory manifest contains a digest that is not referenced in any valid version. \
-            Found: 43a43fe8a8a082d3b5343dfaf2fd0c8b8e370675b1f376e92e9994612c33ea255b11298269d72f797399ebb94edeefe53df243643676548f584fb8603ca53a0f",
-        ),
     ]);
     no_warnings(&result);
 }
@@ -580,11 +565,6 @@ fn created_not_to_seconds() {
         root_error(
             ErrorCode::E049,
             "Inventory version v1 'created' must be an RFC3339 formatted date. Found: 2019-01-01T01:02Z",
-        ),
-        root_error(
-            ErrorCode::E107,
-            "Inventory manifest contains a digest that is not referenced in any valid version. \
-            Found: 43a43fe8a8a082d3b5343dfaf2fd0c8b8e370675b1f376e92e9994612c33ea255b11298269d72f797399ebb94edeefe53df243643676548f584fb8603ca53a0f",
         ),
     ]);
     no_warnings(&result);
@@ -611,7 +591,7 @@ fn file_in_manifest_not_used() {
     has_errors(&result, &[
         root_error(
             ErrorCode::E107,
-            "Inventory manifest contains a digest that is not referenced in any valid version. \
+            "Inventory manifest contains a digest that is not referenced in any version. \
             Found: dfe9a0bbfdaab7173036571a1d9e34e2465b1e3a52e8b707bbf6dea9239a9a55b0fc9e511fc24882d7f493cd950a9dbef1de13e08a007909b21cd5ba54dc4888",
         ),
     ]);
@@ -638,7 +618,7 @@ fn manifest_digest_wrong_case() {
             ),
             root_error(
                 ErrorCode::E107,
-                "Inventory manifest contains a digest that is not referenced in any valid version. \
+                "Inventory manifest contains a digest that is not referenced in any version. \
                 Found: 24f950aac7b9ea9b3cb728228a0c82b67c39e96b4b344798870d5daee93e3ae5931baae8c7cacfea4b629452c38026a81d138bc7aad1af3ef7bfd5ec646d6c28",
             ),
     ]);
@@ -664,21 +644,6 @@ fn invalid_logical_paths() {
             ErrorCode::E053,
             "In inventory version v1, state key 'b3b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2' \
             contains a path with a leading/trailing '/'. Found: //file-3.txt",
-        ),
-        root_error(
-            ErrorCode::E107,
-            "Inventory manifest contains a digest that is not referenced in any valid version. \
-            Found: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
-        ),
-        root_error(
-            ErrorCode::E107,
-            "Inventory manifest contains a digest that is not referenced in any valid version. \
-            Found: b3b26d26c9d8cfbb884b50e798f93ac6bef275a018547b1560af3e6d38f2723785731d3ca6338682fa7ac9acb506b3c594a125ce9d3d60cd14498304cc864cf2",
-        ),
-        root_error(
-            ErrorCode::E107,
-            "Inventory manifest contains a digest that is not referenced in any valid version. \
-            Found: 9fef2458ee1a9277925614272adfe60872f4c1bf02eecce7276166957d1ab30f65cf5c8065a294bf1b13e3c3589ba936a3b5db911572e30dfcb200ef71ad33d5",
         ),
     ]);
     no_warnings(&result);
@@ -1000,11 +965,6 @@ fn non_unique_logical_paths() {
                 ErrorCode::E095,
                 "In inventory version v1, state contains duplicate path 'file-3.txt'",
             ),
-            root_error(
-                ErrorCode::E107,
-                "Inventory manifest contains a digest that is not referenced in any valid version. \
-                Found: 07e41ccb166d21a5327d5a2ae1bb48192b8470e1357266c9d119c294cb1e95978569472c9de64fb6d93cbd4dd0aed0bf1e7c47fd1920de17b038a08a85eb4fa1",
-            ),
         ],
     );
     no_warnings(&result);
@@ -1022,11 +982,6 @@ fn manifest_duplicate_digests() {
         root_error(
             ErrorCode::E096,
             "Inventory manifest contains a duplicate key '24F950AAC7B9EA9B3CB728228A0C82B67C39E96B4B344798870D5DAEE93E3AE5931BAAE8C7CACFEA4B629452C38026A81D138BC7AAD1AF3EF7BFD5EC646D6C28'",
-        ),
-        root_error(
-            ErrorCode::E107,
-            "Inventory manifest contains a digest that is not referenced in any valid version. \
-            Found: 24F950AAC7B9EA9B3CB728228A0C82B67C39E96B4B344798870D5DAEE93E3AE5931BAAE8C7CACFEA4B629452C38026A81D138BC7AAD1AF3EF7BFD5EC646D6C28",
         ),
     ]);
     no_warnings(&result);
