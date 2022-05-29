@@ -381,6 +381,8 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                     }
                 }
 
+                let has_parse_errors = self.result.has_errors();
+
                 if id.is_none() {
                     missing_inv_field(ID_FIELD, self.result);
                 }
@@ -441,30 +443,35 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                     }
                 }
 
-                if let (Some(manifest), Some(versions)) = (&manifest, &versions) {
-                    let mut unseen = manifest.digests.clone();
+                if !has_parse_errors {
+                    // This can give really misleading if there were prior errors because the versions
+                    // aren't present here unless they are valid, so only check if everything else
+                    // was valid up till now.
 
-                    for (num, version) in &versions.map {
-                        for (_, digest) in version.state_iter() {
-                            let digest = (**digest).as_ref();
-                            unseen.remove(digest);
-                            if !manifest.digests.contains(digest) {
-                                self.result.error(
-                                    ErrorCode::E050,
-                                    format!("Inventory version {} state contains a digest that is not present in the manifest. Found: {}",
-                                            num, digest),
-                                );
+                    if let (Some(manifest), Some(versions)) = (&manifest, &versions) {
+                        let mut unseen = manifest.digests.clone();
+
+                        for (num, version) in &versions.map {
+                            for (_, digest) in version.state_iter() {
+                                let digest = (**digest).as_ref();
+                                unseen.remove(digest);
+                                if !manifest.digests.contains(digest) {
+                                    self.result.error(
+                                        ErrorCode::E050,
+                                        format!("Inventory version {} state contains a digest that is not present in the manifest. Found: {}",
+                                                num, digest),
+                                    );
+                                }
                             }
                         }
-                    }
 
-                    // TODO 1.1 this should only validate if there have been no prior issues
-                    for digest in unseen {
-                        self.result.error(
-                            ErrorCode::E107,
-                            format!("Inventory manifest contains a digest that is not referenced in any valid version. Found: {}",
-                                    digest),
-                        );
+                        for digest in unseen {
+                            self.result.error(
+                                ErrorCode::E107,
+                                format!("Inventory manifest contains a digest that is not referenced in any version. Found: {}",
+                                        digest),
+                            );
+                        }
                     }
                 }
 
@@ -2290,7 +2297,7 @@ mod tests {
                     "Inventory 'versions' contains a version that is not an object",
                     &result,
                 );
-                error_count(2, &result);
+                error_count(1, &result);
                 warning_count(0, &result);
             }
         }
