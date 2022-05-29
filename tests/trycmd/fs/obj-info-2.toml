@@ -1,0 +1,12 @@
+fs.sandbox = true
+fs.base = "mutable.in"
+
+bin.name = "rocfl"
+args = "info o1"
+
+stdout = """
+Spec Version:     1.0
+Digest Algorithm: sha512
+Extensions:
+  0005-mutable-head
+"""

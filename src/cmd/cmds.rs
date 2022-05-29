@@ -6,10 +6,10 @@ use std::sync::atomic::AtomicBool;
 use log::info;
 
 use crate::cmd::opts::{
-    CatCmd, CommitCmd, ConfigCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, Field, InitCmd,
-    ListCmd, MoveCmd, NewCmd, PurgeCmd, RemoveCmd, ResetCmd, ShowCmd, StatusCmd,
+    CatCmd, CommitCmd, ConfigCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, Field, InfoCmd,
+    InitCmd, ListCmd, MoveCmd, NewCmd, PurgeCmd, RemoveCmd, ResetCmd, ShowCmd, StatusCmd,
 };
-use crate::cmd::{Cmd, GlobalArgs};
+use crate::cmd::{style, Cmd, GlobalArgs};
 use crate::config::Config;
 use crate::ocfl::{CommitMeta, DigestAlgorithm, OcflRepo, Result};
 
@@ -243,6 +243,84 @@ impl Cmd for PurgeCmd {
         }
 
         repo.purge_object(&self.object_id)
+    }
+}
+
+impl Cmd for InfoCmd {
+    fn exec(
+        &self,
+        repo: &OcflRepo,
+        args: GlobalArgs,
+        _config: &Config,
+        _terminate: &AtomicBool,
+    ) -> Result<()> {
+        let style = if args.no_styles {
+            &*style::DEFAULT
+        } else {
+            &*style::BOLD
+        };
+
+        if let Some(object_id) = self.object_id.as_deref() {
+            let mut info = repo.describe_object(object_id)?;
+
+            let mut out = BufWriter::new(io::stdout());
+
+            let _ = writeln!(
+                out,
+                "{}     {}",
+                style.paint("Spec Version:"),
+                info.spec_version
+            );
+            let _ = writeln!(
+                out,
+                "{} {}",
+                style.paint("Digest Algorithm:"),
+                info.digest_algorithm
+                    .unwrap_or_else(|| "unknown".to_string())
+            );
+
+            if info.extensions.is_empty() {
+                let _ = writeln!(out, "{}       none", style.paint("Extensions:"));
+            } else {
+                info.extensions.sort();
+                let _ = writeln!(out, "{}", style.paint("Extensions:"));
+                for extension in info.extensions {
+                    let _ = writeln!(out, "  {}", extension);
+                }
+            }
+
+            out.flush()?;
+        } else {
+            let mut info = repo.describe_repo()?;
+
+            let mut out = BufWriter::new(io::stdout());
+            let _ = writeln!(
+                out,
+                "{}   {}",
+                style.paint("Spec Version:"),
+                info.spec_version
+            );
+            let _ = writeln!(
+                out,
+                "{} {}",
+                style.paint("Storage Layout:"),
+                info.layout.unwrap_or_else(|| "unknown".to_string())
+            );
+
+            if info.extensions.is_empty() {
+                let _ = writeln!(out, "{}     none", style.paint("Extensions:"));
+            } else {
+                info.extensions.sort();
+                let _ = writeln!(out, "{}", style.paint("Extensions:"));
+                for extension in info.extensions {
+                    let _ = writeln!(out, "  {}", extension);
+                }
+            }
+
+            out.flush()?;
+        }
+
+        Ok(())
     }
 }
 

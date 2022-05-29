@@ -28,8 +28,8 @@ use crate::ocfl::store::{OcflStore, StagingStore};
 use crate::ocfl::validate::ObjectValidationResult;
 use crate::ocfl::{
     paths, util, validate, CommitMeta, ContentPath, Diff, DigestAlgorithm, IncrementalValidator,
-    InventoryPath, LogicalPath, ObjectVersion, ObjectVersionDetails, SpecVersion, VersionDetails,
-    VersionNum, VersionRef,
+    InventoryPath, LogicalPath, ObjectInfo, ObjectVersion, ObjectVersionDetails, RepoInfo,
+    SpecVersion, VersionDetails, VersionNum, VersionRef,
 };
 
 /// OCFL repository
@@ -177,6 +177,18 @@ impl OcflRepo {
     ) -> Result<Box<dyn IncrementalValidator + 'a>> {
         self.ensure_open()?;
         self.store.validate_repo(fixity_check)
+    }
+
+    /// Returns details about an OCFL repository
+    pub fn describe_repo(&self) -> Result<RepoInfo> {
+        self.ensure_open()?;
+        self.store.describe_repo()
+    }
+
+    /// Returns details about an OCFL object
+    pub fn describe_object(&self, object_id: &str) -> Result<ObjectInfo> {
+        self.ensure_open()?;
+        self.store.describe_object(object_id)
     }
 
     /// Returns an iterator that iterate through all of the objects in an OCFL repository.

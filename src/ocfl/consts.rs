@@ -3,6 +3,8 @@ use std::collections::HashSet;
 use const_format::concatcp;
 use once_cell::sync::Lazy;
 
+pub const SUPPORTED_VERSIONS: [&str; 2] = ["1.0", "1.1"];
+
 const NAMASTE_FILE_PREFIX: &str = "0=";
 const ROOT_NAMASTE_PREFIX: &str = "ocfl_";
 const OBJECT_NAMASTE_PREFIX: &str = "ocfl_object_";

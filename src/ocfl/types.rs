@@ -15,6 +15,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::de::Visitor;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use strum_macros::EnumIter;
 use VersionRef::Head;
 
 use crate::ocfl::bimap::PathBiMap;
@@ -42,12 +43,36 @@ pub enum VersionRef {
     Head,
 }
 
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+/// OCFL spec version
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, EnumIter)]
 pub enum SpecVersion {
     Ocfl1_0,
     Ocfl1_1,
 }
 
+/// Encapsulates OCFL metadata about a repository
+#[derive(Debug)]
+pub struct RepoInfo {
+    /// The OCFL spec version the repository adheres to. eg: 1.0 or 1.1
+    pub spec_version: String,
+    /// The storage layout the repository uses, if known
+    pub layout: Option<String>,
+    /// The list of extension names configured on the repository
+    pub extensions: Vec<String>,
+}
+
+/// Encapsulates OCFL metadata about an object
+#[derive(Debug)]
+pub struct ObjectInfo {
+    /// The OCFL spec version the object adheres to. eg: 1.0 or 1.1
+    pub spec_version: String,
+    /// The digest algorithm the object uses
+    pub digest_algorithm: Option<String>,
+    /// The list of extension names configured on the object
+    pub extensions: Vec<String>,
+}
+
+/// Encapsulates a namaste file name and content; used for version conformance declarations
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Namaste {
     pub(crate) filename: &'static str,
@@ -463,6 +488,30 @@ impl SpecVersion {
         match self {
             SpecVersion::Ocfl1_0 => OCFL_SPEC_FILE_1_0,
             SpecVersion::Ocfl1_1 => OCFL_SPEC_FILE_1_1,
+        }
+    }
+}
+
+impl RepoInfo {
+    pub fn new(spec_version: String, layout: Option<String>, extensions: Vec<String>) -> Self {
+        Self {
+            spec_version,
+            layout,
+            extensions,
+        }
+    }
+}
+
+impl ObjectInfo {
+    pub fn new(
+        spec_version: String,
+        digest_algorithm: Option<String>,
+        extensions: Vec<String>,
+    ) -> Self {
+        Self {
+            spec_version,
+            digest_algorithm,
+            extensions,
         }
     }
 }

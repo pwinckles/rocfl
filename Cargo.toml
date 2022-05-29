@@ -108,6 +108,7 @@ predicates = "2"
 rand = "0.8"
 tempfile = "3"
 tokio-test = "0.4"
+trycmd = "0.13"
 # TODO time switching hash impl
 #fxhash = "0.2"
 # TODO experiment with https://crates.io/crates/criterion/0.2.11

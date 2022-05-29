@@ -375,6 +375,25 @@ rocfl status urn:example:rocfl:object-1
 Staged changes can also be examined using the more featureful `ls`,
 `show`, and `cat` commands by adding the `-S` flag.
 
+#### Info
+
+The `info` command displays information, such as spec version and
+configured extensions, for repositories and objects.
+
+##### Examples
+
+Show info for a repository:
+
+``` console
+rocfl info
+```
+
+Show info for an object:
+
+``` console
+rocfl info urn:example:rocfl:object-1
+```
+
 ### Write Commands
 
 `rocfl` supports updating OCFL objects by staging changes to objects
