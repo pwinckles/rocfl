@@ -1,0 +1,7 @@
+{
+  "digestAlgorithm" : "sha256",
+  "tupleSize" : 3,
+  "numberOfTuples" : 3,
+  "shortObjectRoot" : false,
+  "extensionName" : "0004-hashed-n-tuple-storage-layout"
+}

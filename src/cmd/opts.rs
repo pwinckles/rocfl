@@ -119,6 +119,8 @@ pub enum Command {
     Purge(PurgeCmd),
     #[clap(name = "validate")]
     Validate(ValidateCmd),
+    #[clap(name = "info")]
+    Info(InfoCmd),
 }
 
 /// Edit rocfl configuration
@@ -594,6 +596,17 @@ pub struct ValidateCmd {
     /// IDs of the objects to validate, or paths object roots when used with '--paths'
     #[clap(value_name = "OBJ_ID/PATH")]
     pub object_ids: Vec<String>,
+}
+
+/// Display OCFL metadata about a repository or object
+///
+/// This command displays information, such as OCFL spec version and configured extensions, for
+/// repositories and objects.
+#[derive(Args, Debug)]
+pub struct InfoCmd {
+    /// ID of the object to show metadata for
+    #[clap(value_name = "OBJ_ID")]
+    pub object_id: Option<String>,
 }
 
 // TODO a command for rebasing staging if an object is updated after the staged version was created?

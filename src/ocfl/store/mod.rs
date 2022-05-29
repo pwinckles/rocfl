@@ -9,7 +9,7 @@ use crate::ocfl::error::Result;
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::store::layout::LayoutExtensionName;
 use crate::ocfl::validate::{IncrementalValidator, ObjectValidationResult};
-use crate::ocfl::{ContentPath, LogicalPath, VersionRef};
+use crate::ocfl::{ContentPath, LogicalPath, ObjectInfo, RepoInfo, VersionRef};
 
 pub mod fs;
 pub mod layout;
@@ -95,6 +95,12 @@ pub trait OcflStore {
         fixity_check: bool,
     ) -> Result<Box<dyn IncrementalValidator + 'a>>;
 
+    /// Returns details about an OCFL repository
+    fn describe_repo(&self) -> Result<RepoInfo>;
+
+    /// Returns details about an OCFL object
+    fn describe_object(&self, object_id: &str) -> Result<ObjectInfo>;
+
     /// Instructs the store to gracefully stop any in-flight work and not accept any additional
     /// requests.
     fn close(&self);
@@ -157,6 +163,13 @@ pub trait StagingStore: OcflStore {
 #[derive(Deserialize, Serialize, Debug)]
 pub struct OcflLayout {
     extension: LayoutExtensionName,
+    description: String,
+}
+
+/// ocfl_layout.json serialization object that does not attempt to map extension names
+#[derive(Deserialize, Serialize, Debug)]
+pub(crate) struct OcflLayoutLenient {
+    extension: String,
     description: String,
 }
 

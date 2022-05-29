@@ -18,6 +18,7 @@ use grep_searcher::sinks::UTF8;
 use grep_searcher::Searcher;
 use log::{error, info, warn};
 use once_cell::sync::Lazy;
+use serde::de::DeserializeOwned;
 use walkdir::WalkDir;
 
 use super::layout::{LayoutExtensionName, StorageLayout};
@@ -25,10 +26,11 @@ use super::{OcflLayout, OcflStore, StagingStore};
 use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
-use crate::ocfl::store::{Listing, Storage};
+use crate::ocfl::store::{Listing, OcflLayoutLenient, Storage};
 use crate::ocfl::validate::{IncrementalValidator, ObjectValidationResult, Validator};
 use crate::ocfl::{
-    paths, specs, util, ContentPath, InventoryPath, LogicalPath, SpecVersion, VersionRef,
+    paths, specs, util, ContentPath, InventoryPath, LogicalPath, ObjectInfo, RepoInfo, SpecVersion,
+    VersionRef,
 };
 
 static OBJECT_ID_MATCHER: Lazy<RegexMatcher> =
@@ -450,15 +452,7 @@ impl OcflStore for FsOcflStore {
         let object_root = self.lookup_or_find_object_root_path(object_id)?;
         let extensions_dir = paths::extensions_path(&object_root);
 
-        let mut extensions = Vec::new();
-
-        if extensions_dir.exists() {
-            for entry in fs::read_dir(extensions_dir)? {
-                extensions.push(entry?.file_name().to_string_lossy().to_string());
-            }
-        }
-
-        Ok(extensions)
+        list_extensions(extensions_dir)
     }
 
     /// Validates the specified object and returns any problems found. Err will only be returned
@@ -496,6 +490,44 @@ impl OcflStore for FsOcflStore {
         fixity_check: bool,
     ) -> Result<Box<dyn IncrementalValidator + 'a>> {
         Ok(Box::new(self.validator.validate_repo(fixity_check)?))
+    }
+
+    /// Returns details about an OCFL repository
+    fn describe_repo(&self) -> Result<RepoInfo> {
+        self.ensure_open()?;
+
+        let version = find_first_version_declaration(ROOT_NAMASTE_FILE_PREFIX, &self.storage_root)?;
+
+        let layout = parse_layout::<&Path, OcflLayoutLenient>(&self.storage_root)
+            .map(|layout| layout.extension);
+
+        let extensions_dir = paths::extensions_path(&self.storage_root);
+        let extensions = list_extensions(extensions_dir)?;
+
+        Ok(RepoInfo::new(version, layout, extensions))
+    }
+
+    /// Returns details about an OCFL object
+    fn describe_object(&self, object_id: &str) -> Result<ObjectInfo> {
+        self.ensure_open()?;
+
+        let object_root = self
+            .lookup_or_find_object_root_path(object_id)
+            .map_err(|_| not_found(object_id, None))?;
+        let version = find_first_version_declaration(OBJECT_NAMASTE_FILE_PREFIX, &object_root)?;
+        let extensions = self.list_object_extensions(object_id)?;
+
+        let algorithm = if SUPPORTED_VERSIONS.contains(&version.as_str()) {
+            Some(
+                self.get_inventory_by_path(object_id, &object_root)?
+                    .digest_algorithm
+                    .to_string(),
+            )
+        } else {
+            None
+        };
+
+        Ok(ObjectInfo::new(version, algorithm, extensions))
     }
 
     /// Instructs the store to gracefully stop any in-flight work and not accept any additional
@@ -964,6 +996,8 @@ where
         }
     };
 
+    // TODO 1.1 how to handle unsupported versions?
+
     let relative = match pathdiff::diff_paths(&object_root, &storage_root) {
         Some(relative) => relative.to_string_lossy().to_string(),
         None => object_root.as_ref().to_string_lossy().to_string(),
@@ -1053,7 +1087,7 @@ fn load_storage_layout<P: AsRef<Path>>(storage_root: P) -> Option<StorageLayout>
 }
 
 /// Parses the `ocfl_layout.json` file if it exists
-fn parse_layout<P: AsRef<Path>>(storage_root: P) -> Option<OcflLayout> {
+fn parse_layout<P: AsRef<Path>, T: DeserializeOwned>(storage_root: P) -> Option<T> {
     let layout_file = paths::ocfl_layout_path(&storage_root);
     if layout_file.exists() {
         match parse_layout_file(&layout_file) {
@@ -1076,7 +1110,7 @@ fn parse_layout<P: AsRef<Path>>(storage_root: P) -> Option<OcflLayout> {
     }
 }
 
-fn parse_layout_file<P: AsRef<Path>>(layout_file: P) -> Result<OcflLayout> {
+fn parse_layout_file<P: AsRef<Path>, T: DeserializeOwned>(layout_file: P) -> Result<T> {
     let bytes = file_to_bytes(layout_file)?;
     Ok(serde_json::from_slice(&bytes)?)
 }
@@ -1192,6 +1226,38 @@ fn write_layout_config(root: impl AsRef<Path>, layout: &StorageLayout) -> Result
     )?;
 
     Ok(())
+}
+
+fn list_extensions(extensions_dir: impl AsRef<Path>) -> Result<Vec<String>> {
+    let extensions_dir = extensions_dir.as_ref();
+    let mut extensions = Vec::new();
+
+    if extensions_dir.exists() {
+        for entry in fs::read_dir(extensions_dir)? {
+            extensions.push(entry?.file_name().to_string_lossy().to_string());
+        }
+    }
+
+    Ok(extensions)
+}
+
+/// Identifies the first version declaration file in the directory and returns the portion of the
+/// filename that's after the prefix, which should be the OCFL spec version
+fn find_first_version_declaration(prefix: &str, dir: impl AsRef<Path>) -> Result<String> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry.file_name().len() > prefix.len()
+            && entry
+                .file_name()
+                .to_str()
+                .map_or(false, |name| name.starts_with(prefix))
+        {
+            let version = entry.file_name().to_str().unwrap()[prefix.len()..].to_string();
+            return Ok(version);
+        }
+    }
+
+    Err(RocflError::NotFound("Version declaration file".to_string()))
 }
 
 fn file_to_bytes(file: impl AsRef<Path>) -> Result<Vec<u8>> {

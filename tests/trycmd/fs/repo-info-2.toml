@@ -1,0 +1,12 @@
+fs.sandbox = true
+fs.base = "multiple-objects-with-layout.in"
+
+bin.name = "rocfl"
+args = "info"
+
+stdout = """
+Spec Version:   1.0
+Storage Layout: 0004-hashed-n-tuple-storage-layout
+Extensions:
+  0004-hashed-n-tuple-storage-layout
+"""

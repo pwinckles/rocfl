@@ -22,6 +22,7 @@ use rusoto_s3::{
     GetObjectRequest, ListObjectsV2Output, ListObjectsV2Request, PutObjectRequest,
     S3Client as RusotoS3Client, StreamingBody, UploadPartRequest, S3,
 };
+use serde::de::DeserializeOwned;
 use tokio::io::AsyncReadExt;
 use tokio::runtime;
 use tokio::runtime::Runtime;
@@ -33,11 +34,11 @@ use crate::ocfl::consts::*;
 use crate::ocfl::error::{not_found, Result, RocflError};
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::paths::{join, join_with_trailing_slash};
-use crate::ocfl::store::{Listing, Storage};
+use crate::ocfl::store::{Listing, OcflLayoutLenient, Storage};
 use crate::ocfl::validate::{IncrementalValidator, ObjectValidationResult, Validator};
 use crate::ocfl::{
     paths, specs, util, DigestAlgorithm, InventoryPath, LayoutExtensionName, LogicalPath,
-    SpecVersion, VersionRef,
+    ObjectInfo, RepoInfo, SpecVersion, VersionRef,
 };
 
 const TYPE_PLAIN: &str = "text/plain; charset=UTF-8";
@@ -315,6 +316,32 @@ impl S3OcflStore {
         self.s3_client.list_dir(path)
     }
 
+    /// Lists all extension names in the `extensions` directory under the specified `base_dir`
+    fn list_extensions(&self, base_dir: &str) -> Result<Vec<String>> {
+        let extensions_dir = join(base_dir, EXTENSIONS_DIR);
+        let list_result = self.list_dir(&extensions_dir)?;
+
+        let mut extensions = Vec::with_capacity(list_result.directories.len());
+
+        for path in list_result.directories {
+            extensions.push(path[extensions_dir.len() + 1..].to_string());
+        }
+
+        Ok(extensions)
+    }
+
+    /// Identifies the first version declaration file in the directory and returns the portion of the
+    /// filename that's after the prefix, which should be the OCFL spec version
+    fn find_first_version_declaration(&self, prefix: &str, dir: &str) -> Result<String> {
+        for entry in self.list_dir(dir)?.objects {
+            if let Some(stripped) = entry.strip_prefix(prefix) {
+                return Ok(stripped.to_string());
+            }
+        }
+
+        Err(RocflError::NotFound("Version declaration file".to_string()))
+    }
+
     /// Returns an error if the store is closed
     fn ensure_open(&self) -> Result<()> {
         if self.is_closed() {
@@ -519,17 +546,8 @@ impl OcflStore for S3OcflStore {
         self.ensure_open()?;
 
         let object_root = self.lookup_or_find_object_root_path(object_id)?;
-        let extensions_dir = join(&object_root, EXTENSIONS_DIR);
 
-        let mut extensions = Vec::new();
-
-        let list_result = self.s3_client.list_dir(&extensions_dir)?;
-
-        for path in list_result.directories {
-            extensions.push(path[extensions_dir.len() + 1..].to_string());
-        }
-
-        Ok(extensions)
+        self.list_extensions(&object_root)
     }
 
     /// Validates the specified object and returns any problems found. Err will only be returned
@@ -567,6 +585,44 @@ impl OcflStore for S3OcflStore {
         fixity_check: bool,
     ) -> Result<Box<dyn IncrementalValidator + 'a>> {
         Ok(Box::new(self.validator.validate_repo(fixity_check)?))
+    }
+
+    /// Returns details about an OCFL repository
+    fn describe_repo(&self) -> Result<RepoInfo> {
+        self.ensure_open()?;
+
+        let version = self.find_first_version_declaration(ROOT_NAMASTE_FILE_PREFIX, "")?;
+
+        let layout =
+            load_ocfl_layout::<OcflLayoutLenient>(&self.s3_client).map(|layout| layout.extension);
+
+        let extensions = self.list_extensions("")?;
+
+        Ok(RepoInfo::new(version, layout, extensions))
+    }
+
+    /// Returns details about an OCFL object
+    fn describe_object(&self, object_id: &str) -> Result<ObjectInfo> {
+        self.ensure_open()?;
+
+        let object_root = self
+            .lookup_or_find_object_root_path(object_id)
+            .map_err(|_| not_found(object_id, None))?;
+        let version =
+            self.find_first_version_declaration(OBJECT_NAMASTE_FILE_PREFIX, &object_root)?;
+        let extensions = self.list_object_extensions(object_id)?;
+
+        let algorithm = if SUPPORTED_VERSIONS.contains(&version.as_str()) {
+            Some(
+                self.parse_inventory_required(object_id, &object_root)?
+                    .digest_algorithm
+                    .to_string(),
+            )
+        } else {
+            None
+        };
+
+        Ok(ObjectInfo::new(version, algorithm, extensions))
     }
 
     /// Instructs the store to gracefully stop any in-flight work and not accept any additional
@@ -1214,11 +1270,11 @@ fn write_layout_config(s3_client: &S3Client, layout: &StorageLayout) -> Result<(
     Ok(())
 }
 
-/// Reads `ocfl_layout.json` and attempts to load the specified storage layout extension
-fn load_storage_layout(s3_client: &S3Client) -> Option<StorageLayout> {
+/// Attempts to read `ocfl_layout.json` and returns it if able
+fn load_ocfl_layout<T: DeserializeOwned>(s3_client: &S3Client) -> Option<T> {
     match s3_client.get_object(OCFL_LAYOUT_FILE) {
-        Ok(Some(layout)) => match serde_json::from_slice::<OcflLayout>(layout.as_slice()) {
-            Ok(layout) => load_layout_extension(layout, s3_client),
+        Ok(Some(layout)) => match serde_json::from_slice::<T>(layout.as_slice()) {
+            Ok(layout) => Some(layout),
             Err(e) => {
                 error!("Failed to load OCFL layout: {:#}", e);
                 None
@@ -1236,6 +1292,12 @@ fn load_storage_layout(s3_client: &S3Client) -> Option<StorageLayout> {
             None
         }
     }
+}
+
+/// Reads `ocfl_layout.json` and attempts to load the specified storage layout extension
+fn load_storage_layout(s3_client: &S3Client) -> Option<StorageLayout> {
+    load_ocfl_layout::<OcflLayout>(s3_client)
+        .and_then(|layout| load_layout_extension(layout, s3_client))
 }
 
 /// Attempts to read a storage layout extension config and return configured `StorageLayout`

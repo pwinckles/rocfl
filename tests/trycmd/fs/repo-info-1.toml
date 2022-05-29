@@ -1,0 +1,11 @@
+fs.sandbox = true
+fs.base = "multiple-objects.in"
+
+bin.name = "rocfl"
+args = "info"
+
+stdout = """
+Spec Version:   1.0
+Storage Layout: unknown
+Extensions:     none
+"""
