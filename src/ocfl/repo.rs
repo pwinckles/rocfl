@@ -191,6 +191,30 @@ impl OcflRepo {
         self.store.describe_object(object_id)
     }
 
+    /// Returns details about a staged OCFL object
+    ///
+    /// If the object does not have a staged version, then a `RocflError::NotFound`
+    /// error is returned.
+    pub fn describe_staged_object(&self, object_id: &str) -> Result<ObjectInfo> {
+        self.ensure_open()?;
+
+        if !self.staging_root.exists() {
+            return Err(RocflError::NotFound(format!(
+                "{} does not have a staged version.",
+                object_id
+            )));
+        }
+
+        match self.get_staging()?.describe_object(object_id) {
+            Ok(inventory) => Ok(inventory),
+            Err(RocflError::NotFound(_)) => Err(RocflError::NotFound(format!(
+                "{} does not have a staged version.",
+                object_id
+            ))),
+            Err(e) => Err(e),
+        }
+    }
+
     /// Returns an iterator that iterate through all of the objects in an OCFL repository.
     /// Objects are lazy-loaded. An optional glob pattern may be provided to filter the objects
     /// that are returned.

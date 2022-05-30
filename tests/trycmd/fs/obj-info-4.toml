@@ -1,0 +1,11 @@
+fs.sandbox = true
+fs.base = "staged-objects.in"
+
+bin.name = "rocfl"
+args = "info --staged o2"
+
+stdout = """
+Spec Version:     1.0
+Digest Algorithm: sha512
+Extensions:       none
+"""

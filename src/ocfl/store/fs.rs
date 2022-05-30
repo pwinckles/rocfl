@@ -118,6 +118,8 @@ impl FsOcflStore {
 
     /// This method first attempts to locate the path to the object using the storage layout.
     /// If it is not able to, then it scans the repository looking for the object.
+    ///
+    /// **Note**: This path does **NOT** include the storage root
     fn lookup_or_find_object_root_path(&self, object_id: &str) -> Result<String> {
         match self.get_object_root_path(object_id) {
             Some(path) => Ok(path),
@@ -450,7 +452,8 @@ impl OcflStore for FsOcflStore {
         self.ensure_open()?;
 
         let object_root = self.lookup_or_find_object_root_path(object_id)?;
-        let extensions_dir = paths::extensions_path(&object_root);
+        let storage_path = self.storage_root.join(&object_root);
+        let extensions_dir = paths::extensions_path(&storage_path);
 
         list_extensions(extensions_dir)
     }
@@ -514,7 +517,10 @@ impl OcflStore for FsOcflStore {
         let object_root = self
             .lookup_or_find_object_root_path(object_id)
             .map_err(|_| not_found(object_id, None))?;
-        let version = find_first_version_declaration(OBJECT_NAMASTE_FILE_PREFIX, &object_root)?;
+        let storage_path = self.storage_root.join(&object_root);
+
+        let version = find_first_version_declaration(OBJECT_NAMASTE_FILE_PREFIX, &storage_path)
+            .map_err(|_| not_found(object_id, None))?;
         let extensions = self.list_object_extensions(object_id)?;
 
         let algorithm = if SUPPORTED_VERSIONS.contains(&version.as_str()) {

@@ -1,0 +1,10 @@
+fs.sandbox = true
+fs.base = "mutable.in"
+
+bin.name = "rocfl"
+args = "info o2"
+
+status = "failed"
+stderr = """
+[ERROR] Not found: Object o2
+"""

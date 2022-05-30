@@ -608,8 +608,9 @@ impl OcflStore for S3OcflStore {
         let object_root = self
             .lookup_or_find_object_root_path(object_id)
             .map_err(|_| not_found(object_id, None))?;
-        let version =
-            self.find_first_version_declaration(OBJECT_NAMASTE_FILE_PREFIX, &object_root)?;
+        let version = self
+            .find_first_version_declaration(OBJECT_NAMASTE_FILE_PREFIX, &object_root)
+            .map_err(|_| not_found(object_id, None))?;
         let extensions = self.list_object_extensions(object_id)?;
 
         let algorithm = if SUPPORTED_VERSIONS.contains(&version.as_str()) {
