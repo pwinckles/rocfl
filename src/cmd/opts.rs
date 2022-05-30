@@ -604,6 +604,10 @@ pub struct ValidateCmd {
 /// repositories and objects.
 #[derive(Args, Debug)]
 pub struct InfoCmd {
+    /// Display info for a staged object
+    #[clap(short = 'S', long)]
+    pub staged: bool,
+
     /// ID of the object to show metadata for
     #[clap(value_name = "OBJ_ID")]
     pub object_id: Option<String>,

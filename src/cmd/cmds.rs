@@ -261,7 +261,11 @@ impl Cmd for InfoCmd {
         };
 
         if let Some(object_id) = self.object_id.as_deref() {
-            let mut info = repo.describe_object(object_id)?;
+            let mut info = if self.staged {
+                repo.describe_staged_object(object_id)?
+            } else {
+                repo.describe_object(object_id)?
+            };
 
             let mut out = BufWriter::new(io::stdout());
 
