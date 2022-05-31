@@ -3,7 +3,10 @@ use std::collections::HashSet;
 use const_format::concatcp;
 use once_cell::sync::Lazy;
 
+use crate::ocfl::SpecVersion;
+
 pub const SUPPORTED_VERSIONS: [&str; 2] = ["1.0", "1.1"];
+pub const DEFAULT_VERSION: SpecVersion = SpecVersion::Ocfl1_1;
 
 const NAMASTE_FILE_PREFIX: &str = "0=";
 const ROOT_NAMASTE_PREFIX: &str = "ocfl_";

@@ -26,10 +26,11 @@ use crate::ocfl::store::layout::{LayoutExtensionName, StorageLayout};
 use crate::ocfl::store::s3::S3OcflStore;
 use crate::ocfl::store::{OcflStore, StagingStore};
 use crate::ocfl::validate::ObjectValidationResult;
+use crate::ocfl::Knowable::*;
 use crate::ocfl::{
     paths, util, validate, CommitMeta, ContentPath, Diff, DigestAlgorithm, IncrementalValidator,
-    InventoryPath, LogicalPath, ObjectInfo, ObjectVersion, ObjectVersionDetails, RepoInfo,
-    SpecVersion, VersionDetails, VersionNum, VersionRef,
+    InventoryPath, Knowable, LogicalPath, ObjectInfo, ObjectVersion, ObjectVersionDetails,
+    RepoInfo, SpecVersion, VersionDetails, VersionNum, VersionRef,
 };
 
 /// OCFL repository
@@ -42,6 +43,7 @@ pub struct OcflRepo {
     staging_lock_manager: OnceCell<LockManager>,
     /// The path to the root of the staging repo
     staging_root: PathBuf,
+    spec_version: Option<Knowable<SpecVersion, String>>,
     /// Indicates if the repository should convert separators to backslashes when rendering
     /// physical paths.
     use_backslashes: bool,
@@ -57,11 +59,15 @@ impl OcflRepo {
             None => paths::staging_extension_path(storage_root.as_ref()),
         };
 
+        let store = FsOcflStore::new(storage_root)?;
+        let spec_version = store.repo_spec_version()?;
+
         Ok(Self {
             staging_root,
-            store: Box::new(FsOcflStore::new(storage_root)?),
+            store: Box::new(store),
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
+            spec_version,
             use_backslashes: util::BACKSLASH_SEPARATOR,
             closed: AtomicBool::new(false),
         })
@@ -85,6 +91,7 @@ impl OcflRepo {
             store: Box::new(FsOcflStore::init(storage_root, version, layout)?),
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
+            spec_version: Some(Known(version)),
             use_backslashes: util::BACKSLASH_SEPARATOR,
             closed: AtomicBool::new(false),
         })
@@ -110,6 +117,7 @@ impl OcflRepo {
             )?),
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
+            spec_version: Some(Known(version)),
             use_backslashes: false,
             closed: AtomicBool::new(false),
         })
@@ -125,11 +133,15 @@ impl OcflRepo {
         staging_root: impl AsRef<Path>,
         profile: Option<&str>,
     ) -> Result<Self> {
+        let store = S3OcflStore::new(region, bucket, prefix, profile)?;
+        let spec_version = store.repo_spec_version()?;
+
         Ok(Self {
             staging_root: staging_root.as_ref().to_path_buf(),
-            store: Box::new(S3OcflStore::new(region, bucket, prefix, profile)?),
+            store: Box::new(store),
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
+            spec_version,
             use_backslashes: false,
             closed: AtomicBool::new(false),
         })
@@ -495,9 +507,13 @@ impl OcflRepo {
 
     /// Stages a new OCFL object if there is not an existing object with the same ID. The object
     /// is not inserted into the repository until it is committed.
+    ///
+    /// If `spec_version` is not provided, then the repository version is used. If the repository
+    /// version is unknown, then the latest supported OCFL version is used.
     pub fn create_object(
         &self,
         object_id: &str,
+        spec_version: Option<SpecVersion>,
         digest_algorithm: DigestAlgorithm,
         content_dir: &str,
         padding_width: u32,
@@ -505,6 +521,22 @@ impl OcflRepo {
         self.ensure_open()?;
 
         let object_id = object_id.trim();
+
+        let object_version = if let Some(object_version) = spec_version {
+            if let Some(Known(repo_version)) = &self.spec_version {
+                validate::validate_spec_version(object_version, *repo_version)?;
+            }
+            object_version
+        } else if let Some(Known(repo_version)) = &self.spec_version {
+            info!("Defaulting object version to {}", repo_version.version());
+            *repo_version
+        } else {
+            info!(
+                "Unknown repository version, defaulting object version to {}",
+                DEFAULT_VERSION.version()
+            );
+            DEFAULT_VERSION
+        };
 
         validate::validate_object_id(object_id)?;
         validate::validate_digest_algorithm(digest_algorithm)?;
@@ -525,8 +557,7 @@ impl OcflRepo {
 
         let version_num = VersionNum::v1_with_width(padding_width);
 
-        // TODO 1.1 make version configurable; default to 1.1
-        let mut inventory = Inventory::builder(object_id, SpecVersion::Ocfl1_0)
+        let mut inventory = Inventory::builder(object_id, object_version)
             .with_digest_algorithm(digest_algorithm)
             .with_content_directory(content_dir)
             .with_head(version_num)

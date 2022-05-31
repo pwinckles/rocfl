@@ -312,6 +312,17 @@ pub struct CatCmd {
 /// difficult to change a repository's layout after objects have been created.
 #[derive(Args, Debug)]
 pub struct InitCmd {
+    /// OCFL spec version that the repository adheres to
+    #[clap(
+        arg_enum,
+        short = 'v',
+        long,
+        value_name = "SPEC_VERSION",
+        default_value = "1.1",
+        ignore_case = true
+    )]
+    pub spec_version: SpecVersion,
+
     /// Path to a custom storage layout extension config JSON file.
     #[clap(short, long, value_name = "LAYOUT_CONFIG")]
     pub config_file: Option<PathBuf>,
@@ -337,6 +348,20 @@ pub struct InitCmd {
 /// main repository.
 #[derive(Args, Debug)]
 pub struct NewCmd {
+    /// OCFL spec version that the object adheres to
+    ///
+    /// Must be less than or equal to the spec version of the repository. If a version is not
+    /// specified, then the repository version is used. If the repository version is unknown,
+    /// then the latest supported version is used.
+    #[clap(
+        arg_enum,
+        short = 'v',
+        long,
+        value_name = "SPEC_VERSION",
+        ignore_case = true
+    )]
+    pub spec_version: Option<SpecVersion>,
+
     /// Digest algorithm to use for the inventory digest
     #[clap(
         arg_enum,
@@ -662,6 +687,16 @@ pub enum Level {
     Info,
     Warn,
     Error,
+}
+
+#[derive(ArgEnum, Debug, Clone, Copy, EnumString, EnumDisplay)]
+pub enum SpecVersion {
+    #[strum(serialize = "1.0")]
+    #[clap(name = "1.0")]
+    Ocfl1_0,
+    #[strum(serialize = "1.1")]
+    #[clap(name = "1.1")]
+    Ocfl1_1,
 }
 
 impl Default for Num {

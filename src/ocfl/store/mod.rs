@@ -9,7 +9,9 @@ use crate::ocfl::error::Result;
 use crate::ocfl::inventory::Inventory;
 use crate::ocfl::store::layout::LayoutExtensionName;
 use crate::ocfl::validate::{IncrementalValidator, ObjectValidationResult};
-use crate::ocfl::{ContentPath, LogicalPath, ObjectInfo, RepoInfo, VersionRef};
+use crate::ocfl::{
+    ContentPath, Knowable, LogicalPath, ObjectInfo, RepoInfo, SpecVersion, VersionRef,
+};
 
 pub mod fs;
 pub mod layout;
@@ -19,6 +21,9 @@ pub mod s3;
 /// OCFL storage interface. Implementations are responsible for interacting with the physical
 /// files on disk.
 pub trait OcflStore {
+    /// Returns the OCFL spec version that the repository root adheres to
+    fn repo_spec_version(&self) -> Result<Option<Knowable<SpecVersion, String>>>;
+
     /// Returns the most recent inventory version for the specified object, or an a
     /// `RocflError::NotFound` if it does not exist.
     fn get_inventory(&self, object_id: &str) -> Result<Inventory>;

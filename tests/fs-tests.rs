@@ -706,6 +706,51 @@ fn create_new_repo_empty_dir_custom_layout() -> Result<()> {
 }
 
 #[test]
+fn create_1_1_object() -> Result<()> {
+    let root = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+
+    let repo = OcflRepo::init_fs_repo(
+        root.path(),
+        None,
+        SpecVersion::Ocfl1_1,
+        Some(StorageLayout::new(
+            LayoutExtensionName::FlatDirectLayout,
+            None,
+        )?),
+    )?;
+
+    let object_id = "urn:example:rocfl:obj1";
+
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_1),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )
+    .unwrap();
+
+    temp.child("test.txt").write_str("testing").unwrap();
+    repo.copy_files_external(
+        object_id,
+        &vec![temp.child("test.txt").path()],
+        "test.txt",
+        false,
+    )
+    .unwrap();
+
+    commit(object_id, &repo);
+
+    let info = repo.describe_object(object_id)?;
+
+    assert_eq!("1.1", info.spec_version);
+
+    validate_repo(&repo);
+    Ok(())
+}
+
+#[test]
 #[should_panic(expected = "must be empty")]
 fn fail_new_repo_creation_when_non_empty_root() {
     let root = TempDir::new().unwrap();
@@ -731,7 +776,13 @@ fn copy_files_into_new_object() -> Result<()> {
     let object_id = "foobar";
 
     assert_staged_obj_count(&repo, 0);
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)?;
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )?;
     assert_staged_obj_count(&repo, 1);
 
     let staged: Vec<ObjectVersionDetails> = repo.list_staged_objects(None)?.flatten().collect();
@@ -870,7 +921,13 @@ fn copy_files_into_existing_object() -> Result<()> {
 
     let object_id = "existing object";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)?;
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )?;
 
     create_file(&temp, "test.txt", "testing");
     repo.copy_files_external(
@@ -970,7 +1027,13 @@ fn copied_files_should_dedup_on_commit() -> Result<()> {
 
     let object_id = "dedup";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)?;
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )?;
 
     create_file(&temp, "test.txt", "testing");
     repo.copy_files_external(
@@ -1042,8 +1105,14 @@ fn copy_should_reject_conflicting_files() {
 
     let object_id = "conflicting";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )
+    .unwrap();
 
     let test_file = create_file(&temp, "test.txt", "testing");
     repo.copy_files_external(object_id, &vec![test_file.path()], "test.txt", false)
@@ -1070,8 +1139,14 @@ fn copy_should_reject_conflicting_dirs() {
 
     let object_id = "conflicting";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )
+    .unwrap();
 
     let test_file = create_file(&temp, "test.txt", "testing");
     repo.copy_files_external(
@@ -1096,7 +1171,13 @@ fn copy_to_dir_when_dst_ends_in_slash() -> Result<()> {
 
     let object_id = "conflicting";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)?;
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )?;
 
     let test_file = create_file(&temp, "test.txt", "testing");
     repo.copy_files_external(object_id, &vec![test_file.path()], "dir/", false)?;
@@ -1127,7 +1208,13 @@ fn copy_into_dir_when_dest_is_existing_dir() -> Result<()> {
 
     let object_id = "existing dir";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)?;
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )?;
 
     let test_file = create_file(&temp, "test.txt", "testing");
     repo.copy_files_external(
@@ -1193,8 +1280,14 @@ fn fail_copy_when_src_does_not_exist() {
 
     let repo = default_repo(root.path());
 
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )
+    .unwrap();
 
     repo.copy_files_external(
         object_id,
@@ -1215,8 +1308,14 @@ fn fail_copy_when_src_dir_and_recursion_not_enabled() {
 
     let repo = default_repo(root.path());
 
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )
+    .unwrap();
 
     create_dirs(&temp, "sub");
     create_file(&temp, "sub/test.txt", "testing");
@@ -1260,8 +1359,14 @@ fn copy_should_partially_succeed_when_multiple_src_and_some_fail() {
 
     let repo = default_repo(root.path());
 
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )
+    .unwrap();
 
     create_file(&temp, "test.txt", "testing");
 
@@ -1305,7 +1410,13 @@ fn copy_multiple_sources() -> Result<()> {
 
     let repo = default_repo(root.path());
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )?;
 
     create_dirs(&temp, "a/b/c");
     create_dirs(&temp, "a/d/e");
@@ -1378,8 +1489,14 @@ fn create_object_with_non_standard_config() {
     let object_id = "non-standard";
 
     assert_staged_obj_count(&repo, 0);
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content-dir", 5)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content-dir",
+        5,
+    )
+    .unwrap();
     assert_staged_obj_count(&repo, 1);
 
     create_file(&temp, "test.txt", "testing");
@@ -1412,8 +1529,14 @@ fn create_object_with_non_standard_config() {
 fn reject_object_creation_with_empty_id() {
     let root = TempDir::new().unwrap();
     let repo = default_repo(root.path());
-    repo.create_object(" ", DigestAlgorithm::Sha512, "content", 0)
-        .unwrap();
+    repo.create_object(
+        " ",
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1421,8 +1544,14 @@ fn reject_object_creation_with_empty_id() {
 fn reject_object_creation_with_invalid_algorithm() {
     let root = TempDir::new().unwrap();
     let repo = default_repo(root.path());
-    repo.create_object("id", DigestAlgorithm::Md5, "content", 0)
-        .unwrap();
+    repo.create_object(
+        "id",
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Md5,
+        "content",
+        0,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1432,8 +1561,14 @@ fn reject_object_creation_with_invalid_algorithm() {
 fn reject_object_creation_with_invalid_content_dir_slash() {
     let root = TempDir::new().unwrap();
     let repo = default_repo(root.path());
-    repo.create_object("id", DigestAlgorithm::Sha256, "content/dir", 0)
-        .unwrap();
+    repo.create_object(
+        "id",
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content/dir",
+        0,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1443,8 +1578,14 @@ fn reject_object_creation_with_invalid_content_dir_slash() {
 fn reject_object_creation_with_invalid_content_dir_dot() {
     let root = TempDir::new().unwrap();
     let repo = default_repo(root.path());
-    repo.create_object("id", DigestAlgorithm::Sha256, ".", 0)
-        .unwrap();
+    repo.create_object(
+        "id",
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        ".",
+        0,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1454,8 +1595,14 @@ fn reject_object_creation_with_invalid_content_dir_dot() {
 fn reject_object_creation_with_invalid_content_dir_dot_dot() {
     let root = TempDir::new().unwrap();
     let repo = default_repo(root.path());
-    repo.create_object("id", DigestAlgorithm::Sha256, "..", 0)
-        .unwrap();
+    repo.create_object(
+        "id",
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "..",
+        0,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1466,12 +1613,24 @@ fn reject_object_creation_when_object_already_exists_in_main() {
 
     let object_id = "id";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )
+    .unwrap();
     commit(object_id, &repo);
 
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1482,11 +1641,63 @@ fn reject_object_creation_when_object_already_exists_in_staging() {
 
     let object_id = "id";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )
+    .unwrap();
+
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )
+    .unwrap();
+}
+
+#[test]
+#[should_panic(
+    expected = "Invalid value: OCFL object cannot use version 1.1 because it is greater than the repository version, 1.0"
+)]
+fn reject_object_creation_when_object_version_greater_than_repo() {
+    let root = TempDir::new().unwrap();
+    let repo = default_repo(root.path());
+
+    repo.create_object(
+        "id",
+        Some(SpecVersion::Ocfl1_1),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )
+    .unwrap();
+}
+
+#[test]
+fn use_repo_version_when_object_version_no_specified() {
+    let root = TempDir::new().unwrap();
+    let repo = default_repo(root.path());
+    repo.create_object("id", None, DigestAlgorithm::Sha512, "content", 0)
         .unwrap();
 
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
+    let info = repo.describe_staged_object("id").unwrap();
+    assert_eq!("1.0", info.spec_version);
+}
+
+#[test]
+fn use_latest_version_when_object_and_repo_version_no_specified() {
+    let root = TempDir::new().unwrap();
+    let repo = OcflRepo::fs_repo(root.path(), None).unwrap();
+    repo.create_object("id", None, DigestAlgorithm::Sha512, "content", 0)
         .unwrap();
+
+    let info = repo.describe_staged_object("id").unwrap();
+    assert_eq!("1.1", info.spec_version);
 }
 
 #[test]
@@ -1496,8 +1707,14 @@ fn reject_object_creation_when_object_already_exists_in_staging() {
 fn reject_object_commit_when_no_known_storage_layout() {
     let root = TempDir::new().unwrap();
     let repo = OcflRepo::fs_repo(root.path(), None).unwrap();
-    repo.create_object("id", DigestAlgorithm::Sha512, "content", 0)
-        .unwrap();
+    repo.create_object(
+        "id",
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )
+    .unwrap();
     commit("id", &repo);
 }
 
@@ -1505,13 +1722,19 @@ fn reject_object_commit_when_no_known_storage_layout() {
 fn object_commit_when_no_known_storage_layout_and_root_specified() {
     let root = TempDir::new().unwrap();
     let temp = TempDir::new().unwrap();
-    let repo = OcflRepo::fs_repo(root.path(), None).unwrap();
+    let repo = default_repo(root.path());
 
     let object_id = "custom_layout";
     let object_root = "random/path/to/object";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )
+    .unwrap();
 
     repo.copy_files_external(
         object_id,
@@ -1546,8 +1769,14 @@ fn fail_object_commit_when_no_known_storage_layout_and_root_specified_and_obj_al
     let object_id = "custom_layout";
     let object_root = "random/path/to/object";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )
+    .unwrap();
 
     repo.copy_files_external(
         object_id,
@@ -1573,8 +1802,14 @@ fn fail_object_commit_when_no_known_storage_layout_and_root_specified_and_obj_al
 
     let object_2_id = "object 2";
 
-    repo.create_object(object_2_id, DigestAlgorithm::Sha256, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_2_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )
+    .unwrap();
 
     repo.copy_files_external(
         object_2_id,
@@ -2023,7 +2258,13 @@ fn move_files_into_new_object() -> Result<()> {
 
     let object_id = "move files";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)?;
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )?;
 
     create_file(&temp, "test.txt", "testing");
     create_dirs(&temp, "nested/dir");
@@ -2198,7 +2439,13 @@ fn move_files_should_dedup_on_commit() -> Result<()> {
 
     let object_id = "move dedup";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )?;
 
     repo.move_files_external(
         object_id,
@@ -2281,8 +2528,14 @@ fn move_should_reject_conflicting_files() {
 
     let object_id = "conflicting-move";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )
+    .unwrap();
 
     repo.move_files_external(
         object_id,
@@ -2311,8 +2564,14 @@ fn move_should_reject_conflicting_dirs() {
 
     let object_id = "conflicting-move-dirs";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )
+    .unwrap();
 
     repo.move_files_external(
         object_id,
@@ -2360,7 +2619,13 @@ fn move_into_dir_when_dst_ends_with_slash() -> Result<()> {
 
     let object_id = "move inside";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )?;
 
     repo.move_files_external(
         object_id,
@@ -2393,7 +2658,13 @@ fn move_into_dir_when_dest_is_existing_dir() -> Result<()> {
 
     let object_id = "existing dir";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )?;
 
     repo.move_files_external(
         object_id,
@@ -2455,8 +2726,14 @@ fn fail_move_when_src_does_not_exist() {
 
     let repo = default_repo(root.path());
 
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )
+    .unwrap();
 
     repo.move_files_external(object_id, &vec![temp.child("test.txt").path()], "test.txt")
         .unwrap();
@@ -2471,8 +2748,14 @@ fn move_should_partially_succeed_when_multiple_src_and_some_fail() {
 
     let repo = default_repo(root.path());
 
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )
+    .unwrap();
 
     create_file(&temp, "test.txt", "testing");
 
@@ -2515,8 +2798,14 @@ fn fail_copy_when_conflicting_src() {
 
     let repo = default_repo(root.path());
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )
+    .unwrap();
 
     create_file(&temp, "a/test", "1");
     create_file(&temp, "b/test/testing.txt", "2");
@@ -3536,7 +3825,13 @@ fn commit_should_use_custom_meta_when_provided() -> Result<()> {
 
     let object_id = "commit meta";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )?;
 
     repo.move_files_external(
         object_id,
@@ -3576,7 +3871,13 @@ fn commit_should_use_custom_meta_when_mixture_provided() -> Result<()> {
 
     let object_id = "commit meta";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )?;
 
     repo.move_files_external(
         object_id,
@@ -3613,8 +3914,14 @@ fn commit_should_pretty_print_inventory() {
 
     let object_id = "pretty";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )
+    .unwrap();
 
     repo.move_files_external(
         object_id,
@@ -3675,8 +3982,14 @@ fn commit_should_fail_when_address_and_no_name() {
 
     let object_id = "commit missing name";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )
+    .unwrap();
 
     repo.move_files_external(
         object_id,
@@ -3702,8 +4015,14 @@ fn commit_should_fail_when_object_has_no_changes() {
 
     let object_id = "commit missing name";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )
+    .unwrap();
 
     repo.move_files_external(
         object_id,
@@ -3737,7 +4056,13 @@ fn commit_should_remove_staged_object() -> Result<()> {
 
     let object_id = "commit meta";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )?;
 
     repo.move_files_external(
         object_id,
@@ -3873,7 +4198,13 @@ fn diff_should_detect_multi_origin_rename() -> Result<()> {
 
     let object_id = "multi origin rename";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )?;
 
     let file = create_file(&temp, "file.txt", "some file");
 
@@ -3913,7 +4244,13 @@ fn diff_should_detect_multi_dest_rename() -> Result<()> {
 
     let object_id = "multi dst rename";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )?;
 
     let file = create_file(&temp, "file.txt", "some file");
 
@@ -3959,7 +4296,13 @@ fn diff_should_detect_multi_src_multi_dest_rename() -> Result<()> {
 
     let object_id = "multi multi rename";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)?;
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )?;
 
     let file = create_file(&temp, "file.txt", "some file");
 
@@ -4063,8 +4406,14 @@ fn internal_copy_of_new_file_should_copy_file_on_disk() {
 
     let object_id = "copy overwrite";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )
+    .unwrap();
 
     repo.move_files_external(
         object_id,
@@ -4117,8 +4466,14 @@ fn internal_move_of_new_file_should_move_file_on_disk() {
 
     let object_id = "move overwrite";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )
+    .unwrap();
 
     repo.move_files_external(
         object_id,
@@ -4165,8 +4520,14 @@ fn internal_move_of_new_file_should_move_file_on_disk_and_not_leave_empty_dirs()
 
     let object_id = "move overwrite";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )
+    .unwrap();
 
     create_file(&temp, "dir/a-file.txt", "contents").path();
 
@@ -4211,8 +4572,14 @@ fn internal_copy_of_duplicate_file_should_operate_on_staged_version() {
 
     let object_id = "copy dupe overwrite";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )
+    .unwrap();
 
     repo.move_files_external(
         object_id,
@@ -4388,8 +4755,14 @@ fn create_and_update_object_in_repo_with_no_layout() {
     let object_id = "no layout";
     let object_root = "random/path/to/obj";
 
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )
+    .unwrap();
 
     repo.move_files_external(
         object_id,
@@ -4469,8 +4842,14 @@ fn fail_when_incorrect_object_in_root() {
     let object_id_1 = "original";
     let object_id_2 = "different";
 
-    repo.create_object(object_id_1, DigestAlgorithm::Sha256, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id_1,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )
+    .unwrap();
     repo.move_files_external(
         object_id_1,
         &vec![create_file(&temp, "file1.txt", "one").path()],
@@ -4642,8 +5021,14 @@ fn assert_layout_extension(root: &TempDir, layout_name: &str, config: &str) {
 }
 
 fn create_simple_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
-    repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha512,
+        "content",
+        0,
+    )
+    .unwrap();
 
     temp.child("test.txt").write_str("testing").unwrap();
     repo.copy_files_external(
@@ -4693,8 +5078,14 @@ fn create_simple_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
 /// - something/file1.txt
 /// - something/new.txt
 fn create_example_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
-    repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-        .unwrap();
+    repo.create_object(
+        object_id,
+        Some(SpecVersion::Ocfl1_0),
+        DigestAlgorithm::Sha256,
+        "content",
+        0,
+    )
+    .unwrap();
 
     create_dirs(temp, "a/b/c");
     create_dirs(temp, "a/d/e");

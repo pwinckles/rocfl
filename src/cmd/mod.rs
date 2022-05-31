@@ -14,7 +14,10 @@ use rusoto_core::Region;
 
 use crate::cmd::opts::*;
 use crate::config::{self, Config};
-use crate::ocfl::{LayoutExtensionName, OcflRepo, Result, RocflError, SpecVersion, StorageLayout};
+use crate::ocfl::{
+    LayoutExtensionName, OcflRepo, Result, RocflError, SpecVersion as OcflSpecVersion,
+    StorageLayout,
+};
 
 mod cmds;
 mod diff;
@@ -120,6 +123,8 @@ where
 }
 
 pub fn init_repo(cmd: &InitCmd, args: &RocflArgs, config: &Config) -> Result<()> {
+    let spec_version = map_spec_version(cmd.spec_version);
+
     if is_s3(config) {
         #[cfg(not(feature = "s3"))]
         return Err(RocflError::General(
@@ -129,22 +134,22 @@ pub fn init_repo(cmd: &InitCmd, args: &RocflArgs, config: &Config) -> Result<()>
         #[cfg(feature = "s3")]
         let _ = init_s3_repo(
             config,
+            spec_version,
             create_layout(cmd.layout, cmd.config_file.as_deref())?,
         )?;
     } else {
         let _ = OcflRepo::init_fs_repo(
             config.root.as_ref().unwrap(),
             config.staging_root.as_ref().map(Path::new),
-            // TODO 1.1 from cli
-            SpecVersion::Ocfl1_0,
+            spec_version,
             create_layout(cmd.layout, cmd.config_file.as_deref())?,
         )?;
     }
 
     if !args.quiet {
         println(format!(
-            "Initialized OCFL repository with layout {}",
-            cmd.layout
+            "Initialized OCFL {} repository with layout {}",
+            cmd.spec_version, cmd.layout
         ));
     }
 
@@ -231,7 +236,11 @@ fn create_s3_repo(config: &Config) -> Result<OcflRepo> {
 }
 
 #[cfg(feature = "s3")]
-fn init_s3_repo(config: &Config, layout: Option<StorageLayout>) -> Result<OcflRepo> {
+fn init_s3_repo(
+    config: &Config,
+    spec_version: OcflSpecVersion,
+    layout: Option<StorageLayout>,
+) -> Result<OcflRepo> {
     let region = resolve_region(config)?;
 
     OcflRepo::init_s3_repo(
@@ -240,8 +249,7 @@ fn init_s3_repo(config: &Config, layout: Option<StorageLayout>) -> Result<OcflRe
         config.root.as_deref(),
         config.profile.as_deref(),
         config.staging_root.as_ref().unwrap(),
-        // TODO 1.1 from cli
-        SpecVersion::Ocfl1_0,
+        spec_version,
         layout,
     )
 }
@@ -324,5 +332,12 @@ fn edit_config() -> Result<()> {
         None => Err(RocflError::General(
             "Failed to find rocfl config".to_string(),
         )),
+    }
+}
+
+fn map_spec_version(spec_version: SpecVersion) -> OcflSpecVersion {
+    match spec_version {
+        SpecVersion::Ocfl1_0 => OcflSpecVersion::Ocfl1_0,
+        SpecVersion::Ocfl1_1 => OcflSpecVersion::Ocfl1_1,
     }
 }

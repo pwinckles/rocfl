@@ -36,8 +36,9 @@ use crate::ocfl::inventory::Inventory;
 use crate::ocfl::paths::{join, join_with_trailing_slash};
 use crate::ocfl::store::{Listing, OcflLayoutLenient, Storage};
 use crate::ocfl::validate::{IncrementalValidator, ObjectValidationResult, Validator};
+use crate::ocfl::Knowable::{Known, Unknown};
 use crate::ocfl::{
-    paths, specs, util, DigestAlgorithm, InventoryPath, LayoutExtensionName, LogicalPath,
+    paths, specs, util, DigestAlgorithm, InventoryPath, Knowable, LayoutExtensionName, LogicalPath,
     ObjectInfo, RepoInfo, SpecVersion, VersionRef,
 };
 
@@ -357,6 +358,20 @@ impl S3OcflStore {
 }
 
 impl OcflStore for S3OcflStore {
+    /// Returns the OCFL spec version that the repository root adheres to
+    fn repo_spec_version(&self) -> Result<Option<Knowable<SpecVersion, String>>> {
+        self.ensure_open()?;
+
+        match self.find_first_version_declaration(ROOT_NAMASTE_FILE_PREFIX, "") {
+            Ok(version) => match SpecVersion::try_from_num(&version) {
+                Ok(version) => Ok(Some(Known(version))),
+                Err(_) => Ok(Some(Unknown(version))),
+            },
+            Err(RocflError::NotFound(_)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     /// Returns the most recent inventory version for the specified object, or an a
     /// `RocflError::NotFound` if it does not exist.
     fn get_inventory(&self, object_id: &str) -> Result<Inventory> {
