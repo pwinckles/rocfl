@@ -68,8 +68,14 @@ fn create_new_repo_empty_dir() {
 
             let object_id = "s3-object";
 
-            repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-                .unwrap();
+            repo.create_object(
+                object_id,
+                Some(SpecVersion::Ocfl1_0),
+                DigestAlgorithm::Sha256,
+                "content",
+                0,
+            )
+            .unwrap();
             repo.copy_files_external(
                 object_id,
                 &vec![create_file(&temp, "test.txt", "testing").path()],
@@ -111,8 +117,14 @@ fn create_new_object() {
             let repo = default_repo(&prefix, staging.path());
             let object_id = "s3-object";
 
-            repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-                .unwrap();
+            repo.create_object(
+                object_id,
+                Some(SpecVersion::Ocfl1_0),
+                DigestAlgorithm::Sha256,
+                "content",
+                0,
+            )
+            .unwrap();
             repo.copy_files_external(
                 object_id,
                 &vec![create_file(&temp, "test.txt", "testing").path()],
@@ -148,8 +160,14 @@ fn fail_create_new_object_when_already_exists() {
             let repo = default_repo(&prefix, staging.path());
             let object_id = "s3-object";
 
-            repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-                .unwrap();
+            repo.create_object(
+                object_id,
+                Some(SpecVersion::Ocfl1_0),
+                DigestAlgorithm::Sha256,
+                "content",
+                0,
+            )
+            .unwrap();
             repo.copy_files_external(
                 object_id,
                 &vec![create_file(&temp, "test.txt", "testing").path()],
@@ -160,8 +178,14 @@ fn fail_create_new_object_when_already_exists() {
             repo.commit(object_id, CommitMeta::new(), None, false)
                 .unwrap();
 
-            repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-                .unwrap();
+            repo.create_object(
+                object_id,
+                Some(SpecVersion::Ocfl1_0),
+                DigestAlgorithm::Sha256,
+                "content",
+                0,
+            )
+            .unwrap();
         },
     );
 }
@@ -174,8 +198,14 @@ fn create_and_update_object() {
             let repo = default_repo(&prefix, staging.path());
             let object_id = "s3-object";
 
-            repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-                .unwrap();
+            repo.create_object(
+                object_id,
+                Some(SpecVersion::Ocfl1_0),
+                DigestAlgorithm::Sha256,
+                "content",
+                0,
+            )
+            .unwrap();
 
             create_dirs(&temp, "a/b/c");
             create_dirs(&temp, "a/d/e");
@@ -316,8 +346,14 @@ fn validate_valid_object() {
                 )
                 .unwrap();
 
-            repo.create_object(object_id, DigestAlgorithm::Sha512, "content", 0)
-                .unwrap();
+            repo.create_object(
+                object_id,
+                Some(SpecVersion::Ocfl1_0),
+                DigestAlgorithm::Sha512,
+                "content",
+                0,
+            )
+            .unwrap();
 
             create_dirs(&temp, "a/b/c");
             create_dirs(&temp, "a/d/e");
@@ -419,8 +455,14 @@ fn validate_invalid_object() {
                 )
                 .unwrap();
 
-            repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-                .unwrap();
+            repo.create_object(
+                object_id,
+                Some(SpecVersion::Ocfl1_0),
+                DigestAlgorithm::Sha256,
+                "content",
+                0,
+            )
+            .unwrap();
 
             create_dirs(&temp, "a/b/c");
             create_dirs(&temp, "a/d/e");
@@ -439,8 +481,14 @@ fn validate_invalid_object() {
             repo.commit(object_id, commit_meta.clone(), None, false)
                 .unwrap();
 
-            repo.create_object(object_id_2, DigestAlgorithm::Sha512, "content", 0)
-                .unwrap();
+            repo.create_object(
+                object_id_2,
+                Some(SpecVersion::Ocfl1_0),
+                DigestAlgorithm::Sha512,
+                "content",
+                0,
+            )
+            .unwrap();
             repo.copy_files_external(
                 object_id_2,
                 &vec![create_file(&temp, "test.txt", "testing").path()],
@@ -526,8 +574,14 @@ fn purge_object() {
             let repo = default_repo(&prefix, staging.path());
             let object_id = "s3-object-purge";
 
-            repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-                .unwrap();
+            repo.create_object(
+                object_id,
+                Some(SpecVersion::Ocfl1_0),
+                DigestAlgorithm::Sha256,
+                "content",
+                0,
+            )
+            .unwrap();
             repo.copy_files_external(
                 object_id,
                 &vec![create_file(&temp, "test.txt", "testing").path()],
@@ -575,8 +629,14 @@ fn fail_commit_when_out_of_sync() {
             let object_id = "out-of-sync";
             let id_hash = "46acfc156ff00023c6ff7c5cfc923eaf43123f63dd558579e90293f0eba1e574";
 
-            repo.create_object(object_id, DigestAlgorithm::Sha256, "content", 0)
-                .unwrap();
+            repo.create_object(
+                object_id,
+                Some(SpecVersion::Ocfl1_0),
+                DigestAlgorithm::Sha256,
+                "content",
+                0,
+            )
+            .unwrap();
             repo.move_files_external(
                 object_id,
                 &vec![create_file(&temp, "test.txt", "testing").path()],

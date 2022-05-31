@@ -9,7 +9,7 @@ use crate::cmd::opts::{
     CatCmd, CommitCmd, ConfigCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, Field, InfoCmd,
     InitCmd, ListCmd, MoveCmd, NewCmd, PurgeCmd, RemoveCmd, ResetCmd, ShowCmd, StatusCmd,
 };
-use crate::cmd::{style, Cmd, GlobalArgs};
+use crate::cmd::{map_spec_version, style, Cmd, GlobalArgs};
 use crate::config::Config;
 use crate::ocfl::{CommitMeta, DigestAlgorithm, OcflRepo, Result};
 
@@ -74,6 +74,7 @@ impl Cmd for NewCmd {
     ) -> Result<()> {
         repo.create_object(
             &self.object_id,
+            self.spec_version.map(map_spec_version),
             algorithm(self.digest_algorithm),
             &self.content_directory,
             self.zero_padding,

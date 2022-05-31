@@ -60,6 +60,17 @@ pub fn validate_content_dir(content_dir: &str) -> Result<()> {
     Ok(())
 }
 
+/// If the `object_version` is greater than the `repo_version` then an `InvalidValue` error is returned.
+pub fn validate_spec_version(object_version: SpecVersion, repo_version: SpecVersion) -> Result<()> {
+    if object_version > repo_version {
+        Err(RocflError::InvalidValue(format!(
+            "OCFL object cannot use version {} because it is greater than the repository version, {}",
+         object_version.version(), repo_version.version())))
+    } else {
+        Ok(())
+    }
+}
+
 /// OCFL validation codes for errors: https://ocfl.io/1.0/spec/validation-codes.html
 #[allow(dead_code)]
 #[derive(Debug, EnumDisplay, EnumString, Copy, Clone, Eq, PartialEq)]

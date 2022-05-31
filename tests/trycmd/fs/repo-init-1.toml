@@ -1,0 +1,9 @@
+fs.sandbox = true
+fs.base = "repo-init-1.1.in"
+
+bin.name = "rocfl"
+args = "init --spec-version 1.1"
+
+stdout = """
+Initialized OCFL 1.1 repository with layout 0004-hashed-n-tuple-storage-layout
+"""

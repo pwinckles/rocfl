@@ -23,10 +23,20 @@ use crate::ocfl::consts::*;
 use crate::ocfl::digest::HexDigest;
 use crate::ocfl::error::{Result, RocflError};
 use crate::ocfl::inventory::{Inventory, Version};
+use crate::ocfl::Knowable::{Known, Unknown};
 use crate::ocfl::VersionRef::Number;
 use crate::ocfl::{util, DigestAlgorithm};
 
 static VERSION_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^v\d+$"#).unwrap());
+
+/// Util enum intended to handle values that are modeled by enums and extend them to support
+/// cases when an unknown value is specified. For example, if a repository implements an OCFL
+/// spec version that is not modeled by `SpecVersion`.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum Knowable<K, U> {
+    Known(K),
+    Unknown(U),
+}
 
 /// Represents an [OCFL object version](https://ocfl.io/1.0/spec/#version-directories).
 #[derive(Deserialize, Serialize, Debug, Copy, Clone)]
@@ -219,6 +229,40 @@ pub enum Diff {
 }
 
 pub(crate) struct PrettyPrintSet<'a, T: Display>(pub(crate) &'a HashSet<T>);
+
+impl<K, U> Knowable<K, U> {
+    pub fn is_known(&self) -> bool {
+        match self {
+            Known(_) => true,
+            Unknown(_) => false,
+        }
+    }
+
+    pub fn is_unknown(&self) -> bool {
+        !self.is_known()
+    }
+
+    pub const fn as_ref(&self) -> Knowable<&K, &U> {
+        match self {
+            Known(value) => Known(value),
+            Unknown(value) => Unknown(value),
+        }
+    }
+
+    pub fn unwrap_known(self) -> K {
+        match self {
+            Known(value) => value,
+            Unknown(_) => panic!("Expected known value, but was unknown"),
+        }
+    }
+
+    pub fn unwrap_unknown(self) -> U {
+        match self {
+            Known(_) => panic!("Expected unknown value, but was known"),
+            Unknown(value) => value,
+        }
+    }
+}
 
 impl VersionNum {
     /// Creates a new VersionNum at version 1 with no zero-padding
@@ -424,6 +468,14 @@ impl TryFrom<&str> for VersionRef {
 }
 
 impl SpecVersion {
+    /// Return the OCFL spec version based on the version number string
+    pub fn try_from_num(version: &str) -> Result<SpecVersion> {
+        match version {
+            "1.0" => Ok(SpecVersion::Ocfl1_0),
+            "1.1" => Ok(SpecVersion::Ocfl1_1),
+            _ => Err(RocflError::InvalidValue(version.to_string())),
+        }
+    }
     /// Return the OCFL spec version based on the storage root namaste file name
     pub fn try_from_root_namaste_name(name: &str) -> Result<SpecVersion> {
         match name {
