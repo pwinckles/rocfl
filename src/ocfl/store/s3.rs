@@ -1163,6 +1163,11 @@ impl Storage for S3Storage {
             Ok(result)
         }
     }
+
+    /// Returns the native path separator used by the store.
+    fn path_separator(&self) -> char {
+        '/'
+    }
 }
 
 fn check_extensions(s3_client: &S3Client) {

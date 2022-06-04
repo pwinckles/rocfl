@@ -7,6 +7,7 @@ use std::convert::TryFrom;
 use std::fs::{self, File, OpenOptions, ReadDir};
 use std::io::{self, Read, Write};
 use std::ops::Deref;
+use std::path;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
@@ -976,6 +977,13 @@ impl Storage for FsStorage {
         }
 
         Ok(listings)
+    }
+
+    /// Returns the native path separator used by the store.
+    fn path_separator(&self) -> char {
+        // This is technically inaccurate because a FS could use a separator that's different
+        // from the platform separator
+        path::MAIN_SEPARATOR
     }
 }
 
