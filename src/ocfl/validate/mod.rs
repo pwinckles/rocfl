@@ -185,6 +185,7 @@ pub enum ErrorCode {
     E109,
     E110,
     E111,
+    E112,
 }
 
 /// OCFL validation codes for warnings: https://ocfl.io/1.0/spec/validation-codes.html
@@ -206,6 +207,7 @@ pub enum WarnCode {
     W013,
     W014,
     W015,
+    W016,
 }
 
 // OCFL validation results for an object or structural element
@@ -1207,13 +1209,19 @@ impl<S: Storage> Validator<S> {
         location: ProblemLocation,
         result: &mut V,
     ) -> Result<()> {
+        let (warning, error) = if location == ProblemLocation::ObjectRoot {
+            (WarnCode::W013, ErrorCode::E067)
+        } else {
+            (WarnCode::W016, ErrorCode::E112)
+        };
+
         for file in ext_files {
             match file {
                 Listing::Directory(path) => {
                     if !SUPPORTED_EXTENSIONS.contains(path.as_ref()) {
                         result.warn(
                             location,
-                            WarnCode::W013,
+                            warning,
                             format!("Extensions directory contains unknown extension: {}", path),
                         );
                     }
@@ -1221,7 +1229,7 @@ impl<S: Storage> Validator<S> {
                 Listing::File(path) | Listing::Other(path) => {
                     result.error(
                         location,
-                        ErrorCode::E067,
+                        error,
                         format!("Extensions directory contains an illegal file: {}", path),
                     );
                 }
