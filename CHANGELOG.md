@@ -24,6 +24,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Validate all manifest entries are used at least once
 - `info` command for display object/repo details
 - Create new objects/repos using OCFL `1.0` or `1.1`
+- `upgrade` command for upgrading the spec version of objects/repos
 
 ### Fixed
 

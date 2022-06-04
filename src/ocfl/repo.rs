@@ -522,13 +522,14 @@ impl OcflRepo {
         self.ensure_open()?;
 
         let object_id = object_id.trim();
+        let repo_version = self.spec_version.read().unwrap().clone();
 
         let object_version = if let Some(object_version) = spec_version {
-            if let Some(Known(repo_version)) = &self.spec_version.read().unwrap().clone() {
+            if let Some(Known(repo_version)) = &repo_version {
                 validate::validate_spec_version(object_version, *repo_version)?;
             }
             object_version
-        } else if let Some(Known(repo_version)) = &self.spec_version.read().unwrap().clone() {
+        } else if let Some(Known(repo_version)) = &repo_version {
             info!("Defaulting object version to {}", repo_version.version());
             *repo_version
         } else {
@@ -897,9 +898,97 @@ impl OcflRepo {
         self.ensure_open()?;
 
         let staging = self.get_staging()?;
-
         let _lock = self.get_lock_manager()?.acquire(object_id)?;
 
+        self.commit_inner(object_id, meta, object_root, pretty_print, staging)
+    }
+
+    /// Upgrades an existing object to the specified OCFL spec version. This requires creating
+    /// a new object version. If the object currently has staged changes, then the changes are
+    /// committed as part of the upgrade.
+    pub fn upgrade_object(
+        &self,
+        object_id: &str,
+        version: SpecVersion,
+        meta: CommitMeta,
+        pretty_print: bool,
+    ) -> Result<()> {
+        self.ensure_open()?;
+
+        let staging = self.get_staging()?;
+        let _lock = self.get_lock_manager()?.acquire(object_id)?;
+
+        let mut inventory = self.get_or_created_staged_inventory(object_id)?;
+
+        if let Some(current_version) = inventory.spec_version() {
+            if version <= current_version {
+                return Err(RocflError::IllegalOperation(
+                    format!("Cannot upgrade object to {} because the current version, {}, is greater than or equal to the new version.",
+                            version.version(), current_version.version())));
+            }
+
+            let repo_version = self.spec_version.read().unwrap().clone();
+
+            if let Some(Known(repo_version)) = repo_version {
+                if repo_version < version {
+                    return Err(RocflError::IllegalOperation(
+                        format!("Cannot upgrade object to {} because it is less than the repository version, {}.",
+                                version.version(), repo_version.version())));
+                }
+            } else if let Some(Unknown(repo_version)) = repo_version {
+                return Err(RocflError::IllegalOperation(format!(
+                    "Cannot upgrade object to {} because the repository version, {}, is unrecognized.",
+                    version.version(), repo_version
+                )));
+            }
+        } else {
+            return Err(RocflError::IllegalOperation(format!(
+                "Cannot upgrade object to {} because the current version is unknown",
+                version.version()
+            )));
+        }
+
+        inventory.type_declaration = version.inventory_type().to_string();
+        staging.stage_inventory(&inventory, false, false)?;
+
+        self.commit_inner(object_id, meta, None, pretty_print, staging)
+    }
+
+    /// Upgrades the repository to the specified version
+    pub fn upgrade_repo(&self, version: SpecVersion) -> Result<()> {
+        self.ensure_open()?;
+
+        let current_version = self.spec_version.read().unwrap().clone();
+
+        if let Some(Known(current)) = current_version {
+            if current >= version {
+                return Err(RocflError::IllegalOperation(
+                    format!("Cannot upgrade repository to {} because the current version, {}, is greater than or equal to the new version.",
+                            version.version(), current.version())));
+            }
+        } else if let Some(Unknown(current)) = current_version {
+            return Err(RocflError::IllegalOperation(format!(
+                "Cannot upgrade repository to {} because the current version, {}, is unrecognized.",
+                version.version(),
+                current
+            )));
+        }
+
+        self.store.upgrade_repo(version)?;
+        let mut repo_version = self.spec_version.write().unwrap();
+        *repo_version = Some(Known(version));
+
+        Ok(())
+    }
+
+    fn commit_inner(
+        &self,
+        object_id: &str,
+        meta: CommitMeta,
+        object_root: Option<&str>,
+        pretty_print: bool,
+        staging: &FsOcflStore,
+    ) -> Result<()> {
         let mut inventory = match staging.get_inventory(object_id) {
             Ok(inventory) => inventory,
             Err(RocflError::NotFound(_)) => {
@@ -943,31 +1032,6 @@ impl OcflRepo {
         }
 
         Ok(())
-    }
-
-    /// Upgrades the repository to the specified version
-    pub fn upgrade_repo(&self, version: SpecVersion) -> Result<()> {
-        self.ensure_open()?;
-
-        let current_version = self.spec_version.read().unwrap().clone();
-
-        if let Some(Known(current)) = current_version {
-            if current < version {
-                self.store.upgrade_repo(version)?;
-                let mut repo_version = self.spec_version.write().unwrap();
-                *repo_version = Some(Known(version));
-                Ok(())
-            } else {
-                Err(RocflError::IllegalOperation(
-                    format!("Cannot upgrade repository to {} because the current version, {}, is greater than or equal to the new version.",
-                            version.version(), current.version())))
-            }
-        } else {
-            Err(RocflError::IllegalOperation(format!(
-                "Cannot upgrade repository to {} because the current version is unknown.",
-                version.version()
-            )))
-        }
     }
 
     /// Attempts to get the inventory from staging. If it is not found, it is loaded from the
