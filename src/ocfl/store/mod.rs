@@ -106,6 +106,9 @@ pub trait OcflStore {
     /// Returns details about an OCFL object
     fn describe_object(&self, object_id: &str) -> Result<ObjectInfo>;
 
+    /// Upgrades the repository to the specified version
+    fn upgrade_repo(&self, version: SpecVersion) -> Result<()>;
+
     /// Instructs the store to gracefully stop any in-flight work and not accept any additional
     /// requests.
     fn close(&self);

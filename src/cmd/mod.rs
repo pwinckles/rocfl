@@ -87,7 +87,7 @@ trait Cmd {
 }
 
 struct GlobalArgs {
-    _quiet: bool,
+    quiet: bool,
     _verbose: bool,
     no_styles: bool,
 }
@@ -95,7 +95,7 @@ struct GlobalArgs {
 impl GlobalArgs {
     fn new(quiet: bool, verbose: bool, no_styles: bool) -> Self {
         Self {
-            _quiet: quiet,
+            quiet,
             _verbose: verbose,
             no_styles,
         }

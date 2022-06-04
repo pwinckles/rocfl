@@ -1,0 +1,9 @@
+fs.sandbox = true
+fs.base = "multiple-objects.in"
+
+bin.name = "rocfl"
+args = "upgrade --spec-version 1.1"
+
+stdout = """
+Upgraded OCFL repository to 1.1
+"""

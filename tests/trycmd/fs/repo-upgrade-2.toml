@@ -1,0 +1,10 @@
+fs.sandbox = true
+fs.base = "repo-init-1.out"
+
+bin.name = "rocfl"
+args = "upgrade --spec-version 1.1"
+
+status = "failed"
+stderr = """
+[ERROR] Illegal operation: Cannot upgrade repository to 1.1 because the current version, 1.1, is greater than or equal to the new version.
+"""

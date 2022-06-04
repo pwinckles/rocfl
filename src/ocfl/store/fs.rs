@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions, ReadDir};
 use std::io::{self, Read, Write};
 use std::ops::Deref;
@@ -550,6 +551,28 @@ impl OcflStore for FsOcflStore {
         };
 
         Ok(ObjectInfo::new(version, algorithm, extensions))
+    }
+
+    /// Upgrades the repository to the specified version
+    fn upgrade_repo(&self, version: SpecVersion) -> Result<()> {
+        self.ensure_open()?;
+
+        let prefix = ROOT_NAMASTE_FILE_PREFIX;
+
+        let old_namastes: Vec<OsString> = fs::read_dir(&self.storage_root)?
+            .flatten()
+            .map(|entry| entry.file_name())
+            .filter(|name| name.len() > prefix.len())
+            .filter(|name| name.to_str().map_or(false, |name| name.starts_with(prefix)))
+            .collect();
+
+        write_namaste_and_spec(&self.storage_root, version)?;
+
+        for old in old_namastes {
+            util::remove_file_ignore_not_found(old)?;
+        }
+
+        Ok(())
     }
 
     /// Instructs the store to gracefully stop any in-flight work and not accept any additional
@@ -1197,6 +1220,16 @@ fn init_new_repo(
 
     fs::create_dir_all(&root)?;
 
+    write_namaste_and_spec(&root, version)?;
+
+    if let Some(layout) = layout {
+        write_layout_config(&root, layout)?;
+    }
+
+    Ok(())
+}
+
+fn write_namaste_and_spec(root: impl AsRef<Path>, version: SpecVersion) -> Result<()> {
     write!(
         File::create(paths::root_namaste_path(&root, version))?,
         "{}",
@@ -1213,11 +1246,6 @@ fn init_new_repo(
         "{}",
         spec
     )?;
-
-    if let Some(layout) = layout {
-        write_layout_config(&root, layout)?;
-    }
-
     Ok(())
 }
 
