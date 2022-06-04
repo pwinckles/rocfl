@@ -188,6 +188,9 @@ pub trait Storage {
     /// are returned. If the directory does not exist, or is empty, then an empty vector is returned.
     /// The returned paths are all relative the directory that was listed.
     fn list(&self, path: &str, recursive: bool) -> Result<Vec<Listing>>;
+
+    /// Returns the native path separator used by the store.
+    fn path_separator(&self) -> char;
 }
 
 /// Represents filesystem entity

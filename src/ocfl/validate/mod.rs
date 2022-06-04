@@ -1015,6 +1015,16 @@ impl<S: Storage> Validator<S> {
                     }
                 }
 
+                if let Some(content_dir) = &inv.content_directory {
+                    if content_dir.contains(self.storage.path_separator()) {
+                        parse_result.error(ErrorCode::E108,
+                                           format!(
+                                               "Inventory 'contentDirectory' must be a direct child of the version directory. Found: {}",
+                                               content_dir
+                                           ));
+                    }
+                }
+
                 let has_errors = parse_result.has_errors();
 
                 result.add_parse_result(version, parse_result);
