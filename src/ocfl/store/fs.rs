@@ -417,6 +417,15 @@ impl OcflStore for FsOcflStore {
 
         inventory.storage_path = object_root.to_string_lossy().into();
 
+        if inventory.type_declaration != existing_inventory.type_declaration {
+            // This is a version upgrade
+            let old_namastes = find_files(&object_root, OBJECT_NAMASTE_FILE_PREFIX)?;
+            write_object_namaste(&object_root, inventory.spec_version().unwrap())?;
+            for old in old_namastes {
+                util::remove_file_ignore_not_found(&object_root.join(old))?;
+            }
+        }
+
         Ok(())
     }
 
@@ -557,19 +566,12 @@ impl OcflStore for FsOcflStore {
     fn upgrade_repo(&self, version: SpecVersion) -> Result<()> {
         self.ensure_open()?;
 
-        let prefix = ROOT_NAMASTE_FILE_PREFIX;
-
-        let old_namastes: Vec<OsString> = fs::read_dir(&self.storage_root)?
-            .flatten()
-            .map(|entry| entry.file_name())
-            .filter(|name| name.len() > prefix.len())
-            .filter(|name| name.to_str().map_or(false, |name| name.starts_with(prefix)))
-            .collect();
+        let old_namastes = find_files(&self.storage_root, ROOT_NAMASTE_FILE_PREFIX)?;
 
         write_namaste_and_spec(&self.storage_root, version)?;
 
         for old in old_namastes {
-            util::remove_file_ignore_not_found(old)?;
+            util::remove_file_ignore_not_found(self.storage_root.join(old))?;
         }
 
         Ok(())
@@ -611,12 +613,7 @@ impl StagingStore for FsOcflStore {
 
         fs::create_dir_all(&storage_path)?;
 
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(paths::object_namaste_path(&storage_path, version))?;
-
-        write!(file, "{}", version.object_namaste().content)?;
+        write_object_namaste(&storage_path, version)?;
         self.stage_inventory(inventory, false, false)?;
 
         Ok(())
@@ -1285,6 +1282,18 @@ fn write_layout_config(root: impl AsRef<Path>, layout: &StorageLayout) -> Result
     Ok(())
 }
 
+fn write_object_namaste(storage_path: impl AsRef<Path>, version: SpecVersion) -> Result<()> {
+    let storage_path = storage_path.as_ref();
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(paths::object_namaste_path(storage_path, version))?;
+
+    write!(file, "{}", version.object_namaste().content)?;
+
+    Ok(())
+}
+
 fn list_extensions(extensions_dir: impl AsRef<Path>) -> Result<Vec<String>> {
     let extensions_dir = extensions_dir.as_ref();
     let mut extensions = Vec::new();
@@ -1296,6 +1305,16 @@ fn list_extensions(extensions_dir: impl AsRef<Path>) -> Result<Vec<String>> {
     }
 
     Ok(extensions)
+}
+
+/// Returns all of the files in the directory that match the given prefix
+fn find_files(dir: impl AsRef<Path>, prefix: &str) -> Result<Vec<OsString>> {
+    Ok(fs::read_dir(dir.as_ref())?
+        .flatten()
+        .map(|entry| entry.file_name())
+        .filter(|name| name.len() > prefix.len())
+        .filter(|name| name.to_str().map_or(false, |name| name.starts_with(prefix)))
+        .collect())
 }
 
 /// Identifies the first version declaration file in the directory and returns the portion of the

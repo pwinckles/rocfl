@@ -312,6 +312,16 @@ impl S3OcflStore {
         Ok(done)
     }
 
+    fn write_object_namaste(&self, object_root: &str, version: SpecVersion) -> Result<()> {
+        let object_namaste = version.object_namaste();
+        self.s3_client.put_object_bytes(
+            &join(object_root, object_namaste.filename),
+            Bytes::from(object_namaste.content.as_bytes()),
+            Some(TYPE_PLAIN),
+        )?;
+        Ok(())
+    }
+
     /// Pass through to S3 to list the contents of a path in S3
     fn list_dir(&self, path: &str) -> Result<ListResult> {
         self.s3_client.list_dir(path)
@@ -329,6 +339,18 @@ impl S3OcflStore {
         }
 
         Ok(extensions)
+    }
+
+    /// Identifies the first version declaration file in the directory and returns the portion of the
+    /// filename that's after the prefix, which should be the OCFL spec version
+    fn find_files(&self, dir: &str, prefix: &str) -> Result<Vec<String>> {
+        Ok(self
+            .list_dir(dir)?
+            .objects
+            .into_iter()
+            .filter(|entry| entry.len() > prefix.len())
+            .filter(|entry| entry.starts_with(prefix))
+            .collect())
     }
 
     /// Identifies the first version declaration file in the directory and returns the portion of the
@@ -511,6 +533,19 @@ impl OcflStore for S3OcflStore {
 
         inventory.storage_path = existing_inventory.storage_path;
 
+        if inventory.type_declaration != existing_inventory.type_declaration {
+            // This is a version upgrade
+            let old_namastes =
+                self.find_files(&existing_inventory.object_root, OBJECT_NAMASTE_FILE_PREFIX)?;
+            self.write_object_namaste(
+                &existing_inventory.object_root,
+                inventory.spec_version().unwrap(),
+            )?;
+            for old in old_namastes {
+                self.s3_client.delete_object(&old)?;
+            }
+        }
+
         Ok(())
     }
 
@@ -645,15 +680,7 @@ impl OcflStore for S3OcflStore {
     fn upgrade_repo(&self, version: SpecVersion) -> Result<()> {
         self.ensure_open()?;
 
-        let prefix = ROOT_NAMASTE_FILE_PREFIX;
-
-        let old_namastes: Vec<String> = self
-            .list_dir("")?
-            .objects
-            .into_iter()
-            .filter(|entry| entry.len() > prefix.len())
-            .filter(|entry| entry.starts_with(prefix))
-            .collect();
+        let old_namastes = self.find_files("", ROOT_NAMASTE_FILE_PREFIX)?;
 
         write_namaste_and_spec(&self.s3_client, version)?;
 
