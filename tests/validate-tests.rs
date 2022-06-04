@@ -1415,7 +1415,7 @@ fn validate_invalid_repo() {
             ),
             ValidationError::new(
                 ProblemLocation::StorageRoot,
-                ErrorCode::E067,
+                ErrorCode::E112,
                 "Extensions directory contains an illegal file: file.txt".to_string(),
             ),
         ],
@@ -1424,7 +1424,7 @@ fn validate_invalid_repo() {
         &validator.storage_root_result(),
         &[ValidationWarning::new(
             ProblemLocation::StorageRoot,
-            WarnCode::W013,
+            WarnCode::W016,
             "Extensions directory contains unknown extension: bogus-ext".to_string(),
         )],
     );
