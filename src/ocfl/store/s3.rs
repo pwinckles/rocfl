@@ -641,6 +641,29 @@ impl OcflStore for S3OcflStore {
         Ok(ObjectInfo::new(version, algorithm, extensions))
     }
 
+    /// Upgrades the repository to the specified version
+    fn upgrade_repo(&self, version: SpecVersion) -> Result<()> {
+        self.ensure_open()?;
+
+        let prefix = ROOT_NAMASTE_FILE_PREFIX;
+
+        let old_namastes: Vec<String> = self
+            .list_dir("")?
+            .objects
+            .into_iter()
+            .filter(|entry| entry.len() > prefix.len())
+            .filter(|entry| entry.starts_with(prefix))
+            .collect();
+
+        write_namaste_and_spec(&self.s3_client, version)?;
+
+        for old in old_namastes {
+            self.s3_client.delete_object(&old)?;
+        }
+
+        Ok(())
+    }
+
     /// Instructs the store to gracefully stop any in-flight work and not accept any additional
     /// requests.
     fn close(&self) {
@@ -1221,6 +1244,16 @@ fn init_new_repo(
         s3_client.bucket, s3_client.prefix
     );
 
+    write_namaste_and_spec(s3_client, version)?;
+
+    if let Some(layout) = layout {
+        write_layout_config(s3_client, layout)?;
+    }
+
+    Ok(())
+}
+
+fn write_namaste_and_spec(s3_client: &S3Client, version: SpecVersion) -> Result<()> {
     let root_namaste = version.root_namaste();
 
     s3_client.put_object_bytes(
@@ -1239,10 +1272,6 @@ fn init_new_repo(
         Bytes::from(spec.as_bytes()),
         Some(TYPE_PLAIN),
     )?;
-
-    if let Some(layout) = layout {
-        write_layout_config(s3_client, layout)?;
-    }
 
     Ok(())
 }

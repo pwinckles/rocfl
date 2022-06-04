@@ -7,6 +7,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::RwLock;
 
 use chrono::Local;
 use log::{info, warn};
@@ -43,7 +44,7 @@ pub struct OcflRepo {
     staging_lock_manager: OnceCell<LockManager>,
     /// The path to the root of the staging repo
     staging_root: PathBuf,
-    spec_version: Option<Knowable<SpecVersion, String>>,
+    spec_version: RwLock<Option<Knowable<SpecVersion, String>>>,
     /// Indicates if the repository should convert separators to backslashes when rendering
     /// physical paths.
     use_backslashes: bool,
@@ -67,7 +68,7 @@ impl OcflRepo {
             store: Box::new(store),
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
-            spec_version,
+            spec_version: RwLock::new(spec_version),
             use_backslashes: util::BACKSLASH_SEPARATOR,
             closed: AtomicBool::new(false),
         })
@@ -91,7 +92,7 @@ impl OcflRepo {
             store: Box::new(FsOcflStore::init(storage_root, version, layout)?),
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
-            spec_version: Some(Known(version)),
+            spec_version: RwLock::new(Some(Known(version))),
             use_backslashes: util::BACKSLASH_SEPARATOR,
             closed: AtomicBool::new(false),
         })
@@ -117,7 +118,7 @@ impl OcflRepo {
             )?),
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
-            spec_version: Some(Known(version)),
+            spec_version: RwLock::new(Some(Known(version))),
             use_backslashes: false,
             closed: AtomicBool::new(false),
         })
@@ -141,7 +142,7 @@ impl OcflRepo {
             store: Box::new(store),
             staging: OnceCell::default(),
             staging_lock_manager: OnceCell::default(),
-            spec_version,
+            spec_version: RwLock::new(spec_version),
             use_backslashes: false,
             closed: AtomicBool::new(false),
         })
@@ -523,11 +524,11 @@ impl OcflRepo {
         let object_id = object_id.trim();
 
         let object_version = if let Some(object_version) = spec_version {
-            if let Some(Known(repo_version)) = &self.spec_version {
+            if let Some(Known(repo_version)) = &self.spec_version.read().unwrap().clone() {
                 validate::validate_spec_version(object_version, *repo_version)?;
             }
             object_version
-        } else if let Some(Known(repo_version)) = &self.spec_version {
+        } else if let Some(Known(repo_version)) = &self.spec_version.read().unwrap().clone() {
             info!("Defaulting object version to {}", repo_version.version());
             *repo_version
         } else {
@@ -942,6 +943,31 @@ impl OcflRepo {
         }
 
         Ok(())
+    }
+
+    /// Upgrades the repository to the specified version
+    pub fn upgrade_repo(&self, version: SpecVersion) -> Result<()> {
+        self.ensure_open()?;
+
+        let current_version = self.spec_version.read().unwrap().clone();
+
+        if let Some(Known(current)) = current_version {
+            if current < version {
+                self.store.upgrade_repo(version)?;
+                let mut repo_version = self.spec_version.write().unwrap();
+                *repo_version = Some(Known(version));
+                Ok(())
+            } else {
+                Err(RocflError::IllegalOperation(
+                    format!("Cannot upgrade repository to {} because the current version, {}, is greater than or equal to the new version.",
+                            version.version(), current.version())))
+            }
+        } else {
+            Err(RocflError::IllegalOperation(format!(
+                "Cannot upgrade repository to {} because the current version is unknown.",
+                version.version()
+            )))
+        }
     }
 
     /// Attempts to get the inventory from staging. If it is not found, it is loaded from the

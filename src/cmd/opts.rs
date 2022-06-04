@@ -121,6 +121,8 @@ pub enum Command {
     Validate(ValidateCmd),
     #[clap(name = "info")]
     Info(InfoCmd),
+    #[clap(name = "upgrade")]
+    Upgrade(UpgradeCmd),
 }
 
 /// Edit rocfl configuration
@@ -340,6 +342,64 @@ pub struct InitCmd {
         ignore_case = true
     )]
     pub layout: Layout,
+}
+
+/// Upgrades an existing OCFL repository or object
+///
+/// Upgrades a repository or object to a later spec version. If an object ID is not specified,
+/// then the repository is upgraded. Upgrading a repository does not upgrade existing objects
+/// in the repository, but newly created objects will use the upgraded version by default.
+///
+/// After upgrading a repository, existing objects must be upgraded explicitly if you want them
+/// upgraded. Upgrading an object requires creating a new OCFL object version. As such, upgrading
+/// is treated the same as a commit operation. This means that any staged changes an object has
+/// are committed to the object as part of the upgrade.
+#[derive(Args, Debug)]
+pub struct UpgradeCmd {
+    /// OCFL spec version to upgrade to
+    #[clap(
+        arg_enum,
+        short = 'v',
+        long,
+        value_name = "SPEC_VERSION",
+        ignore_case = true
+    )]
+    pub spec_version: SpecVersion,
+
+    /// Pretty print the version's inventory.json file
+    ///
+    /// Only applies when upgrading objects
+    #[clap(short, long)]
+    pub pretty_print: bool,
+
+    /// Name of the user to attribute the changes to
+    ///
+    /// Only applies when upgrading objects
+    #[clap(short = 'n', long, value_name = "NAME")]
+    pub user_name: Option<String>,
+
+    /// Address URI of the user to attribute the changes to. For example, mailto:test@example.com
+    ///
+    /// Only applies when upgrading objects
+    #[clap(short = 'a', long, value_name = "ADDRESS")]
+    pub user_address: Option<String>,
+
+    /// Message describing the changes
+    ///
+    /// Only applies when upgrading objects
+    #[clap(short, long, value_name = "MESSAGE")]
+    pub message: Option<String>,
+
+    /// RFC 3339 creation timestamp of the version. Default: now
+    ///
+    /// Only applies when upgrading objects.
+    /// Example timestamp: 2020-12-23T10:11:12-06:00
+    #[clap(short, long, value_name = "TIMESTAMP")]
+    pub created: Option<DateTime<Local>>,
+
+    /// ID of the object to upgrade
+    #[clap(value_name = "OBJ_ID")]
+    pub object_id: Option<String>,
 }
 
 /// Stage a new OCFL object

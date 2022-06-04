@@ -8,8 +8,9 @@ use log::info;
 use crate::cmd::opts::{
     CatCmd, CommitCmd, ConfigCmd, CopyCmd, DigestAlgorithm as OptAlgorithm, Field, InfoCmd,
     InitCmd, ListCmd, MoveCmd, NewCmd, PurgeCmd, RemoveCmd, ResetCmd, ShowCmd, StatusCmd,
+    UpgradeCmd,
 };
-use crate::cmd::{map_spec_version, style, Cmd, GlobalArgs};
+use crate::cmd::{map_spec_version, println, style, Cmd, GlobalArgs};
 use crate::config::Config;
 use crate::ocfl::{CommitMeta, DigestAlgorithm, OcflRepo, Result};
 
@@ -177,6 +178,37 @@ impl Cmd for CommitCmd {
         )?;
 
         Ok(())
+    }
+}
+
+impl Cmd for UpgradeCmd {
+    fn exec(
+        &self,
+        repo: &OcflRepo,
+        args: GlobalArgs,
+        config: &Config,
+        _terminate: &AtomicBool,
+    ) -> Result<()> {
+        if let Some(object_id) = &self.object_id {
+            // TODO upgrade object
+            // let meta = CommitMeta::new()
+            //     .with_user(config.author_name.clone(), config.author_address.clone())?
+            //     .with_message(self.message.clone())
+            //     .with_created(self.created);
+            // repo.commit(
+            //     &self.object_id,
+            //     meta,
+            //     self.object_root.as_ref().map(|r| r.as_ref()),
+            //     self.pretty_print,
+            // )?;
+            Ok(())
+        } else {
+            repo.upgrade_repo(map_spec_version(self.spec_version))?;
+            if !args.quiet {
+                println(format!("Upgraded OCFL repository to {}", self.spec_version));
+            }
+            Ok(())
+        }
     }
 }
 
