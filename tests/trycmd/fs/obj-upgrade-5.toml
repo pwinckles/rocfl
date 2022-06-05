@@ -1,0 +1,10 @@
+fs.sandbox = true
+fs.base = "repo-1.1.in"
+
+bin.name = "rocfl"
+args = "upgrade o1 --spec-version 1.0 -c 2022-06-04T19:30:12-05:00 -n 'Peter Winckles' -a 'mailto:test@example.com' -m 'upgrade'"
+
+status = "failed"
+stderr = """
+[ERROR] Illegal operation: Cannot upgrade object to 1.0 because the current version, 1.1, is greater than or equal to the new version.
+"""
