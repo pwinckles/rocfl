@@ -1,0 +1,10 @@
+fs.sandbox = true
+fs.base = "multiple-objects.in"
+
+bin.name = "rocfl"
+args = "upgrade --spec-version 1.1 o1"
+
+status = "failed"
+stderr = """
+[ERROR] Illegal operation: Cannot upgrade object to 1.1 because it is less than the repository version, 1.0.
+"""
