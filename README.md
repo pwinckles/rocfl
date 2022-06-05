@@ -7,6 +7,8 @@
 S3. Its goal is to provide a logical view of OCFL objects and make
 them easy to interact with in a unix-like way.
 
+`rocfl` supports OCFL spec versions 1.0 and 1.1.
+
 ![gif](./media/demo.gif)
 
 ## Extension Support
@@ -407,7 +409,10 @@ OCFL version.
 
 #### Init
 
-The `init` command creates new OCFL repositories.
+The `init` command creates new OCFL repositories. By default, the
+latest OCFL spec version is used along with the
+[0004-hashed-n-tuple-storage-layout](https://ocfl.github.io/extensions/0004-hashed-n-tuple-storage-layout.html)
+storage layout.
 
 ##### Examples
 
@@ -588,6 +593,28 @@ rocfl commit urn:example:rocfl:object-1 -m "commit message" -r relative/path/to/
 The `purge` command permanently removes an object from the main OCFL
 repository. This is **not** an operation that stages changes. However,
 it will ask for confirmation before deleting an object.
+
+#### Upgrade
+
+The `upgrade` command upgrades an object or repository to a later OCFL
+spec version. OCFL objects are not automatically upgraded when a
+repository is upgraded, and must be upgraded individually. Upgrading
+an OCFL object requires creating a new object version, and any changes
+that are staged for an object are included in the upgrade version.
+
+##### Examples
+
+Upgrade a 1.0 repository to spec version 1.1:
+
+``` console
+rocfl upgrade -v 1.1
+```
+
+Upgrade an object to spec version 1.1:
+
+``` console
+rocfl upgrade urn:example:rocfl:object-1 -n "My Name" -a "mailto:me@example.com" -m "upgrade to 1.1"
+```
 
 ## S3
 
