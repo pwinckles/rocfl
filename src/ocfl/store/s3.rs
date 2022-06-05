@@ -344,20 +344,22 @@ impl S3OcflStore {
     /// Identifies the first version declaration file in the directory and returns the portion of the
     /// filename that's after the prefix, which should be the OCFL spec version
     fn find_files(&self, dir: &str, prefix: &str) -> Result<Vec<String>> {
+        let prefix = join(dir, prefix);
         Ok(self
             .list_dir(dir)?
             .objects
             .into_iter()
             .filter(|entry| entry.len() > prefix.len())
-            .filter(|entry| entry.starts_with(prefix))
+            .filter(|entry| entry.starts_with(&prefix))
             .collect())
     }
 
     /// Identifies the first version declaration file in the directory and returns the portion of the
     /// filename that's after the prefix, which should be the OCFL spec version
     fn find_first_version_declaration(&self, prefix: &str, dir: &str) -> Result<String> {
+        let prefix = join(dir, prefix);
         for entry in self.list_dir(dir)?.objects {
-            if let Some(stripped) = entry.strip_prefix(prefix) {
+            if let Some(stripped) = entry.strip_prefix(&prefix) {
                 return Ok(stripped.to_string());
             }
         }
