@@ -1045,6 +1045,12 @@ impl OcflRepo {
             Err(RocflError::NotFound(_)) => {
                 let mut inventory = self.store.get_inventory(object_id)?;
 
+                if inventory.spec_version().is_none() {
+                    return Err(RocflError::IllegalOperation(
+                        "Cannot update object because it conforms to an unknown/unsupported spec version".to_string(),
+                    ));
+                }
+
                 if inventory.mutable_head {
                     return Err(RocflError::IllegalState(
                         "Cannot stage changes for object because it has an active mutable HEAD."
