@@ -714,11 +714,13 @@ struct ListResult {
     directories: Vec<String>,
 }
 
+type IdMatcher = Box<dyn Fn(&str) -> bool>;
+
 struct InventoryIter<'a> {
     store: &'a S3OcflStore,
     dir_iters: Vec<IntoIter<String>>,
     current: RefCell<Option<IntoIter<String>>>,
-    id_matcher: Option<Box<dyn Fn(&str) -> bool>>,
+    id_matcher: Option<IdMatcher>,
     closed: Arc<AtomicBool>,
 }
 
@@ -1084,11 +1086,7 @@ impl<'a> InventoryIter<'a> {
 
     /// Creates a new iterator that returns all objects if no `id_matcher` is provided, or only
     /// the objects the `id_matcher` returns `true` for if one is provided.
-    fn new(
-        store: &'a S3OcflStore,
-        id_matcher: Option<Box<dyn Fn(&str) -> bool>>,
-        closed: Arc<AtomicBool>,
-    ) -> Self {
+    fn new(store: &'a S3OcflStore, id_matcher: Option<IdMatcher>, closed: Arc<AtomicBool>) -> Self {
         Self {
             store,
             dir_iters: Vec::new(),

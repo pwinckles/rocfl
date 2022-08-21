@@ -776,12 +776,14 @@ impl StagingStore for FsOcflStore {
     }
 }
 
+type IdMatcher = Box<dyn Fn(&str) -> bool>;
+
 /// Iterates over ever object in an OCFL repository by walking the file tree.
 struct InventoryIter {
     root: PathBuf,
     dir_iters: Vec<ReadDir>,
     current: RefCell<Option<ReadDir>>,
-    id_matcher: Option<Box<dyn Fn(&str) -> bool>>,
+    id_matcher: Option<IdMatcher>,
     closed: Arc<AtomicBool>,
 }
 
@@ -814,7 +816,7 @@ impl InventoryIter {
     /// the objects the `id_matcher` returns `true` for if one is provided.
     fn new<P: AsRef<Path>>(
         root: P,
-        id_matcher: Option<Box<dyn Fn(&str) -> bool>>,
+        id_matcher: Option<IdMatcher>,
         closed: Arc<AtomicBool>,
     ) -> Result<Self> {
         Ok(InventoryIter {

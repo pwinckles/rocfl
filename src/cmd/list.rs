@@ -87,21 +87,17 @@ impl ListCmd {
                 let mut header_line = "".to_string();
 
                 if self.long {
-                    header_line
-                        .push_str(&paint(args.no_styles, *style::UNDERLINE, VERSION).to_string());
+                    header_line.push_str(&paint(args.no_styles, *style::UNDERLINE, VERSION));
                     header_line.push('\t');
-                    header_line
-                        .push_str(&paint(args.no_styles, *style::UNDERLINE, UPDATED).to_string());
+                    header_line.push_str(&paint(args.no_styles, *style::UNDERLINE, UPDATED));
                     header_line.push('\t');
                 }
 
-                header_line
-                    .push_str(&paint(args.no_styles, *style::UNDERLINE, OBJECT_ID).to_string());
+                header_line.push_str(&paint(args.no_styles, *style::UNDERLINE, OBJECT_ID));
 
                 if self.physical {
                     header_line.push('\t');
-                    header_line
-                        .push_str(&paint(args.no_styles, *style::UNDERLINE, VERSION).to_string());
+                    header_line.push_str(&paint(args.no_styles, *style::UNDERLINE, VERSION));
                 }
 
                 let _ = writeln!(out, "{}", header_line);
@@ -111,31 +107,25 @@ impl ListCmd {
             let mut line = "".to_string();
 
             if self.long {
-                line.push_str(
-                    &paint(
-                        args.no_styles,
-                        *style::GREEN,
-                        object.version_details.version_num.to_string(),
-                    )
-                    .to_string(),
-                );
+                line.push_str(&paint(
+                    args.no_styles,
+                    *style::GREEN,
+                    object.version_details.version_num.to_string(),
+                ));
                 line.push('\t');
-                line.push_str(
-                    &paint(
-                        args.no_styles,
-                        *style::YELLOW,
-                        object
-                            .version_details
-                            .created
-                            .format(DATE_FORMAT)
-                            .to_string(),
-                    )
-                    .to_string(),
-                );
+                line.push_str(&paint(
+                    args.no_styles,
+                    *style::YELLOW,
+                    object
+                        .version_details
+                        .created
+                        .format(DATE_FORMAT)
+                        .to_string(),
+                ));
                 line.push('\t');
             }
 
-            line.push_str(&paint(args.no_styles, *style::BOLD, &object.id).to_string());
+            line.push_str(&paint(args.no_styles, *style::BOLD, &object.id));
 
             if self.physical {
                 line.push('\t');
