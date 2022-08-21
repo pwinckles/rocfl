@@ -21,7 +21,7 @@ pub struct StorageLayout {
 }
 
 /// Enum of known storage layout extensions
-#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, EnumString, EnumDisplay)]
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, Eq, PartialEq, EnumString, EnumDisplay)]
 pub enum LayoutExtensionName {
     #[strum(serialize = "0002-flat-direct-storage-layout")]
     #[serde(rename = "0002-flat-direct-storage-layout")]
