@@ -721,7 +721,7 @@ fn create_1_1_object() -> Result<()> {
         )?),
     )?;
 
-    let object_id = "urn:example:rocfl:obj1";
+    let object_id = "obj1";
 
     repo.create_object(
         object_id,
@@ -740,10 +740,6 @@ fn create_1_1_object() -> Result<()> {
         false,
     )
     .unwrap();
-
-    for file in WalkDir::new(root.path()).into_iter().filter_map(|file| file.ok()) {
-        println!("{}", file.path().display());
-    }
 
     commit(object_id, &repo);
 
