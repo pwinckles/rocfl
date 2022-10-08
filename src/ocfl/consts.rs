@@ -28,7 +28,7 @@ pub const OBJECT_NAMASTE_FILE_1_1: &str = concatcp!(OBJECT_NAMASTE_FILE_PREFIX, 
 pub const ROOT_NAMASTE_CONTENT_1_1: &str = concatcp!(ROOT_NAMASTE_PREFIX, "1.1\n");
 pub const OBJECT_NAMASTE_CONTENT_1_1: &str = concatcp!(OBJECT_NAMASTE_PREFIX, "1.1\n");
 pub const INVENTORY_TYPE_1_1: &str = "https://ocfl.io/1.1/spec/#inventory";
-pub const OCFL_SPEC_FILE_1_1: &str = "ocfl_1.1.txt";
+pub const OCFL_SPEC_FILE_1_1: &str = "ocfl_1.1.md";
 
 pub const INVENTORY_FILE: &str = "inventory.json";
 pub const INVENTORY_SIDECAR_PREFIX: &str = "inventory.json.";
