@@ -10,6 +10,7 @@ use chrono::{DateTime, Local, TimeZone};
 use common::*;
 use fs_extra::dir::CopyOptions;
 use maplit::hashmap;
+use walkdir::WalkDir;
 use rocfl::ocfl::{
     CommitMeta, ContentPath, Diff, DigestAlgorithm, FileDetails, InventoryPath,
     LayoutExtensionName, ObjectVersion, ObjectVersionDetails, OcflRepo, Result, RocflError,
@@ -739,6 +740,10 @@ fn create_1_1_object() -> Result<()> {
         false,
     )
     .unwrap();
+
+    for file in WalkDir::new(root.path()).into_iter().filter_map(|file| file.ok()) {
+        println!("{}", file.path().display());
+    }
 
     commit(object_id, &repo);
 
