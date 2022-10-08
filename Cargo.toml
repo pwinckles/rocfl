@@ -59,7 +59,7 @@ pathdiff = "0.2"
 walkdir = "2"
 
 # CLI
-clap = { version = "3", features = ["derive"] }
+clap = { version = "4", features = ["derive", "deprecated"] }
 ansi_term = "0.12"
 ctrlc = "3"
 atty = "0.2"
@@ -108,7 +108,7 @@ predicates = "2"
 rand = "0.8"
 tempfile = "3"
 tokio-test = "0.4"
-trycmd = "0.13"
+trycmd = "0.14"
 # TODO time switching hash impl
 #fxhash = "0.2"
 # TODO experiment with https://crates.io/crates/criterion/0.2.11
