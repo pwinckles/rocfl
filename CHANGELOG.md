@@ -10,6 +10,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased] - ReleaseDate
 
+## [1.7.0] - 2022-10-08
+
 ### Changed
 
 - Invalid `fixity` block validation code changed to `E111`
@@ -227,7 +229,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Initial release
 
 <!-- next-url -->
-[Unreleased]: https://github.com/pwinckles/rocfl/compare/v1.6.6...HEAD
+[Unreleased]: https://github.com/pwinckles/rocfl/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/pwinckles/rocfl/compare/v1.6.6...v1.7.0
 [1.6.6]: https://github.com/pwinckles/rocfl/compare/v1.6.5...v1.6.6
 [1.6.5]: https://github.com/pwinckles/rocfl/compare/v1.6.4...v1.6.5
 [1.6.4]: https://github.com/pwinckles/rocfl/compare/v1.6.3...v1.6.4

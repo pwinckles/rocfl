@@ -1375,7 +1375,7 @@ dependencies = [
 
 [[package]]
 name = "rocfl"
-version = "1.7.0-dev"
+version = "1.7.0"
 dependencies = [
  "ansi_term",
  "assert_cmd",
