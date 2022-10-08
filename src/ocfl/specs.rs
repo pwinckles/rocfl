@@ -1,5 +1,5 @@
 pub const OCFL_1_0_SPEC: &str = include_str!("../../resources/main/specs/ocfl_1.0.txt");
-pub const OCFL_1_1_SPEC: &str = include_str!("../../resources/main/specs/ocfl_1.1.txt");
+pub const OCFL_1_1_SPEC: &str = include_str!("../../resources/main/specs/ocfl_1.1.md");
 pub const EXT_0002_SPEC: &str =
     include_str!("../../resources/main/specs/0002-flat-direct-storage-layout.md");
 pub const EXT_0003_SPEC: &str =
