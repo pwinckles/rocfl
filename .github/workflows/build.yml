@@ -40,6 +40,7 @@ jobs:
       - name: Clippy
         uses: actions-rs/clippy-check@v1
         with:
+          args: --all --all-targets --all-features
           token: ${{ secrets.GITHUB_TOKEN }}
   build-other:
     runs-on: ${{ matrix.os }}

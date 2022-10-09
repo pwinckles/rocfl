@@ -78,7 +78,7 @@ fn create_new_repo_empty_dir() {
             .unwrap();
             repo.copy_files_external(
                 object_id,
-                &vec![create_file(&temp, "test.txt", "testing").path()],
+                &[create_file(&temp, "test.txt", "testing").path()],
                 "/",
                 false,
             )
@@ -127,7 +127,7 @@ fn create_new_object() {
             .unwrap();
             repo.copy_files_external(
                 object_id,
-                &vec![create_file(&temp, "test.txt", "testing").path()],
+                &[create_file(&temp, "test.txt", "testing").path()],
                 "/",
                 false,
             )
@@ -170,7 +170,7 @@ fn fail_create_new_object_when_already_exists() {
             .unwrap();
             repo.copy_files_external(
                 object_id,
-                &vec![create_file(&temp, "test.txt", "testing").path()],
+                &[create_file(&temp, "test.txt", "testing").path()],
                 "/",
                 false,
             )
@@ -218,13 +218,13 @@ fn create_and_update_object() {
             create_file(&temp, "a/d/e/file5.txt", "File Five");
             create_file(&temp, "a/f/file6.txt", "File Six");
 
-            repo.move_files_external(object_id, &vec![temp.child("a").path()], "/")
+            repo.move_files_external(object_id, &[temp.child("a").path()], "/")
                 .unwrap();
 
             repo.commit(object_id, CommitMeta::new(), None, false)
                 .unwrap();
 
-            repo.remove_files(object_id, &vec!["a/b/file3.txt", "a/b/c/file4.txt"], false)
+            repo.remove_files(object_id, &["a/b/file3.txt", "a/b/c/file4.txt"], false)
                 .unwrap();
 
             repo.commit(object_id, CommitMeta::new(), None, false)
@@ -233,7 +233,7 @@ fn create_and_update_object() {
             repo.copy_files_internal(
                 object_id,
                 VersionNum::v1().into(),
-                &vec!["a/b/file3.txt"],
+                &["a/b/file3.txt"],
                 "/",
                 false,
             )
@@ -241,7 +241,7 @@ fn create_and_update_object() {
             repo.copy_files_internal(
                 object_id,
                 VersionNum::v1().into(),
-                &vec!["a/file1.txt"],
+                &["a/file1.txt"],
                 "something/file1.txt",
                 false,
             )
@@ -251,7 +251,7 @@ fn create_and_update_object() {
 
             repo.copy_files_external(
                 object_id,
-                &vec![create_file(&temp, "something/new.txt", "NEW").path()],
+                &[create_file(&temp, "something/new.txt", "NEW").path()],
                 "something/new.txt",
                 true,
             )
@@ -262,13 +262,13 @@ fn create_and_update_object() {
 
             repo.copy_files_external(
                 object_id,
-                &vec![create_file(&temp, "file6.txt", "UPDATED!").path()],
+                &[create_file(&temp, "file6.txt", "UPDATED!").path()],
                 "a/f/file6.txt",
                 true,
             )
             .unwrap();
 
-            repo.move_files_internal(object_id, &vec!["a/d/e/file5.txt"], "a/file5.txt")
+            repo.move_files_internal(object_id, &["a/d/e/file5.txt"], "a/file5.txt")
                 .unwrap();
 
             repo.commit(object_id, CommitMeta::new(), None, false)
@@ -366,13 +366,13 @@ fn validate_valid_object() {
             create_file(&temp, "a/d/e/file5.txt", "File Five");
             create_file(&temp, "a/f/file6.txt", "File Six");
 
-            repo.move_files_external(object_id, &vec![temp.child("a").path()], "/")
+            repo.move_files_external(object_id, &[temp.child("a").path()], "/")
                 .unwrap();
 
             repo.commit(object_id, commit_meta.clone(), None, false)
                 .unwrap();
 
-            repo.remove_files(object_id, &vec!["a/b/file3.txt", "a/b/c/file4.txt"], false)
+            repo.remove_files(object_id, &["a/b/file3.txt", "a/b/c/file4.txt"], false)
                 .unwrap();
 
             repo.commit(object_id, commit_meta.clone(), None, false)
@@ -381,7 +381,7 @@ fn validate_valid_object() {
             repo.copy_files_internal(
                 object_id,
                 VersionNum::v1().into(),
-                &vec!["a/b/file3.txt"],
+                &["a/b/file3.txt"],
                 "/",
                 false,
             )
@@ -389,7 +389,7 @@ fn validate_valid_object() {
             repo.copy_files_internal(
                 object_id,
                 VersionNum::v1().into(),
-                &vec!["a/file1.txt"],
+                &["a/file1.txt"],
                 "something/file1.txt",
                 false,
             )
@@ -399,7 +399,7 @@ fn validate_valid_object() {
 
             repo.copy_files_external(
                 object_id,
-                &vec![create_file(&temp, "something/new.txt", "NEW").path()],
+                &[create_file(&temp, "something/new.txt", "NEW").path()],
                 "something/new.txt",
                 true,
             )
@@ -410,13 +410,13 @@ fn validate_valid_object() {
 
             repo.copy_files_external(
                 object_id,
-                &vec![create_file(&temp, "file6.txt", "UPDATED!").path()],
+                &[create_file(&temp, "file6.txt", "UPDATED!").path()],
                 "a/f/file6.txt",
                 true,
             )
             .unwrap();
 
-            repo.move_files_internal(object_id, &vec!["a/d/e/file5.txt"], "a/file5.txt")
+            repo.move_files_internal(object_id, &["a/d/e/file5.txt"], "a/file5.txt")
                 .unwrap();
 
             repo.commit(object_id, commit_meta, None, false).unwrap();
@@ -475,7 +475,7 @@ fn validate_invalid_object() {
             create_file(&temp, "a/d/e/file5.txt", "File Five");
             create_file(&temp, "a/f/file6.txt", "File Six");
 
-            repo.move_files_external(object_id, &vec![temp.child("a").path()], "/")
+            repo.move_files_external(object_id, &[temp.child("a").path()], "/")
                 .unwrap();
 
             repo.commit(object_id, commit_meta.clone(), None, false)
@@ -491,7 +491,7 @@ fn validate_invalid_object() {
             .unwrap();
             repo.copy_files_external(
                 object_id_2,
-                &vec![create_file(&temp, "test.txt", "testing").path()],
+                &[create_file(&temp, "test.txt", "testing").path()],
                 "/",
                 false,
             )
@@ -584,7 +584,7 @@ fn purge_object() {
             .unwrap();
             repo.copy_files_external(
                 object_id,
-                &vec![create_file(&temp, "test.txt", "testing").path()],
+                &[create_file(&temp, "test.txt", "testing").path()],
                 "/",
                 false,
             )
@@ -639,7 +639,7 @@ fn fail_commit_when_out_of_sync() {
             .unwrap();
             repo.move_files_external(
                 object_id,
-                &vec![create_file(&temp, "test.txt", "testing").path()],
+                &[create_file(&temp, "test.txt", "testing").path()],
                 "/",
             )
             .unwrap();
@@ -648,7 +648,7 @@ fn fail_commit_when_out_of_sync() {
 
             repo.move_files_external(
                 object_id,
-                &vec![create_file(&temp, "test2.txt", "testing 2").path()],
+                &[create_file(&temp, "test2.txt", "testing 2").path()],
                 "/",
             )
             .unwrap();
@@ -668,7 +668,7 @@ fn fail_commit_when_out_of_sync() {
 
             repo.move_files_external(
                 object_id,
-                &vec![create_file(&temp, "b-file.txt", "another").path()],
+                &[create_file(&temp, "b-file.txt", "another").path()],
                 "/",
             )
             .unwrap();
@@ -781,7 +781,7 @@ fn assert_file_exists(s3_client: &S3Client, root: &str, path: &str) {
         key: key.clone(),
         ..Default::default()
     }))
-    .expect(&format!("Expected {} to exist", key));
+    .unwrap_or_else(|_| panic!("Expected {} to exist", key));
 }
 
 fn assert_file(s3_client: &S3Client, root: &str, path: &str, content: &str) {
@@ -811,7 +811,7 @@ fn get_content_with_key(s3_client: &S3Client, key: &str) -> String {
                 ..Default::default()
             })
             .await
-            .expect(&format!("Expected {} to exist", key));
+            .unwrap_or_else(|_| panic!("Expected {} to exist", key));
 
         let mut reader = response.body.unwrap().into_async_read();
         let mut buf = [0; 8192];
@@ -838,7 +838,7 @@ fn write_file(s3_client: &S3Client, key: &str, contents: &str) {
                 ..Default::default()
             })
             .await
-            .expect(&format!("Expected put {} to succeed", key));
+            .unwrap_or_else(|_| panic!("Expected put {} to succeed", key));
     })
 }
 

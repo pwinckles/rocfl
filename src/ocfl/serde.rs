@@ -732,7 +732,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -767,7 +767,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -802,7 +802,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -837,7 +837,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -872,7 +872,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -911,7 +911,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -960,7 +960,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -995,7 +995,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -1034,7 +1034,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -1069,7 +1069,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -1107,7 +1107,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -1140,7 +1140,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -1173,7 +1173,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -1206,7 +1206,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -1239,7 +1239,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -1268,7 +1268,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -1287,7 +1287,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -1320,7 +1320,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -1349,7 +1349,7 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 
     #[test]
@@ -1384,6 +1384,6 @@ mod tests {
             }
         }"#;
 
-        serde_json::from_str::<Inventory>(&json).unwrap();
+        serde_json::from_str::<Inventory>(json).unwrap();
     }
 }
