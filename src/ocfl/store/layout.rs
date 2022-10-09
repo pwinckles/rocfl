@@ -779,13 +779,13 @@ mod tests {
         assert_eq!(
             "T%25HIS%20is%20a%20%c5%a4%c4%99%c8%98%cd%b2%21%40%23%2e",
             lower_percent_escape(
-                &utf8_percent_encode("T%HIS is a ŤęȘͲ!@#.", &NON_ALPHANUMERIC).to_string()
+                &utf8_percent_encode("T%HIS is a ŤęȘͲ!@#.", NON_ALPHANUMERIC).to_string()
             )
         );
         assert_eq!(
             "THIShasNOencodings",
             lower_percent_escape(
-                &utf8_percent_encode("THIShasNOencodings", &NON_ALPHANUMERIC).to_string()
+                &utf8_percent_encode("THIShasNOencodings", NON_ALPHANUMERIC).to_string()
             )
         );
     }

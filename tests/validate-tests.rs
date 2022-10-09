@@ -1406,7 +1406,7 @@ fn validate_invalid_repo() {
     let mut validator = repo.validate_repo(true).unwrap();
 
     has_errors_storage(
-        &validator.storage_root_result(),
+        validator.storage_root_result(),
         &[
             ValidationError::new(
                 ProblemLocation::StorageRoot,
@@ -1421,7 +1421,7 @@ fn validate_invalid_repo() {
         ],
     );
     has_warnings_storage(
-        &validator.storage_root_result(),
+        validator.storage_root_result(),
         &[ValidationWarning::new(
             ProblemLocation::StorageRoot,
             WarnCode::W016,
@@ -1446,7 +1446,7 @@ fn validate_invalid_repo() {
         }
     }
 
-    has_errors_storage(&validator.storage_hierarchy_result(), &[
+    has_errors_storage(validator.storage_hierarchy_result(), &[
         ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072,
                              "Found a file in the storage hierarchy: b01/0ba/world.txt".to_string()),
         ValidationError::new(ProblemLocation::StorageHierarchy, ErrorCode::E072,
@@ -1480,7 +1480,7 @@ fn multiple_root_version_declarations() {
     let mut validator = repo.validate_repo(true).unwrap();
 
     has_errors_storage(
-        &validator.storage_root_result(),
+        validator.storage_root_result(),
         &[ValidationError::new(
             ProblemLocation::StorageRoot,
             ErrorCode::E076,

@@ -137,9 +137,9 @@ fn list_empty_repo() -> Result<()> {
     let repo_root = create_repo_root("empty");
     let repo = OcflRepo::fs_repo(&repo_root, None)?;
 
-    let objects: Vec<ObjectVersionDetails> = repo.list_objects(None)?.flatten().collect();
+    let objects = repo.list_objects(None)?.flatten();
 
-    assert_eq!(0, objects.len());
+    assert_eq!(0, objects.count());
 
     Ok(())
 }
@@ -157,18 +157,16 @@ fn list_repo_with_invalid_objects() -> Result<()> {
 
     let iter = repo.list_objects(None)?;
 
-    for object in iter {
-        if let Ok(object) = object {
-            assert_eq!(
-                object,
-                ObjectVersionDetails {
-                    id: "o2".to_string(),
-                    object_root: object_root.display().to_string(),
-                    digest_algorithm: DigestAlgorithm::Sha512,
-                    version_details: o2_v3_details()
-                }
-            );
-        }
+    for object in iter.flatten() {
+        assert_eq!(
+            object,
+            ObjectVersionDetails {
+                id: "o2".to_string(),
+                object_root: object_root.display().to_string(),
+                digest_algorithm: DigestAlgorithm::Sha512,
+                version_details: o2_v3_details()
+            }
+        );
     }
 
     Ok(())
@@ -734,7 +732,7 @@ fn create_1_1_object() -> Result<()> {
     temp.child("test.txt").write_str("testing").unwrap();
     repo.copy_files_external(
         object_id,
-        &vec![temp.child("test.txt").path()],
+        &[temp.child("test.txt").path()],
         "test.txt",
         false,
     )
@@ -791,7 +789,7 @@ fn copy_files_into_new_object() -> Result<()> {
     create_file(&temp, "test.txt", "testing");
     repo.copy_files_external(
         object_id,
-        &vec![temp.child("test.txt").path()],
+        &[temp.child("test.txt").path()],
         "test.txt",
         false,
     )?;
@@ -801,7 +799,7 @@ fn copy_files_into_new_object() -> Result<()> {
     create_file(&temp, "nested/dir/2.txt", "File 2");
     create_file(&temp, "nested/dir/3.txt", "File 3");
 
-    repo.copy_files_external(object_id, &vec![temp.path()], "another", true)?;
+    repo.copy_files_external(object_id, &[temp.path()], "another", true)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
     let obj_root = PathBuf::from(&staged_obj.object_root);
@@ -932,7 +930,7 @@ fn copy_files_into_existing_object() -> Result<()> {
     create_file(&temp, "test.txt", "testing");
     repo.copy_files_external(
         object_id,
-        &vec![temp.child("test.txt").path()],
+        &[temp.child("test.txt").path()],
         "test.txt",
         false,
     )?;
@@ -949,7 +947,7 @@ fn copy_files_into_existing_object() -> Result<()> {
 
     repo.copy_files_external(
         object_id,
-        &vec![resolve_child(&temp, "nested/dir").path()],
+        &[resolve_child(&temp, "nested/dir").path()],
         "another",
         true,
     )?;
@@ -1038,7 +1036,7 @@ fn copied_files_should_dedup_on_commit() -> Result<()> {
     create_file(&temp, "test.txt", "testing");
     repo.copy_files_external(
         object_id,
-        &vec![temp.child("test.txt").path()],
+        &[temp.child("test.txt").path()],
         "test.txt",
         false,
     )?;
@@ -1047,13 +1045,13 @@ fn copied_files_should_dedup_on_commit() -> Result<()> {
 
     repo.copy_files_external(
         object_id,
-        &vec![temp.child("test.txt").path()],
+        &[temp.child("test.txt").path()],
         "/dir/file.txt",
         false,
     )?;
     repo.copy_files_external(
         object_id,
-        &vec![temp.child("test.txt").path()],
+        &[temp.child("test.txt").path()],
         "another/copy/here/surprise.txt",
         false,
     )?;
@@ -1115,12 +1113,12 @@ fn copy_should_reject_conflicting_files() {
     .unwrap();
 
     let test_file = create_file(&temp, "test.txt", "testing");
-    repo.copy_files_external(object_id, &vec![test_file.path()], "test.txt", false)
+    repo.copy_files_external(object_id, &[test_file.path()], "test.txt", false)
         .unwrap();
 
     repo.copy_files_external(
         object_id,
-        &vec![test_file.path()],
+        &[test_file.path()],
         "test.txt/is/not/a/directory/test.txt",
         false,
     )
@@ -1151,14 +1149,14 @@ fn copy_should_reject_conflicting_dirs() {
     let test_file = create_file(&temp, "test.txt", "testing");
     repo.copy_files_external(
         object_id,
-        &vec![test_file.path()],
+        &[test_file.path()],
         "dir/sub/test.txt",
         false,
     )
     .unwrap();
 
     let test_file_2 = create_file(&temp, "dir", "conflict");
-    repo.copy_files_external(object_id, &vec![test_file_2.path()], "/", false)
+    repo.copy_files_external(object_id, &[test_file_2.path()], "/", false)
         .unwrap();
 }
 
@@ -1180,7 +1178,7 @@ fn copy_to_dir_when_dst_ends_in_slash() -> Result<()> {
     )?;
 
     let test_file = create_file(&temp, "test.txt", "testing");
-    repo.copy_files_external(object_id, &vec![test_file.path()], "dir/", false)?;
+    repo.copy_files_external(object_id, &[test_file.path()], "dir/", false)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
     let staged_root = PathBuf::from(&staged_obj.object_root);
@@ -1219,13 +1217,13 @@ fn copy_into_dir_when_dest_is_existing_dir() -> Result<()> {
     let test_file = create_file(&temp, "test.txt", "testing");
     repo.copy_files_external(
         object_id,
-        &vec![test_file.path()],
+        &[test_file.path()],
         "a/dir/here/test.txt",
         false,
     )?;
 
     let test_file_2 = create_file(&temp, "different.txt", "different");
-    repo.copy_files_external(object_id, &vec![test_file_2.path()], "a/dir", false)?;
+    repo.copy_files_external(object_id, &[test_file_2.path()], "a/dir", false)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
     let staged_root = PathBuf::from(&staged_obj.object_root);
@@ -1263,7 +1261,7 @@ fn fail_copy_when_target_obj_does_not_exist() {
 
     repo.copy_files_external(
         "does-not-exist",
-        &vec![temp.child("test.txt").path()],
+        &[temp.child("test.txt").path()],
         "test.txt",
         false,
     )
@@ -1291,7 +1289,7 @@ fn fail_copy_when_src_does_not_exist() {
 
     repo.copy_files_external(
         object_id,
-        &vec![temp.child("test.txt").path()],
+        &[temp.child("test.txt").path()],
         "test.txt",
         false,
     )
@@ -1320,7 +1318,7 @@ fn fail_copy_when_src_dir_and_recursion_not_enabled() {
     create_dirs(&temp, "sub");
     create_file(&temp, "sub/test.txt", "testing");
 
-    repo.copy_files_external(object_id, &vec![temp.child("sub").path()], "dst", false)
+    repo.copy_files_external(object_id, &[temp.child("sub").path()], "dst", false)
         .unwrap();
 
     let staged_obj = repo.get_staged_object(object_id).unwrap();
@@ -1343,7 +1341,7 @@ fn copy_should_reject_bad_dst() {
 
     repo.copy_files_external(
         object_id,
-        &vec![create_file(&temp, "test.txt", "test").path()],
+        &[create_file(&temp, "test.txt", "test").path()],
         "some/../../dir",
         false,
     )
@@ -1372,7 +1370,7 @@ fn copy_should_partially_succeed_when_multiple_src_and_some_fail() {
 
     let result = repo.copy_files_external(
         object_id,
-        &vec![temp.child("bogus").path(), temp.child("test.txt").path()],
+        &[temp.child("bogus").path(), temp.child("test.txt").path()],
         "dst",
         false,
     );
@@ -1430,7 +1428,7 @@ fn copy_multiple_sources() -> Result<()> {
 
     repo.copy_files_external(
         object_id,
-        &vec![
+        &[
             resolve_child(&temp, "a/b").path(),
             resolve_child(&temp, "a/d").path(),
             resolve_child(&temp, "a/file1.txt").path(),
@@ -1503,7 +1501,7 @@ fn create_object_with_non_standard_config() {
 
     repo.copy_files_external(
         object_id,
-        &vec![temp.child("test.txt").path()],
+        &[temp.child("test.txt").path()],
         "test.txt",
         false,
     )
@@ -1738,7 +1736,7 @@ fn object_commit_when_no_known_storage_layout_and_root_specified() {
 
     repo.copy_files_external(
         object_id,
-        &vec![create_file(&temp, "test.txt", "testing").path()],
+        &[create_file(&temp, "test.txt", "testing").path()],
         "test.txt",
         false,
     )
@@ -1780,7 +1778,7 @@ fn fail_object_commit_when_no_known_storage_layout_and_root_specified_and_obj_al
 
     repo.copy_files_external(
         object_id,
-        &vec![create_file(&temp, "test.txt", "testing").path()],
+        &[create_file(&temp, "test.txt", "testing").path()],
         "test.txt",
         false,
     )
@@ -1813,7 +1811,7 @@ fn fail_object_commit_when_no_known_storage_layout_and_root_specified_and_obj_al
 
     repo.copy_files_external(
         object_2_id,
-        &vec![resolve_child(&temp, "test.txt").path()],
+        &[resolve_child(&temp, "test.txt").path()],
         "test.txt",
         false,
     )
@@ -1837,7 +1835,7 @@ fn internal_copy_single_existing_file() -> Result<()> {
     repo.copy_files_internal(
         object_id,
         VersionRef::Head,
-        &vec!["a/file1.txt"],
+        &["a/file1.txt"],
         "new/blah.txt",
         false,
     )?;
@@ -1891,7 +1889,7 @@ fn internal_copy_multiple_existing_file() -> Result<()> {
     repo.copy_files_internal(
         object_id,
         1.try_into()?,
-        &vec!["a/b/*", "a/d/e/file5.txt"],
+        &["a/b/*", "a/d/e/file5.txt"],
         "new-dir",
         false,
     )?;
@@ -1971,7 +1969,7 @@ fn internal_copy_files_added_in_staged_version() -> Result<()> {
 
     repo.copy_files_external(
         object_id,
-        &vec![create_file(&temp, "just in.txt", "new file").path()],
+        &[create_file(&temp, "just in.txt", "new file").path()],
         "just in.txt",
         true,
     )?;
@@ -1979,7 +1977,7 @@ fn internal_copy_files_added_in_staged_version() -> Result<()> {
     repo.copy_files_internal(
         object_id,
         VersionRef::Head,
-        &vec!["just in.txt"],
+        &["just in.txt"],
         "just-in.txt",
         false,
     )?;
@@ -2040,7 +2038,7 @@ fn internal_copy_files_with_recursive_glob() -> Result<()> {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.copy_files_internal(object_id, 3.try_into()?, &vec!["a/*"], "copied", true)?;
+    repo.copy_files_internal(object_id, 3.try_into()?, &["a/*"], "copied", true)?;
 
     let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
     let staged_obj = repo.get_staged_object(object_id)?;
@@ -2136,7 +2134,7 @@ fn internal_copy_should_reject_conflicting_files() {
     repo.copy_files_internal(
         object_id,
         VersionRef::Head,
-        &vec!["a/file1.txt"],
+        &["a/file1.txt"],
         "file3.txt/file1.txt",
         false,
     )
@@ -2159,13 +2157,13 @@ fn internal_copy_should_reject_conflicting_dirs() {
 
     repo.copy_files_external(
         object_id,
-        &vec![create_file(&temp, "b", "b").path()],
+        &[create_file(&temp, "b", "b").path()],
         "b",
         true,
     )
     .unwrap();
 
-    repo.copy_files_internal(object_id, VersionRef::Head, &vec!["b"], "a", false)
+    repo.copy_files_internal(object_id, VersionRef::Head, &["b"], "a", false)
         .unwrap();
 }
 
@@ -2186,7 +2184,7 @@ fn internal_copy_should_reject_bad_dst() {
     repo.copy_files_internal(
         object_id,
         VersionRef::Head,
-        &vec!["file3.txt"],
+        &["file3.txt"],
         "some/../../dir",
         false,
     )
@@ -2207,7 +2205,7 @@ fn internal_copy_should_continue_on_partial_success() -> Result<()> {
     let result = repo.copy_files_internal(
         object_id,
         VersionRef::Head,
-        &vec!["a/file1.txt", "bogus.txt", "a/file5.txt"],
+        &["a/file1.txt", "bogus.txt", "a/file5.txt"],
         "new-dir",
         false,
     );
@@ -2274,7 +2272,7 @@ fn move_files_into_new_object() -> Result<()> {
 
     repo.move_files_external(
         object_id,
-        &vec![
+        &[
             temp.child("test.txt").path(),
             resolve_child(&temp, "nested").path(),
         ],
@@ -2381,7 +2379,7 @@ fn move_files_into_existing_object() -> Result<()> {
 
     repo.move_files_external(
         object_id,
-        &vec![resolve_child(&temp, "nested/dir").path()],
+        &[resolve_child(&temp, "nested/dir").path()],
         "another",
     )?;
 
@@ -2449,7 +2447,7 @@ fn move_files_should_dedup_on_commit() -> Result<()> {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "test.txt", "testing").path()],
+        &[create_file(&temp, "test.txt", "testing").path()],
         "test.txt",
     )?;
 
@@ -2457,12 +2455,12 @@ fn move_files_should_dedup_on_commit() -> Result<()> {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "test.txt", "testing").path()],
+        &[create_file(&temp, "test.txt", "testing").path()],
         "/dir/file.txt",
     )?;
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "test.txt", "testing").path()],
+        &[create_file(&temp, "test.txt", "testing").path()],
         "another/copy/here/surprise.txt",
     )?;
 
@@ -2539,14 +2537,14 @@ fn move_should_reject_conflicting_files() {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "test.txt", "testing").path()],
+        &[create_file(&temp, "test.txt", "testing").path()],
         "test.txt",
     )
     .unwrap();
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "test.txt", "testing").path()],
+        &[create_file(&temp, "test.txt", "testing").path()],
         "test.txt/is/not/a/directory/test.txt",
     )
     .unwrap();
@@ -2575,14 +2573,14 @@ fn move_should_reject_conflicting_dirs() {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "test.txt", "testing").path()],
+        &[create_file(&temp, "test.txt", "testing").path()],
         "dir/sub/test.txt",
     )
     .unwrap();
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "dir", "conflict").path()],
+        &[create_file(&temp, "dir", "conflict").path()],
         "/",
     )
     .unwrap();
@@ -2604,7 +2602,7 @@ fn move_should_reject_bad_dst() {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "test.txt", "testing").path()],
+        &[create_file(&temp, "test.txt", "testing").path()],
         "some/../../dir",
     )
     .unwrap();
@@ -2629,7 +2627,7 @@ fn move_into_dir_when_dst_ends_with_slash() -> Result<()> {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "test.txt", "testing").path()],
+        &[create_file(&temp, "test.txt", "testing").path()],
         "dir/",
     )?;
 
@@ -2668,13 +2666,13 @@ fn move_into_dir_when_dest_is_existing_dir() -> Result<()> {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "test.txt", "testing").path()],
+        &[create_file(&temp, "test.txt", "testing").path()],
         "a/dir/here/test.txt",
     )?;
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "different.txt", "different").path()],
+        &[create_file(&temp, "different.txt", "different").path()],
         "a/dir",
     )?;
 
@@ -2710,7 +2708,7 @@ fn fail_move_when_target_obj_does_not_exist() {
 
     repo.move_files_external(
         "does-not-exist",
-        &vec![create_file(&temp, "test.txt", "testing").path()],
+        &[create_file(&temp, "test.txt", "testing").path()],
         "test.txt",
     )
     .unwrap();
@@ -2735,7 +2733,7 @@ fn fail_move_when_src_does_not_exist() {
     )
     .unwrap();
 
-    repo.move_files_external(object_id, &vec![temp.child("test.txt").path()], "test.txt")
+    repo.move_files_external(object_id, &[temp.child("test.txt").path()], "test.txt")
         .unwrap();
 }
 
@@ -2761,7 +2759,7 @@ fn move_should_partially_succeed_when_multiple_src_and_some_fail() {
 
     let result = repo.move_files_external(
         object_id,
-        &vec![temp.child("bogus").path(), temp.child("test.txt").path()],
+        &[temp.child("bogus").path(), temp.child("test.txt").path()],
         "dst",
     );
 
@@ -2812,7 +2810,7 @@ fn fail_copy_when_conflicting_src() {
 
     match repo.copy_files_external(
         object_id,
-        &vec![
+        &[
             resolve_child(&temp, "a/test").path(),
             resolve_child(&temp, "b/test").path(),
         ],
@@ -2853,7 +2851,7 @@ fn internal_move_single_existing_file() -> Result<()> {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.move_files_internal(object_id, &vec!["a/file1.txt"], "new/blah.txt")?;
+    repo.move_files_internal(object_id, &["a/file1.txt"], "new/blah.txt")?;
 
     let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
     let staged_obj = repo.get_staged_object(object_id)?;
@@ -2899,7 +2897,7 @@ fn internal_move_multiple_existing_file() -> Result<()> {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.move_files_internal(object_id, &vec!["a/*.txt", "a/b"], "new-dir")?;
+    repo.move_files_internal(object_id, &["a/*.txt", "a/b"], "new-dir")?;
 
     let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
     let staged_obj = repo.get_staged_object(object_id)?;
@@ -2984,7 +2982,7 @@ fn internal_move_should_continue_on_partial_success() -> Result<()> {
 
     let result = repo.move_files_internal(
         object_id,
-        &vec!["a/file1.txt", "bogus.txt", "a/file5.txt"],
+        &["a/file1.txt", "bogus.txt", "a/file5.txt"],
         "new-dir",
     );
 
@@ -3038,12 +3036,12 @@ fn internal_move_files_added_in_staged_version() {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "just in.txt", "new file").path()],
+        &[create_file(&temp, "just in.txt", "new file").path()],
         "just in.txt",
     )
     .unwrap();
 
-    repo.move_files_internal(object_id, &vec!["just in.txt"], "just-in.txt")
+    repo.move_files_internal(object_id, &["just in.txt"], "just-in.txt")
         .unwrap();
 
     let staged_obj = repo.get_staged_object(object_id).unwrap();
@@ -3091,7 +3089,7 @@ fn internal_move_should_reject_conflicting_files() {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.move_files_internal(object_id, &vec!["a/file1.txt"], "file3.txt/file1.txt")
+    repo.move_files_internal(object_id, &["a/file1.txt"], "file3.txt/file1.txt")
         .unwrap();
 }
 
@@ -3109,10 +3107,10 @@ fn internal_move_should_reject_conflicting_dirs() {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.move_files_external(object_id, &vec![create_file(&temp, "b", "b").path()], "b")
+    repo.move_files_external(object_id, &[create_file(&temp, "b", "b").path()], "b")
         .unwrap();
 
-    repo.move_files_internal(object_id, &vec!["b"], "a")
+    repo.move_files_internal(object_id, &["b"], "a")
         .unwrap();
 }
 
@@ -3130,7 +3128,7 @@ fn internal_move_should_reject_bad_dst() {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.move_files_internal(object_id, &vec!["file1.txt"], "some/../../dir")
+    repo.move_files_internal(object_id, &["file1.txt"], "some/../../dir")
         .unwrap();
 }
 
@@ -3145,7 +3143,7 @@ fn remove_existing_file() -> Result<()> {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.remove_files(object_id, &vec!["a/file5.txt"], false)?;
+    repo.remove_files(object_id, &["a/file5.txt"], false)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -3178,7 +3176,7 @@ fn remove_multiple_existing_files() -> Result<()> {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.remove_files(object_id, &vec!["a/file5.txt", "something/new.txt"], false)?;
+    repo.remove_files(object_id, &["a/file5.txt", "something/new.txt"], false)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -3220,7 +3218,7 @@ fn remove_globs() -> Result<()> {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.remove_files(object_id, &vec!["a/*"], false)?;
+    repo.remove_files(object_id, &["a/*"], false)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -3257,7 +3255,7 @@ fn remove_recursive() -> Result<()> {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.remove_files(object_id, &vec!["*/*"], true)?;
+    repo.remove_files(object_id, &["*/*"], true)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -3286,7 +3284,7 @@ fn remove_files_that_do_not_exist_should_do_nothing() -> Result<()> {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.remove_files(object_id, &vec!["bogus", "file3.txt"], true)?;
+    repo.remove_files(object_id, &["bogus", "file3.txt"], true)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -3310,7 +3308,7 @@ fn reset_newly_added_files() -> Result<()> {
 
     repo.move_files_external(
         object_id,
-        &vec![
+        &[
             create_file(&temp, "new.txt", "new file").path(),
             create_file(&temp, "new2.txt", "new file2").path(),
         ],
@@ -3335,7 +3333,7 @@ fn reset_newly_added_files() -> Result<()> {
         "104d021d7891c889c85c12e83e35ba1c5327c4415878c69372fe71e8f3992a28",
     );
 
-    repo.reset(object_id, &vec!["new.txt"], false)?;
+    repo.reset(object_id, &["new.txt"], false)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -3382,14 +3380,14 @@ fn reset_copied_file() -> Result<()> {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "new.txt", "new file").path()],
+        &[create_file(&temp, "new.txt", "new file").path()],
         "/",
     )?;
 
     repo.copy_files_internal(
         object_id,
         VersionRef::Head,
-        &vec!["new.txt"],
+        &["new.txt"],
         "new (copy).txt",
         false,
     )?;
@@ -3412,7 +3410,7 @@ fn reset_copied_file() -> Result<()> {
         "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
     );
 
-    repo.reset(object_id, &vec!["new.txt"], false)?;
+    repo.reset(object_id, &["new.txt"], false)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -3454,7 +3452,7 @@ fn reset_changes_to_existing_files() -> Result<()> {
 
     repo.move_files_external(
         object_id,
-        &vec![
+        &[
             create_file(&temp, "file1.txt", "update").path(),
             create_file(&temp, "file5.txt", "update 2").path(),
         ],
@@ -3479,7 +3477,7 @@ fn reset_changes_to_existing_files() -> Result<()> {
         "0c23cc2b5985555eeb46bda05d886e2281c00731bcfc5aca22e00a4d4baa6100",
     );
 
-    repo.reset(object_id, &vec!["a/*"], false)?;
+    repo.reset(object_id, &["a/*"], false)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -3534,7 +3532,7 @@ fn reset_removed_file() -> Result<()> {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.remove_files(object_id, &vec!["a"], true)?;
+    repo.remove_files(object_id, &["a"], true)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -3545,7 +3543,7 @@ fn reset_removed_file() -> Result<()> {
     assert!(staged_obj.state.get(&lpath("a/b/file2.txt")).is_none());
     assert!(staged_obj.state.get(&lpath("a/f/file6.txt")).is_none());
 
-    repo.reset(object_id, &vec!["a/f"], true)?;
+    repo.reset(object_id, &["a/f"], true)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -3595,7 +3593,7 @@ fn reset_all() {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.remove_files(object_id, &vec!["*"], true).unwrap();
+    repo.remove_files(object_id, &["*"], true).unwrap();
 
     let staged_obj = repo.get_staged_object(object_id).unwrap();
 
@@ -3617,11 +3615,11 @@ fn reset_complex_changes_without_conflict() -> Result<()> {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.remove_files(object_id, &vec!["a"], true)?;
+    repo.remove_files(object_id, &["a"], true)?;
 
-    repo.move_files_external(object_id, &vec![create_file(&temp, "b", "b").path()], "a/b")?;
+    repo.move_files_external(object_id, &[create_file(&temp, "b", "b").path()], "a/b")?;
 
-    repo.move_files_internal(object_id, &vec!["file3.txt"], "a/file1.txt/file3.txt")?;
+    repo.move_files_internal(object_id, &["file3.txt"], "a/file1.txt/file3.txt")?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -3638,7 +3636,7 @@ fn reset_complex_changes_without_conflict() -> Result<()> {
         .get(&lpath("a/file1.txt/file3.txt"))
         .is_some());
 
-    repo.reset(object_id, &vec!["*"], true)?;
+    repo.reset(object_id, &["*"], true)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
 
@@ -3668,12 +3666,12 @@ fn fail_reset_when_conflicted() {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.remove_files(object_id, &vec!["a"], true).unwrap();
+    repo.remove_files(object_id, &["a"], true).unwrap();
 
-    repo.move_files_external(object_id, &vec![create_file(&temp, "b", "b").path()], "a/b")
+    repo.move_files_external(object_id, &[create_file(&temp, "b", "b").path()], "a/b")
         .unwrap();
 
-    repo.move_files_internal(object_id, &vec!["file3.txt"], "a/file1.txt/file3.txt")
+    repo.move_files_internal(object_id, &["file3.txt"], "a/file1.txt/file3.txt")
         .unwrap();
 
     let staged_obj = repo.get_staged_object(object_id).unwrap();
@@ -3691,7 +3689,7 @@ fn fail_reset_when_conflicted() {
         .get(&lpath("a/file1.txt/file3.txt"))
         .is_some());
 
-    repo.reset(object_id, &vec!["a/file1.txt"], false).unwrap();
+    repo.reset(object_id, &["a/file1.txt"], false).unwrap();
 }
 
 #[test]
@@ -3705,12 +3703,12 @@ fn reset_should_do_nothing_when_path_does_not_exist() -> Result<()> {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.remove_files(object_id, &vec!["a"], true)?;
+    repo.remove_files(object_id, &["a"], true)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
     assert_eq!(3, staged_obj.state.len());
 
-    repo.reset(object_id, &vec!["bogus"], true)?;
+    repo.reset(object_id, &["bogus"], true)?;
 
     let staged_obj = repo.get_staged_object(object_id)?;
     assert_eq!(3, staged_obj.state.len());
@@ -3730,7 +3728,7 @@ fn reset_should_do_nothing_if_object_has_no_changes() -> Result<()> {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.reset(object_id, &vec!["bogus"], true)?;
+    repo.reset(object_id, &["bogus"], true)?;
 
     if let Err(RocflError::NotFound(_)) = repo.get_staged_object(object_id) {
         validate_repo(&repo);
@@ -3747,7 +3745,7 @@ fn reset_should_do_nothing_if_object_does_not_exist() -> Result<()> {
 
     let object_id = "missing";
 
-    repo.reset(object_id, &vec!["bogus"], true)?;
+    repo.reset(object_id, &["bogus"], true)?;
 
     assert_staged_obj_not_exists(&repo, object_id);
 
@@ -3787,7 +3785,7 @@ fn purge_should_remove_object_from_repo_and_staging() -> Result<()> {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "blah", "blah").path()],
+        &[create_file(&temp, "blah", "blah").path()],
         "blah",
     )?;
 
@@ -3835,7 +3833,7 @@ fn commit_should_use_custom_meta_when_provided() -> Result<()> {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "blah", "blah").path()],
+        &[create_file(&temp, "blah", "blah").path()],
         "blah",
     )?;
 
@@ -3881,7 +3879,7 @@ fn commit_should_use_custom_meta_when_mixture_provided() -> Result<()> {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "blah", "blah").path()],
+        &[create_file(&temp, "blah", "blah").path()],
         "blah",
     )?;
 
@@ -3925,7 +3923,7 @@ fn commit_should_pretty_print_inventory() {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "blah", "blah").path()],
+        &[create_file(&temp, "blah", "blah").path()],
         "blah",
     )
     .unwrap();
@@ -3993,7 +3991,7 @@ fn commit_should_fail_when_address_and_no_name() {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "blah", "blah").path()],
+        &[create_file(&temp, "blah", "blah").path()],
         "blah",
     )
     .unwrap();
@@ -4026,7 +4024,7 @@ fn commit_should_fail_when_object_has_no_changes() {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "blah", "blah").path()],
+        &[create_file(&temp, "blah", "blah").path()],
         "blah",
     )
     .unwrap();
@@ -4066,7 +4064,7 @@ fn commit_should_remove_staged_object() -> Result<()> {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "blah", "blah").path()],
+        &[create_file(&temp, "blah", "blah").path()],
         "blah",
     )?;
 
@@ -4093,7 +4091,7 @@ fn get_staged_object_file_when_exists_in_staged_version() -> Result<()> {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "blah", "blah").path()],
+        &[create_file(&temp, "blah", "blah").path()],
         "blah",
     )?;
 
@@ -4120,7 +4118,7 @@ fn get_staged_object_file_when_exists_in_prior_version() -> Result<()> {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "blah", "blah").path()],
+        &[create_file(&temp, "blah", "blah").path()],
         "blah",
     )?;
 
@@ -4148,7 +4146,7 @@ fn fail_get_staged_object_file_when_does_not_exist() {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "blah", "blah").path()],
+        &[create_file(&temp, "blah", "blah").path()],
         "blah",
     )
     .unwrap();
@@ -4208,14 +4206,14 @@ fn diff_should_detect_multi_origin_rename() -> Result<()> {
 
     let file = create_file(&temp, "file.txt", "some file");
 
-    repo.copy_files_external(object_id, &vec![file.path()], "file-1.txt", false)?;
-    repo.copy_files_external(object_id, &vec![file.path()], "file-2.txt", false)?;
-    repo.copy_files_external(object_id, &vec![file.path()], "file-3.txt", false)?;
+    repo.copy_files_external(object_id, &[file.path()], "file-1.txt", false)?;
+    repo.copy_files_external(object_id, &[file.path()], "file-2.txt", false)?;
+    repo.copy_files_external(object_id, &[file.path()], "file-3.txt", false)?;
 
     commit(object_id, &repo);
 
-    repo.move_files_internal(object_id, &vec!["file-1.txt"], "moved.txt")?;
-    repo.remove_files(object_id, &vec!["file-2.txt"], false)?;
+    repo.move_files_internal(object_id, &["file-1.txt"], "moved.txt")?;
+    repo.remove_files(object_id, &["file-2.txt"], false)?;
 
     commit(object_id, &repo);
 
@@ -4254,17 +4252,17 @@ fn diff_should_detect_multi_dest_rename() -> Result<()> {
 
     let file = create_file(&temp, "file.txt", "some file");
 
-    repo.copy_files_external(object_id, &vec![file.path()], "file-1.txt", false)?;
-    repo.copy_files_external(object_id, &vec![file.path()], "file-2.txt", false)?;
-    repo.copy_files_external(object_id, &vec![file.path()], "file-3.txt", false)?;
+    repo.copy_files_external(object_id, &[file.path()], "file-1.txt", false)?;
+    repo.copy_files_external(object_id, &[file.path()], "file-2.txt", false)?;
+    repo.copy_files_external(object_id, &[file.path()], "file-3.txt", false)?;
 
     commit(object_id, &repo);
 
-    repo.move_files_internal(object_id, &vec!["file-1.txt"], "moved.txt")?;
+    repo.move_files_internal(object_id, &["file-1.txt"], "moved.txt")?;
     repo.copy_files_internal(
         object_id,
         VersionRef::Head,
-        &vec!["file-2.txt"],
+        &["file-2.txt"],
         "moved-2.txt",
         false,
     )?;
@@ -4306,14 +4304,14 @@ fn diff_should_detect_multi_src_multi_dest_rename() -> Result<()> {
 
     let file = create_file(&temp, "file.txt", "some file");
 
-    repo.copy_files_external(object_id, &vec![file.path()], "file-1.txt", false)?;
-    repo.copy_files_external(object_id, &vec![file.path()], "file-2.txt", false)?;
-    repo.copy_files_external(object_id, &vec![file.path()], "file-3.txt", false)?;
+    repo.copy_files_external(object_id, &[file.path()], "file-1.txt", false)?;
+    repo.copy_files_external(object_id, &[file.path()], "file-2.txt", false)?;
+    repo.copy_files_external(object_id, &[file.path()], "file-3.txt", false)?;
 
     commit(object_id, &repo);
 
-    repo.move_files_internal(object_id, &vec!["file-1.txt"], "moved.txt")?;
-    repo.move_files_internal(object_id, &vec!["file-2.txt"], "moved-2.txt")?;
+    repo.move_files_internal(object_id, &["file-1.txt"], "moved.txt")?;
+    repo.move_files_internal(object_id, &["file-2.txt"], "moved-2.txt")?;
 
     commit(object_id, &repo);
 
@@ -4344,18 +4342,18 @@ fn diff_staged_changes_when_some() -> Result<()> {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.remove_files(object_id, &vec!["a/file5.txt"], false)?;
+    repo.remove_files(object_id, &["a/file5.txt"], false)?;
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "new.txt", "new").path()],
+        &[create_file(&temp, "new.txt", "new").path()],
         "/",
     )?;
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "update.txt", "update").path()],
+        &[create_file(&temp, "update.txt", "update").path()],
         "a/file1.txt",
     )?;
-    repo.move_files_internal(object_id, &vec!["a/f/file6.txt"], "a")?;
+    repo.move_files_internal(object_id, &["a/f/file6.txt"], "a")?;
 
     let mut diff = repo.diff_staged(object_id)?;
 
@@ -4417,21 +4415,21 @@ fn internal_copy_of_new_file_should_copy_file_on_disk() {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "a-file.txt", "contents").path()],
+        &[create_file(&temp, "a-file.txt", "contents").path()],
         "/",
     )
     .unwrap();
     repo.copy_files_internal(
         object_id,
         VersionRef::Head,
-        &vec!["a-file.txt"],
+        &["a-file.txt"],
         "b-file.txt",
         false,
     )
     .unwrap();
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "a-file.txt", "different!").path()],
+        &[create_file(&temp, "a-file.txt", "different!").path()],
         "/",
     )
     .unwrap();
@@ -4477,15 +4475,15 @@ fn internal_move_of_new_file_should_move_file_on_disk() {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "a-file.txt", "contents").path()],
+        &[create_file(&temp, "a-file.txt", "contents").path()],
         "/",
     )
     .unwrap();
-    repo.move_files_internal(object_id, &vec!["a-file.txt"], "b-file.txt")
+    repo.move_files_internal(object_id, &["a-file.txt"], "b-file.txt")
         .unwrap();
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "a-file.txt", "different!").path()],
+        &[create_file(&temp, "a-file.txt", "different!").path()],
         "/",
     )
     .unwrap();
@@ -4531,13 +4529,13 @@ fn internal_move_of_new_file_should_move_file_on_disk_and_not_leave_empty_dirs()
 
     create_file(&temp, "dir/a-file.txt", "contents").path();
 
-    repo.move_files_external(object_id, &vec![resolve_child(&temp, "dir").path()], "/")
+    repo.move_files_external(object_id, &[resolve_child(&temp, "dir").path()], "/")
         .unwrap();
-    repo.move_files_internal(object_id, &vec!["dir/a-file.txt"], "b-file.txt")
+    repo.move_files_internal(object_id, &["dir/a-file.txt"], "b-file.txt")
         .unwrap();
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "dir", "different!").path()],
+        &[create_file(&temp, "dir", "different!").path()],
         "/",
     )
     .unwrap();
@@ -4583,7 +4581,7 @@ fn internal_copy_of_duplicate_file_should_operate_on_staged_version() {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "a-file.txt", "contents").path()],
+        &[create_file(&temp, "a-file.txt", "contents").path()],
         "/",
     )
     .unwrap();
@@ -4592,7 +4590,7 @@ fn internal_copy_of_duplicate_file_should_operate_on_staged_version() {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "a-file-2.txt", "contents").path()],
+        &[create_file(&temp, "a-file-2.txt", "contents").path()],
         "/",
     )
     .unwrap();
@@ -4600,14 +4598,14 @@ fn internal_copy_of_duplicate_file_should_operate_on_staged_version() {
     repo.copy_files_internal(
         object_id,
         VersionRef::Head,
-        &vec!["a-file-2.txt"],
+        &["a-file-2.txt"],
         "b-file.txt",
         false,
     )
     .unwrap();
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "a-file.txt", "different!").path()],
+        &[create_file(&temp, "a-file.txt", "different!").path()],
         "/",
     )
     .unwrap();
@@ -4671,7 +4669,7 @@ fn fail_commit_when_staged_version_out_of_sync_with_main() {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "a-file.txt", "contents").path()],
+        &[create_file(&temp, "a-file.txt", "contents").path()],
         "/",
     )
     .unwrap();
@@ -4690,7 +4688,7 @@ fn fail_commit_when_staged_version_out_of_sync_with_main() {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "b-file.txt", "another").path()],
+        &[create_file(&temp, "b-file.txt", "another").path()],
         "/",
     )
     .unwrap();
@@ -4739,7 +4737,7 @@ fn do_not_stage_changes_for_objects_with_mutable_heads() {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "test.txt", "testing").path()],
+        &[create_file(&temp, "test.txt", "testing").path()],
         "/",
     )
     .unwrap();
@@ -4766,7 +4764,7 @@ fn create_and_update_object_in_repo_with_no_layout() {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "test.txt", "testing").path()],
+        &[create_file(&temp, "test.txt", "testing").path()],
         "test.txt",
     )
     .unwrap();
@@ -4789,7 +4787,7 @@ fn create_and_update_object_in_repo_with_no_layout() {
     if std::path::MAIN_SEPARATOR == '\\' {
         assert!(obj
             .object_root
-            .replace("\\", "/")
+            .replace('\\', "/")
             .ends_with(&format!("/{}", object_root)));
     } else {
         assert!(obj.object_root.ends_with(&format!("/{}", object_root)));
@@ -4797,7 +4795,7 @@ fn create_and_update_object_in_repo_with_no_layout() {
 
     repo.move_files_external(
         object_id,
-        &vec![create_file(&temp, "test2.txt", "testing2").path()],
+        &[create_file(&temp, "test2.txt", "testing2").path()],
         "test2.txt",
     )
     .unwrap();
@@ -4852,7 +4850,7 @@ fn fail_when_incorrect_object_in_root() {
     .unwrap();
     repo.move_files_external(
         object_id_1,
-        &vec![create_file(&temp, "file1.txt", "one").path()],
+        &[create_file(&temp, "file1.txt", "one").path()],
         "/",
     )
     .unwrap();
@@ -5033,13 +5031,13 @@ fn create_simple_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
     temp.child("test.txt").write_str("testing").unwrap();
     repo.copy_files_external(
         object_id,
-        &vec![temp.child("test.txt").path()],
+        &[temp.child("test.txt").path()],
         "test.txt",
         false,
     )
     .unwrap();
 
-    commit(object_id, &repo);
+    commit(object_id, repo);
 }
 
 /// # v1
@@ -5098,20 +5096,20 @@ fn create_example_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
     create_file(temp, "a/d/e/file5.txt", "File Five");
     create_file(temp, "a/f/file6.txt", "File Six");
 
-    repo.move_files_external(object_id, &vec![temp.child("a").path()], "/")
+    repo.move_files_external(object_id, &[temp.child("a").path()], "/")
         .unwrap();
 
-    commit(object_id, &repo);
+    commit(object_id, repo);
 
-    repo.remove_files(object_id, &vec!["a/b/file3.txt", "a/b/c/file4.txt"], false)
+    repo.remove_files(object_id, &["a/b/file3.txt", "a/b/c/file4.txt"], false)
         .unwrap();
 
-    commit(object_id, &repo);
+    commit(object_id, repo);
 
     repo.copy_files_internal(
         object_id,
         1.try_into().unwrap(),
-        &vec!["a/b/file3.txt"],
+        &["a/b/file3.txt"],
         "/",
         false,
     )
@@ -5119,7 +5117,7 @@ fn create_example_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
     repo.copy_files_internal(
         object_id,
         1.try_into().unwrap(),
-        &vec!["a/file1.txt"],
+        &["a/file1.txt"],
         "something/file1.txt",
         false,
     )
@@ -5129,26 +5127,26 @@ fn create_example_object(object_id: &str, repo: &OcflRepo, temp: &TempDir) {
 
     repo.copy_files_external(
         object_id,
-        &vec![create_file(temp, "something/new.txt", "NEW").path()],
+        &[create_file(temp, "something/new.txt", "NEW").path()],
         "something/new.txt",
         true,
     )
     .unwrap();
 
-    commit(object_id, &repo);
+    commit(object_id, repo);
 
     repo.copy_files_external(
         object_id,
-        &vec![create_file(temp, "file6.txt", "UPDATED!").path()],
+        &[create_file(temp, "file6.txt", "UPDATED!").path()],
         "a/f/file6.txt",
         true,
     )
     .unwrap();
 
-    repo.move_files_internal(object_id, &vec!["a/d/e/file5.txt"], "a/file5.txt")
+    repo.move_files_internal(object_id, &["a/d/e/file5.txt"], "a/file5.txt")
         .unwrap();
 
-    commit(object_id, &repo);
+    commit(object_id, repo);
 }
 
 fn commit(object_id: &str, repo: &OcflRepo) {
@@ -5228,12 +5226,12 @@ fn copy_existing_repo(name: &str, root: &TempDir) {
     fs_extra::dir::copy(&path, root.path(), &options).unwrap();
 }
 
-fn sort_obj_details(objects: &mut Vec<ObjectVersionDetails>) {
+fn sort_obj_details(objects: &mut [ObjectVersionDetails]) {
     objects.sort_unstable_by(|a, b| a.id.cmp(&b.id));
 }
 
-fn sort_diffs(diffs: &mut Vec<Diff>) {
-    diffs.sort_unstable_by(|a, b| a.path().cmp(&b.path()))
+fn sort_diffs(diffs: &mut [Diff]) {
+    diffs.sort_unstable_by(|a, b| a.path().cmp(b.path()))
 }
 
 fn join(base: impl AsRef<Path>, parts: &[impl AsRef<Path>]) -> PathBuf {
