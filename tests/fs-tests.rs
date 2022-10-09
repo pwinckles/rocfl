@@ -1147,13 +1147,8 @@ fn copy_should_reject_conflicting_dirs() {
     .unwrap();
 
     let test_file = create_file(&temp, "test.txt", "testing");
-    repo.copy_files_external(
-        object_id,
-        &[test_file.path()],
-        "dir/sub/test.txt",
-        false,
-    )
-    .unwrap();
+    repo.copy_files_external(object_id, &[test_file.path()], "dir/sub/test.txt", false)
+        .unwrap();
 
     let test_file_2 = create_file(&temp, "dir", "conflict");
     repo.copy_files_external(object_id, &[test_file_2.path()], "/", false)
@@ -1215,12 +1210,7 @@ fn copy_into_dir_when_dest_is_existing_dir() -> Result<()> {
     )?;
 
     let test_file = create_file(&temp, "test.txt", "testing");
-    repo.copy_files_external(
-        object_id,
-        &[test_file.path()],
-        "a/dir/here/test.txt",
-        false,
-    )?;
+    repo.copy_files_external(object_id, &[test_file.path()], "a/dir/here/test.txt", false)?;
 
     let test_file_2 = create_file(&temp, "different.txt", "different");
     repo.copy_files_external(object_id, &[test_file_2.path()], "a/dir", false)?;
@@ -2155,13 +2145,8 @@ fn internal_copy_should_reject_conflicting_dirs() {
 
     create_example_object(object_id, &repo, &temp);
 
-    repo.copy_files_external(
-        object_id,
-        &[create_file(&temp, "b", "b").path()],
-        "b",
-        true,
-    )
-    .unwrap();
+    repo.copy_files_external(object_id, &[create_file(&temp, "b", "b").path()], "b", true)
+        .unwrap();
 
     repo.copy_files_internal(object_id, VersionRef::Head, &["b"], "a", false)
         .unwrap();
@@ -3110,8 +3095,7 @@ fn internal_move_should_reject_conflicting_dirs() {
     repo.move_files_external(object_id, &[create_file(&temp, "b", "b").path()], "b")
         .unwrap();
 
-    repo.move_files_internal(object_id, &["b"], "a")
-        .unwrap();
+    repo.move_files_internal(object_id, &["b"], "a").unwrap();
 }
 
 #[test]
