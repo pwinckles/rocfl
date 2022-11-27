@@ -461,7 +461,7 @@ impl OcflStore for FsOcflStore {
         let parent = storage_path.parent().unwrap();
 
         if parent.exists() {
-            if let Err(e) = util::clean_dirs_up(&parent) {
+            if let Err(e) = util::clean_dirs_up(parent) {
                 error!(
                     "Failed to cleanup dangling directories at {}: {}",
                     storage_path.to_string_lossy(),

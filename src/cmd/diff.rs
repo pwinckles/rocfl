@@ -226,10 +226,10 @@ impl<'a> AsRow<'a> for DiffLine {
         for column in columns {
             let cell = match column.id {
                 ColumnId::Operation => match &self.diff {
-                    Diff::Added(_) => TextCell::new(ADDED).with_style(&*style::GREEN),
-                    Diff::Modified(_) => TextCell::new(MODIFIED).with_style(&*style::CYAN),
-                    Diff::Deleted(_) => TextCell::new(DELETED).with_style(&*style::RED),
-                    Diff::Renamed { .. } => TextCell::new(RENAMED).with_style(&*style::CYAN),
+                    Diff::Added(_) => TextCell::new(ADDED).with_style(&style::GREEN),
+                    Diff::Modified(_) => TextCell::new(MODIFIED).with_style(&style::CYAN),
+                    Diff::Deleted(_) => TextCell::new(DELETED).with_style(&style::RED),
+                    Diff::Renamed { .. } => TextCell::new(RENAMED).with_style(&style::CYAN),
                 },
                 ColumnId::LogicalPath => TextCell::new(self.path_display()),
                 _ => TextCell::blank(),
@@ -292,13 +292,13 @@ impl<'a> AsRow<'a> for VersionDetails {
         for column in columns {
             let cell = match column.id {
                 ColumnId::Version => {
-                    TextCell::new(self.version_num.to_string()).with_style(&*style::GREEN)
+                    TextCell::new(self.version_num.to_string()).with_style(&style::GREEN)
                 }
                 ColumnId::Author => TextCell::new(defaulted_str(&self.user_name, DEFAULT_USER))
-                    .with_style(&*style::BOLD),
+                    .with_style(&style::BOLD),
                 ColumnId::Address => TextCell::new(defaulted_str(&self.user_address, DEFAULT_USER)),
                 ColumnId::Created => TextCell::new(self.created.format(DATE_FORMAT).to_string())
-                    .with_style(&*style::YELLOW),
+                    .with_style(&style::YELLOW),
                 ColumnId::Message => match &self.message {
                     Some(message) => TextCell::new(message),
                     None => TextCell::blank(),
