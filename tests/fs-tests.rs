@@ -3824,7 +3824,7 @@ fn commit_should_use_custom_meta_when_provided() -> Result<()> {
     let name = "name";
     let address = "address";
     let message = "message";
-    let created = Local.ymd(2021, 3, 19).and_hms(6, 1, 30);
+    let created = Local.with_ymd_and_hms(2021, 3, 19, 6, 1, 30).unwrap();
 
     let meta = CommitMeta::new()
         .with_user(Some(name.to_string()), Some(address.to_string()))?
@@ -3868,7 +3868,7 @@ fn commit_should_use_custom_meta_when_mixture_provided() -> Result<()> {
     )?;
 
     let message = "new message";
-    let created = Local.ymd(2020, 3, 19).and_hms(6, 1, 30);
+    let created = Local.with_ymd_and_hms(2020, 3, 19, 6, 1, 30).unwrap();
 
     let meta = CommitMeta::new()
         .with_message(Some(message.to_string()))
@@ -3912,7 +3912,7 @@ fn commit_should_pretty_print_inventory() {
     )
     .unwrap();
 
-    let timestamp = Local.ymd(2020, 3, 19).and_hms(6, 1, 30);
+    let timestamp = Local.with_ymd_and_hms(2020, 3, 19, 6, 1, 30).unwrap();
     let meta = CommitMeta::new().with_created(Some(timestamp));
 
     repo.commit(object_id, meta, None, true).unwrap();
