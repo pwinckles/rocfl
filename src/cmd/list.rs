@@ -473,7 +473,7 @@ impl<'a> AsRow<'a> for Listing {
                 for column in columns {
                     let cell = match column.id {
                         ColumnId::LogicalPath => {
-                            TextCell::new(dir.as_str()).with_style(&*style::DEFAULT)
+                            TextCell::new(dir.as_str()).with_style(&style::DEFAULT)
                         }
                         _ => TextCell::blank(),
                     };
@@ -495,7 +495,7 @@ impl<'a> AsRow<'a> for ContentListing {
             let cell = match column.id {
                 ColumnId::Version => {
                     TextCell::new(self.details.last_update.version_num.to_string())
-                        .with_style(&*style::GREEN)
+                        .with_style(&style::GREEN)
                 }
                 ColumnId::Created => TextCell::new(
                     self.details
@@ -504,9 +504,9 @@ impl<'a> AsRow<'a> for ContentListing {
                         .format(DATE_FORMAT)
                         .to_string(),
                 )
-                .with_style(&*style::YELLOW),
+                .with_style(&style::YELLOW),
                 ColumnId::LogicalPath => {
-                    TextCell::new(&self.logical_path).with_style(&*style::BOLD)
+                    TextCell::new(&self.logical_path).with_style(&style::BOLD)
                 }
                 ColumnId::PhysicalPath => TextCell::new(&self.details.storage_path),
                 ColumnId::Digest => TextCell::new(format!(
@@ -530,12 +530,12 @@ impl<'a> AsRow<'a> for ObjectVersionDetails {
         for column in columns {
             let cell = match column.id {
                 ColumnId::Version => TextCell::new(self.version_details.version_num.to_string())
-                    .with_style(&*style::GREEN),
+                    .with_style(&style::GREEN),
                 ColumnId::Created => {
                     TextCell::new(self.version_details.created.format(DATE_FORMAT).to_string())
-                        .with_style(&*style::YELLOW)
+                        .with_style(&style::YELLOW)
                 }
-                ColumnId::ObjectId => TextCell::new(&self.id).with_style(&*style::BOLD),
+                ColumnId::ObjectId => TextCell::new(&self.id).with_style(&style::BOLD),
                 ColumnId::PhysicalPath => TextCell::new(&self.object_root),
                 _ => TextCell::blank(),
             };

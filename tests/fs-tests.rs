@@ -1741,7 +1741,7 @@ fn object_commit_when_no_known_storage_layout_and_root_specified() {
 
     assert_file_details(
         committed_obj.state.get(&lpath("test.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/test.txt",
         "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
     );
@@ -1783,7 +1783,7 @@ fn fail_object_commit_when_no_known_storage_layout_and_root_specified_and_obj_al
 
     assert_file_details(
         committed_obj.state.get(&lpath("test.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/test.txt",
         "cf80cd8aed482d5d1527d7dc72fceff84e6326592848447d2dc0b0e87dfc9a90",
     );
@@ -1837,13 +1837,13 @@ fn internal_copy_single_existing_file() -> Result<()> {
 
     assert_file_details(
         staged_obj.state.get(&lpath("new/blah.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/file1.txt",
         "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
     );
     assert_file_details(
         staged_obj.state.get(&lpath("a/file1.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/file1.txt",
         "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
     );
@@ -1856,7 +1856,7 @@ fn internal_copy_single_existing_file() -> Result<()> {
 
     assert_file_details(
         committed_obj.state.get(&lpath("new/blah.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/file1.txt",
         "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
     );
@@ -1891,19 +1891,19 @@ fn internal_copy_multiple_existing_file() -> Result<()> {
 
     assert_file_details(
         staged_obj.state.get(&lpath("new-dir/file2.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/b/file2.txt",
         "b47592b10bc3e5c8ca8703d0862df10a6e409f43478804f93a08dd1844ae81b6",
     );
     assert_file_details(
         staged_obj.state.get(&lpath("new-dir/file3.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/b/file3.txt",
         "e18fad97c1b6512b1588a1fa2b7f9a0e549df9cfc538ce6943b4f0f4ae78322c",
     );
     assert_file_details(
         staged_obj.state.get(&lpath("new-dir/file5.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/d/e/file5.txt",
         "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
     );
@@ -1919,7 +1919,7 @@ fn internal_copy_multiple_existing_file() -> Result<()> {
             .state
             .get(&lpath("new-dir/file2.txt"))
             .unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/b/file2.txt",
         "b47592b10bc3e5c8ca8703d0862df10a6e409f43478804f93a08dd1844ae81b6",
     );
@@ -1928,7 +1928,7 @@ fn internal_copy_multiple_existing_file() -> Result<()> {
             .state
             .get(&lpath("new-dir/file3.txt"))
             .unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/b/file3.txt",
         "e18fad97c1b6512b1588a1fa2b7f9a0e549df9cfc538ce6943b4f0f4ae78322c",
     );
@@ -1937,7 +1937,7 @@ fn internal_copy_multiple_existing_file() -> Result<()> {
             .state
             .get(&lpath("new-dir/file5.txt"))
             .unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/d/e/file5.txt",
         "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
     );
@@ -1978,13 +1978,13 @@ fn internal_copy_files_added_in_staged_version() -> Result<()> {
 
     assert_file_details(
         staged_obj.state.get(&lpath("just in.txt")).unwrap(),
-        &Path::new(&staged_obj.object_root),
+        Path::new(&staged_obj.object_root),
         "v5/content/just in.txt",
         "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
     );
     assert_file_details(
         staged_obj.state.get(&lpath("just-in.txt")).unwrap(),
-        &Path::new(&staged_obj.object_root),
+        Path::new(&staged_obj.object_root),
         "v5/content/just-in.txt",
         "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
     );
@@ -1996,20 +1996,20 @@ fn internal_copy_files_added_in_staged_version() -> Result<()> {
     assert_eq!(9, committed_obj.state.len());
 
     let deduped_path = assert_deduped_path(
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         committed_obj.state.get(&lpath("just in.txt")).unwrap(),
         &["v5/content/just in.txt", "v5/content/just-in.txt"],
     );
 
     assert_file_details(
         committed_obj.state.get(&lpath("just in.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         (*deduped_path).as_ref(),
         "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
     );
     assert_file_details(
         committed_obj.state.get(&lpath("just-in.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         (*deduped_path).as_ref(),
         "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
     );
@@ -2037,13 +2037,13 @@ fn internal_copy_files_with_recursive_glob() -> Result<()> {
 
     assert_file_details(
         staged_obj.state.get(&lpath("copied/file1.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/file1.txt",
         "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
     );
     assert_file_details(
         staged_obj.state.get(&lpath("copied/b/file2.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/b/file2.txt",
         "b47592b10bc3e5c8ca8703d0862df10a6e409f43478804f93a08dd1844ae81b6",
     );
@@ -2052,13 +2052,13 @@ fn internal_copy_files_with_recursive_glob() -> Result<()> {
             .state
             .get(&lpath("copied/d/e/file5.txt"))
             .unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/d/e/file5.txt",
         "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
     );
     assert_file_details(
         staged_obj.state.get(&lpath("copied/f/file6.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/f/file6.txt",
         "ac055b59cef48e2c34706677198cd8445ad692689be5169f33f1d93f957581e0",
     );
@@ -2071,7 +2071,7 @@ fn internal_copy_files_with_recursive_glob() -> Result<()> {
 
     assert_file_details(
         committed_obj.state.get(&lpath("copied/file1.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/file1.txt",
         "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
     );
@@ -2080,7 +2080,7 @@ fn internal_copy_files_with_recursive_glob() -> Result<()> {
             .state
             .get(&lpath("copied/b/file2.txt"))
             .unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/b/file2.txt",
         "b47592b10bc3e5c8ca8703d0862df10a6e409f43478804f93a08dd1844ae81b6",
     );
@@ -2089,7 +2089,7 @@ fn internal_copy_files_with_recursive_glob() -> Result<()> {
             .state
             .get(&lpath("copied/d/e/file5.txt"))
             .unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/d/e/file5.txt",
         "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
     );
@@ -2098,7 +2098,7 @@ fn internal_copy_files_with_recursive_glob() -> Result<()> {
             .state
             .get(&lpath("copied/f/file6.txt"))
             .unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/f/file6.txt",
         "ac055b59cef48e2c34706677198cd8445ad692689be5169f33f1d93f957581e0",
     );
@@ -2214,13 +2214,13 @@ fn internal_copy_should_continue_on_partial_success() -> Result<()> {
 
     assert_file_details(
         staged_obj.state.get(&lpath("new-dir/file1.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/file1.txt",
         "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
     );
     assert_file_details(
         staged_obj.state.get(&lpath("new-dir/file5.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/d/e/file5.txt",
         "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
     );
@@ -2845,7 +2845,7 @@ fn internal_move_single_existing_file() -> Result<()> {
 
     assert_file_details(
         staged_obj.state.get(&lpath("new/blah.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/file1.txt",
         "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
     );
@@ -2860,7 +2860,7 @@ fn internal_move_single_existing_file() -> Result<()> {
 
     assert_file_details(
         committed_obj.state.get(&lpath("new/blah.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/file1.txt",
         "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
     );
@@ -2891,19 +2891,19 @@ fn internal_move_multiple_existing_file() -> Result<()> {
 
     assert_file_details(
         staged_obj.state.get(&lpath("new-dir/file1.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/file1.txt",
         "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
     );
     assert_file_details(
         staged_obj.state.get(&lpath("new-dir/file5.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/d/e/file5.txt",
         "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
     );
     assert_file_details(
         staged_obj.state.get(&lpath("new-dir/b/file2.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/b/file2.txt",
         "b47592b10bc3e5c8ca8703d0862df10a6e409f43478804f93a08dd1844ae81b6",
     );
@@ -2923,7 +2923,7 @@ fn internal_move_multiple_existing_file() -> Result<()> {
             .state
             .get(&lpath("new-dir/file1.txt"))
             .unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/file1.txt",
         "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
     );
@@ -2932,7 +2932,7 @@ fn internal_move_multiple_existing_file() -> Result<()> {
             .state
             .get(&lpath("new-dir/file5.txt"))
             .unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/d/e/file5.txt",
         "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
     );
@@ -2941,7 +2941,7 @@ fn internal_move_multiple_existing_file() -> Result<()> {
             .state
             .get(&lpath("new-dir/b/file2.txt"))
             .unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/b/file2.txt",
         "b47592b10bc3e5c8ca8703d0862df10a6e409f43478804f93a08dd1844ae81b6",
     );
@@ -2990,13 +2990,13 @@ fn internal_move_should_continue_on_partial_success() -> Result<()> {
 
     assert_file_details(
         staged_obj.state.get(&lpath("new-dir/file1.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/file1.txt",
         "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
     );
     assert_file_details(
         staged_obj.state.get(&lpath("new-dir/file5.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v1/content/a/d/e/file5.txt",
         "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
     );
@@ -3035,7 +3035,7 @@ fn internal_move_files_added_in_staged_version() {
 
     assert_file_details(
         staged_obj.state.get(&lpath("just-in.txt")).unwrap(),
-        &Path::new(&staged_obj.object_root),
+        Path::new(&staged_obj.object_root),
         "v5/content/just-in.txt",
         "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
     );
@@ -3050,7 +3050,7 @@ fn internal_move_files_added_in_staged_version() {
 
     assert_file_details(
         committed_obj.state.get(&lpath("just-in.txt")).unwrap(),
-        &Path::new(&committed_obj.object_root),
+        Path::new(&committed_obj.object_root),
         "v5/content/just-in.txt",
         "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
     );
@@ -3471,13 +3471,13 @@ fn reset_changes_to_existing_files() -> Result<()> {
 
     assert_file_details(
         staged_obj.state.get(&lpath("a/file1.txt")).unwrap(),
-        &Path::new(&object_root),
+        Path::new(&object_root),
         "v1/content/a/file1.txt",
         "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
     );
     assert_file_details(
         staged_obj.state.get(&lpath("a/file5.txt")).unwrap(),
-        &Path::new(&object_root),
+        Path::new(&object_root),
         "v1/content/a/d/e/file5.txt",
         "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
     );
@@ -3490,13 +3490,13 @@ fn reset_changes_to_existing_files() -> Result<()> {
 
     assert_file_details(
         obj.state.get(&lpath("a/file1.txt")).unwrap(),
-        &Path::new(&obj.object_root),
+        Path::new(&obj.object_root),
         "v1/content/a/file1.txt",
         "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
     );
     assert_file_details(
         obj.state.get(&lpath("a/file5.txt")).unwrap(),
-        &Path::new(&obj.object_root),
+        Path::new(&obj.object_root),
         "v1/content/a/d/e/file5.txt",
         "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
     );
