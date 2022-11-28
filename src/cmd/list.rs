@@ -505,9 +505,7 @@ impl<'a> AsRow<'a> for ContentListing {
                         .to_string(),
                 )
                 .with_style(&style::YELLOW),
-                ColumnId::LogicalPath => {
-                    TextCell::new(&self.logical_path).with_style(&style::BOLD)
-                }
+                ColumnId::LogicalPath => TextCell::new(&self.logical_path).with_style(&style::BOLD),
                 ColumnId::PhysicalPath => TextCell::new(&self.details.storage_path),
                 ColumnId::Digest => TextCell::new(format!(
                     "{}:{}",

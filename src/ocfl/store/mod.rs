@@ -197,7 +197,7 @@ pub trait Storage {
 }
 
 /// Represents filesystem entity
-#[derive(Debug, Hash, Eq, PartialEq)]
+#[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Listing<'a> {
     /// A regular file
     File(Cow<'a, str>),
