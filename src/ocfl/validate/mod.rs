@@ -544,7 +544,10 @@ impl<S: Storage> Validator<S> {
     ) -> Result<ObjectValidationResult> {
         info!("Validating object at {}", object_root);
 
-        let root_files = self.storage.list(object_root, false)?;
+        let mut root_files = self.storage.list(object_root, false)?;
+
+        // Sort the files so that the behavior here is deterministic
+        root_files.sort();
 
         if root_files.is_empty() {
             return if let Some(id) = object_id {
