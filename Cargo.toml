@@ -2,7 +2,7 @@
 name = "rocfl"
 version = "1.7.1-alpha.0"
 authors = ["Peter Winckles <pwinckles@pm.me>"]
-edition = "2021"
+edition = "2024"
 description= "A CLI for OCFL repositories"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
@@ -40,19 +40,19 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Errors
 # TODO consider switching to snafu
-thiserror = "1"
+thiserror = "2"
 
 # Strings
 natord = "1"
 percent-encoding = "2"
 regex = "1"
-unicode-width = "0.1"
+unicode-width = "0.2"
 uriparse = "0.6"
 
 # Enum features
 enum_dispatch = "0.3"
-strum = "0.24"
-strum_macros = "0.24"
+strum = "0.27"
+strum_macros = "0.27"
 
 # Path handling
 pathdiff = "0.2"
@@ -66,7 +66,7 @@ atty = "0.2"
 
 # Logging
 log = "0.4"
-env_logger = "0.10"
+env_logger = "0.11"
 
 # Digests
 digest = "0.10"
@@ -83,8 +83,8 @@ grep-searcher = "0.1"
 grep-regex = "0.1"
 
 # Config
-directories = "4"
-toml = "0.5"
+directories = "6"
+toml = "0.9"
 edit = "0.1"
 
 # Serialization
@@ -94,21 +94,21 @@ serde_json = "1"
 # AWS S3
 bytes = { version = "1", optional = true }
 futures = { version = "0.3", optional = true }
-rusoto_core = { version = "0.48", default_features = false, features =["rustls"], optional = true }
+rusoto_core = { version = "0.48", default-features = false, features =["rustls"], optional = true }
 rusoto_credential = { version = "0.48", optional = true }
-rusoto_s3 = { version = "0.48", default_features = false, features = ["rustls"], optional = true }
+rusoto_s3 = { version = "0.48", default-features = false, features = ["rustls"], optional = true }
 tokio = { version = "1", features = ["fs"], optional = true }
 
 [dev-dependencies]
-assert_cmd = "1"
+assert_cmd = "2"
 assert_fs = "1"
 fs_extra = "1"
 maplit = "1"
-predicates = "2"
-rand = "0.8"
+predicates = "3"
+rand = "0.9"
 tempfile = "3"
 tokio-test = "0.4"
-trycmd = "0.14"
+trycmd = "0.15"
 # TODO time switching hash impl
 #fxhash = "0.2"
 # TODO experiment with https://crates.io/crates/criterion/0.2.11
