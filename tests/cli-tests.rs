@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use assert_cmd::Command;
+use assert_cmd::{cargo, Command};
 use assert_fs::TempDir;
 use common::*;
 use predicates::prelude::*;
@@ -297,7 +297,8 @@ fn validate(path: impl AsRef<Path>) -> Command {
 }
 
 fn rocfl(path: impl AsRef<Path>, command: &str) -> Command {
-    let mut rocfl = Command::cargo_bin("rocfl").unwrap();
+    let rocfl_path = cargo::cargo_bin!();
+    let mut rocfl = Command::new(rocfl_path);
     rocfl
         .arg("-S")
         .arg("-r")

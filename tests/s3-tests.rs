@@ -17,7 +17,7 @@ use assert_fs::prelude::*;
 use assert_fs::TempDir;
 use common::*;
 use fs_extra::dir::CopyOptions;
-use rand::Rng;
+use rand::RngCore;
 use rocfl::ocfl::{
     CommitMeta, DigestAlgorithm, ErrorCode, FileDetails, LayoutExtensionName, OcflRepo,
     ProblemLocation, RocflError, SpecVersion, StorageLayout, ValidationError, VersionNum,
@@ -921,8 +921,8 @@ fn init_repo(prefix: &str, staging: impl AsRef<Path>, layout: Option<StorageLayo
 }
 
 fn s3_prefix() -> String {
-    let mut rng = rand::thread_rng();
-    let random: u32 = rng.gen();
+    let mut rng = rand::rng();
+    let random: u32 = rng.next_u32();
     format!("rocfl-{}", random)
 }
 
