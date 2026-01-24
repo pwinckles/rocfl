@@ -12,84 +12,53 @@ jobs:
   linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: x86_64-unknown-linux-musl
-      - name: Build default
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --target x86_64-unknown-linux-musl --release
-          use-cross: true
+      - uses: actions/checkout@v6
+      - run: rustup update stable
+      - run: rustup target add x86_64-unknown-linux-musl
+      - run: cargo install --locked cargo-zigbuild
+      - run: cargo zigbuild --locked --target x86_64-unknown-linux-musl --release
       - name: Upload Artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v6
         with:
           name: rocfl-linux-x86_64
           path: target/x86_64-unknown-linux-musl/release/rocfl
-      - name: Build no-s3
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --target x86_64-unknown-linux-musl --no-default-features --release
-          use-cross: true
+      - run: cargo build --locked --target x86_64-unknown-linux-musl --no-default-features --release
       - name: Upload Artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v6
         with:
           name: rocfl-linux-x86_64-no-s3
           path: target/x86_64-unknown-linux-musl/release/rocfl
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-      - name: Build default
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release
+      - uses: actions/checkout@v6
+      - run: rustup update stable
+      - run: cargo build --locked --release
       - name: Upload Artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v6
         with:
           name: rocfl-windows-x86_64.exe
           path: target/release/rocfl.exe
-      - name: Build no-s3
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --no-default-features --release
+      - run: cargo build --locked --no-default-features --release
       - name: Upload Artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v6
         with:
           name: rocfl-windows-x86_64-no-s3.exe
           path: target/release/rocfl.exe
   osx:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-      - name: Build default
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release
+      - uses: actions/checkout@v6
+      - run: rustup update stable
+      - run: cargo build --locked --release
       - name: Upload Artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v6
         with:
           name: rocfl-macos-x86_64
           path: target/release/rocfl
-      - name: Build no-s3
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --no-default-features --release
+      - run: cargo build --locked --no-default-features --release
       - name: Upload Artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v6
         with:
           name: rocfl-macos-x86_64-no-s3
           path: target/release/rocfl
