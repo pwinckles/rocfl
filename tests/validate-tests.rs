@@ -1384,7 +1384,7 @@ fn validate_object_does_not_exist() {
 
 #[test]
 fn validate_valid_repo() {
-    let repo = new_repo(&repo_test_path("valid"));
+    let repo = new_repo(repo_test_path("valid"));
     let mut validator = repo.validate_repo(true).unwrap();
 
     no_errors_storage(validator.storage_root_result());
@@ -1402,7 +1402,7 @@ fn validate_valid_repo() {
 
 #[test]
 fn validate_invalid_repo() {
-    let repo = new_repo(&repo_test_path("invalid"));
+    let repo = new_repo(repo_test_path("invalid"));
     let mut validator = repo.validate_repo(true).unwrap();
 
     has_errors_storage(
@@ -1476,7 +1476,7 @@ fn validate_invalid_repo() {
 
 #[test]
 fn multiple_root_version_declarations() {
-    let repo = new_repo(&repo_test_path("multiple-root-decls"));
+    let repo = new_repo(repo_test_path("multiple-root-decls"));
     let mut validator = repo.validate_repo(true).unwrap();
 
     has_errors_storage(

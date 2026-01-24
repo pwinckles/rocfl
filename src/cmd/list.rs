@@ -232,7 +232,7 @@ impl ListCmd {
         Ok(())
     }
 
-    fn object_table(&self, args: GlobalArgs) -> TableView {
+    fn object_table(&self, args: GlobalArgs) -> TableView<'_> {
         let mut columns = Vec::new();
 
         if self.long {
@@ -253,7 +253,7 @@ impl ListCmd {
         TableView::new(columns, self.separator(), self.header, !args.no_styles)
     }
 
-    fn object_content_table(&self, args: GlobalArgs) -> TableView {
+    fn object_content_table(&self, args: GlobalArgs) -> TableView<'_> {
         let mut columns = Vec::new();
 
         if self.long {

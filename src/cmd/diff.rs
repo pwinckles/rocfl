@@ -60,7 +60,7 @@ impl LogCmd {
         }
     }
 
-    fn version_table(&self, args: GlobalArgs) -> TableView {
+    fn version_table(&self, args: GlobalArgs) -> TableView<'_> {
         let columns = vec![
             Column::new(ColumnId::Version, "Version", Alignment::Right),
             Column::new(ColumnId::Author, "Author", Alignment::Left),
@@ -243,7 +243,7 @@ impl<'a> AsRow<'a> for DiffLine {
 }
 
 impl DiffLine {
-    fn path_display(&self) -> Cow<str> {
+    fn path_display(&self) -> Cow<'_, str> {
         match &self.diff {
             Diff::Renamed { original, renamed } => Cow::Owned(format!(
                 "{} -> {}",

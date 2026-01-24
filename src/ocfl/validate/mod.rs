@@ -660,7 +660,7 @@ impl<S: Storage> Validator<S> {
     ///
     /// The storage root is validated immediately, and an incremental validator is returned that
     /// is used to lazily validate the rest of the repository.
-    pub fn validate_repo(&self, fixity_check: bool) -> Result<IncrementalValidatorImpl<S>> {
+    pub fn validate_repo(&self, fixity_check: bool) -> Result<IncrementalValidatorImpl<'_, S>> {
         let mut root_result = StorageValidationResult::new();
         let files = self.storage.list("", false)?;
 
@@ -2051,7 +2051,7 @@ impl ParseValidationResult {
     }
 
     pub fn has_errors(&self) -> bool {
-        self.errors.borrow().len() > 0
+        !self.errors.borrow().is_empty()
     }
 }
 
@@ -2070,13 +2070,13 @@ impl ContentPaths {
 
     fn add_path(&mut self, path: ContentPath) {
         if let ContentPathVersion::VersionNum(num) = path.version {
-            self.path_map.entry(num).or_insert_with(Vec::new).push(path);
+            self.path_map.entry(num).or_default().push(path);
         }
     }
 
     /// Iterates over all of the content files that _should_ appear in the manifest of an inventory
     /// at the specified `version_num`. Paths from later versions are not included.
-    fn iter(&self, version_num: VersionNum) -> ContentPathsIter {
+    fn iter(&self, version_num: VersionNum) -> ContentPathsIter<'_> {
         ContentPathsIter {
             current_version: version_num,
             current_iter: self

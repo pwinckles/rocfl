@@ -1181,7 +1181,7 @@ impl Storage for S3Storage {
     /// Lists the contents of the specified directory. If `recursive` is `true`, then all leaf-nodes
     /// are returned. If the directory does not exist, or is empty, then an empty vector is returned.
     /// The returned paths are all relative the directory that was listed.
-    fn list(&self, path: &str, recursive: bool) -> Result<Vec<Listing>> {
+    fn list(&self, path: &str, recursive: bool) -> Result<Vec<Listing<'_>>> {
         let prefix_len = if path.is_empty() || path.ends_with('/') {
             path.len()
         } else {

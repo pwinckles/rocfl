@@ -59,7 +59,7 @@ where
         let entry = self.id_to_paths.entry(id_ref);
         let id_ref = entry.key().clone();
 
-        entry.or_insert_with(HashSet::new).insert(path_ref.clone());
+        entry.or_default().insert(path_ref.clone());
 
         self.path_to_id.insert(path_ref, id_ref);
     }
@@ -72,10 +72,7 @@ where
 
         let id_ref = Rc::new(id);
 
-        let set = self
-            .id_to_paths
-            .entry(id_ref.clone())
-            .or_insert_with(HashSet::new);
+        let set = self.id_to_paths.entry(id_ref.clone()).or_default();
 
         for path in paths {
             let path_ref = Rc::new(path);
@@ -90,10 +87,7 @@ where
             return;
         }
 
-        let set = self
-            .id_to_paths
-            .entry(id.clone())
-            .or_insert_with(HashSet::new);
+        let set = self.id_to_paths.entry(id.clone()).or_default();
 
         for path in paths {
             set.insert(path.clone());
@@ -153,12 +147,12 @@ where
     }
 
     /// Returns an iterator that iterates over references to all path-id pairs
-    pub fn iter(&self) -> Iter<Rc<P>, Rc<HexDigest>> {
+    pub fn iter(&self) -> Iter<'_, Rc<P>, Rc<HexDigest>> {
         self.path_to_id.iter()
     }
 
     /// Returns an iterator that iterates over id-paths pairs
-    pub fn iter_id_paths(&self) -> Iter<Rc<HexDigest>, HashSet<Rc<P>>> {
+    pub fn iter_id_paths(&self) -> Iter<'_, Rc<HexDigest>, HashSet<Rc<P>>> {
         self.id_to_paths.iter()
     }
 

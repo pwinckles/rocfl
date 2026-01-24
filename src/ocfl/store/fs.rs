@@ -422,7 +422,7 @@ impl OcflStore for FsOcflStore {
             let old_namastes = find_files(&object_root, OBJECT_NAMASTE_FILE_PREFIX)?;
             write_object_namaste(&object_root, inventory.spec_version().unwrap())?;
             for old in old_namastes {
-                util::remove_file_ignore_not_found(&object_root.join(old))?;
+                util::remove_file_ignore_not_found(object_root.join(old))?;
             }
         }
 
@@ -831,10 +831,10 @@ impl InventoryIter {
     fn create_if_matches<P: AsRef<Path>>(&self, object_root: P) -> Option<Result<Inventory>> {
         let inventory_path = paths::inventory_path(&object_root);
 
-        if self.id_matcher.is_some() {
+        if let Some(id_matcher) = &self.id_matcher {
             match self.extract_object_id(&inventory_path) {
                 Some(Ok(object_id)) => {
-                    if self.id_matcher.as_ref().unwrap().deref()(&object_id) {
+                    if id_matcher.deref()(&object_id) {
                         Some(parse_inventory(object_root, &self.root))
                     } else {
                         None
@@ -869,7 +869,7 @@ impl InventoryIter {
                 e
             ))))
         } else {
-            match matches.get(0) {
+            match matches.first() {
                 Some(id) => Some(Ok(id.to_string())),
                 None => Some(Err(RocflError::General(format!(
                     "Failed to locate object ID in inventory at {}",
@@ -961,7 +961,7 @@ impl Storage for FsStorage {
     /// Lists the contents of the specified directory. If `recursive` is `true`, then all leaf-nodes
     /// are returned. If the directory does not exist, or is empty, then an empty vector is returned.
     /// The returned paths are all relative the directory that was listed.
-    fn list(&self, path: &str, recursive: bool) -> Result<Vec<Listing>> {
+    fn list(&self, path: &str, recursive: bool) -> Result<Vec<Listing<'_>>> {
         let mut listings = Vec::new();
         let root = self.storage_root.join(path);
 
@@ -1018,7 +1018,7 @@ fn is_object_root<P: AsRef<Path>>(path: P) -> Result<bool> {
                 .file_name()
                 .unwrap_or_default()
                 .to_str()
-                .map_or(false, |name| name.starts_with(OBJECT_NAMASTE_FILE_PREFIX))
+                .is_some_and(|name| name.starts_with(OBJECT_NAMASTE_FILE_PREFIX))
         {
             return Ok(true);
         }
@@ -1315,7 +1315,7 @@ fn find_files(dir: impl AsRef<Path>, prefix: &str) -> Result<Vec<OsString>> {
         .flatten()
         .map(|entry| entry.file_name())
         .filter(|name| name.len() > prefix.len())
-        .filter(|name| name.to_str().map_or(false, |name| name.starts_with(prefix)))
+        .filter(|name| name.to_str().is_some_and(|name| name.starts_with(prefix)))
         .collect())
 }
 
@@ -1328,7 +1328,7 @@ fn find_first_version_declaration(prefix: &str, dir: impl AsRef<Path>) -> Result
             && entry
                 .file_name()
                 .to_str()
-                .map_or(false, |name| name.starts_with(prefix))
+                .is_some_and(|name| name.starts_with(prefix))
         {
             let version = entry.file_name().to_str().unwrap()[prefix.len()..].to_string();
             return Ok(version);

@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::collections::hash_map::Iter;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
-use std::mem;
 use std::rc::Rc;
 use std::str::FromStr;
 
@@ -329,7 +328,7 @@ impl Inventory {
                     if path.starts_with(&prefix) {
                         matches
                             .entry(digest.clone())
-                            .or_insert_with(HashSet::new)
+                            .or_default()
                             .insert(path.clone());
                     }
                 }
@@ -641,7 +640,7 @@ impl Version {
     }
 
     /// Returns non-consuming iterator for the version's state
-    pub fn state_iter(&self) -> Iter<Rc<LogicalPath>, Rc<HexDigest>> {
+    pub fn state_iter(&self) -> Iter<'_, Rc<LogicalPath>, Rc<HexDigest>> {
         self.state.iter()
     }
 
@@ -660,7 +659,7 @@ impl Version {
         if self.logical_dirs.get().is_some() {
             self.logical_dirs = OnceCell::default();
         }
-        mem::replace(&mut self.state, PathBiMap::new())
+        std::mem::take(&mut self.state)
     }
 
     /// Returns a reference to the digest associated to a logical path, or None if the logical
@@ -807,7 +806,7 @@ impl Version {
                     None => {
                         deletes
                             .entry(left_digest.clone())
-                            .or_insert_with(Vec::new)
+                            .or_default()
                             .push(path.clone());
                     }
                     Some(right_digest) => {
