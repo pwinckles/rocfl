@@ -23,25 +23,12 @@ jobs:
       matrix:
         os: [ ubuntu-latest ]
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
+      - uses: actions/checkout@v6
+      - run: rustup update stable
       - run: rustup component add clippy
-      - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-      - name: Run tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: -- --test-threads=1
-      - name: Clippy
-        uses: actions-rs/clippy-check@v1
-        with:
-          args: --all --all-targets --all-features
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - run: cargo build
+      - run: cargo test -- --test-threads=1
+      - run: cargo clippy --all --all-targets --all-features
   build-other:
     runs-on: ${{ matrix.os }}
     environment: ci
@@ -55,16 +42,8 @@ jobs:
       matrix:
         os: [ macos-latest, windows-latest ]
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-      - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-      - name: Run tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: -- --test-threads=1
+      - uses: actions/checkout@v6
+      - run: rustup update stable
+      - run: rustup component add clippy
+      - run: cargo build
+      - run: cargo test -- --test-threads=1
