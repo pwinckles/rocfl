@@ -658,11 +658,11 @@ fn to_tuples(value: &str, tuple_size: usize, number_of_tuples: usize) -> String 
 ///
 /// This method assumes that ALL unicode characters have been percent encoded. It is NOT SAFE
 /// to use on strings that contain unicode.
-fn lower_percent_escape(original: &str) -> Cow<str> {
+fn lower_percent_escape(original: &str) -> Cow<'_, str> {
     if let Some(first) = original.find('%') {
         let start = first + 1;
         let mut out = Vec::with_capacity(original.len());
-        out.extend_from_slice(original[..start].as_bytes());
+        out.extend_from_slice(&original.as_bytes()[..start]);
         let search = original[start..].bytes();
 
         let mut count = 2;

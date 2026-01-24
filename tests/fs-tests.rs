@@ -1368,7 +1368,7 @@ fn copy_should_partially_succeed_when_multiple_src_and_some_fail() {
     match result {
         Err(RocflError::CopyMoveError(e)) => {
             assert_eq!(1, e.0.len());
-            assert!(e.0.get(0).unwrap().contains("bogus: Does not exist"));
+            assert!(e.0.first().unwrap().contains("bogus: Does not exist"));
         }
         _ => panic!("Expected copy to return an error"),
     }
@@ -2200,7 +2200,7 @@ fn internal_copy_should_continue_on_partial_success() -> Result<()> {
             assert_eq!(1, e.0.len());
             assert!(e
                 .0
-                .get(0)
+                .first()
                 .unwrap()
                 .contains("does not contain any files at bogus.txt"));
         }
@@ -2225,8 +2225,8 @@ fn internal_copy_should_continue_on_partial_success() -> Result<()> {
         "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
     );
 
-    assert!(staged_obj.state.get(&lpath("a/file1.txt")).is_some());
-    assert!(staged_obj.state.get(&lpath("a/file5.txt")).is_some());
+    assert!(staged_obj.state.contains_key(&lpath("a/file1.txt")));
+    assert!(staged_obj.state.contains_key(&lpath("a/file5.txt")));
 
     validate_repo(&repo);
     Ok(())
@@ -2751,7 +2751,7 @@ fn move_should_partially_succeed_when_multiple_src_and_some_fail() {
     match result {
         Err(RocflError::CopyMoveError(e)) => {
             assert_eq!(1, e.0.len());
-            assert!(e.0.get(0).unwrap().contains("bogus: Does not exist"));
+            assert!(e.0.first().unwrap().contains("bogus: Does not exist"));
         }
         _ => panic!("Expected copy to return an error"),
     }
@@ -2850,7 +2850,7 @@ fn internal_move_single_existing_file() -> Result<()> {
         "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
     );
 
-    assert!(staged_obj.state.get(&lpath("a/file1.txt")).is_none());
+    assert!(!staged_obj.state.contains_key(&lpath("a/file1.txt")));
 
     commit(object_id, &repo);
 
@@ -2865,7 +2865,7 @@ fn internal_move_single_existing_file() -> Result<()> {
         "7d9fe7396f8f5f9862bfbfff4d98877bf36cf4a44447078c8d887dcc2dab0497",
     );
 
-    assert!(committed_obj.state.get(&lpath("a/file1.txt")).is_none());
+    assert!(!committed_obj.state.contains_key(&lpath("a/file1.txt")));
 
     validate_repo(&repo);
     Ok(())
@@ -2908,9 +2908,9 @@ fn internal_move_multiple_existing_file() -> Result<()> {
         "b47592b10bc3e5c8ca8703d0862df10a6e409f43478804f93a08dd1844ae81b6",
     );
 
-    assert!(staged_obj.state.get(&lpath("a/file1.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("a/file5.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("a/b/file2.txt")).is_none());
+    assert!(!staged_obj.state.contains_key(&lpath("a/file1.txt")));
+    assert!(!staged_obj.state.contains_key(&lpath("a/file5.txt")));
+    assert!(!staged_obj.state.contains_key(&lpath("a/b/file2.txt")));
 
     commit(object_id, &repo);
 
@@ -2946,9 +2946,9 @@ fn internal_move_multiple_existing_file() -> Result<()> {
         "b47592b10bc3e5c8ca8703d0862df10a6e409f43478804f93a08dd1844ae81b6",
     );
 
-    assert!(committed_obj.state.get(&lpath("a/file1.txt")).is_none());
-    assert!(committed_obj.state.get(&lpath("a/file5.txt")).is_none());
-    assert!(committed_obj.state.get(&lpath("a/b/file2.txt")).is_none());
+    assert!(!committed_obj.state.contains_key(&lpath("a/file1.txt")));
+    assert!(!committed_obj.state.contains_key(&lpath("a/file5.txt")));
+    assert!(!committed_obj.state.contains_key(&lpath("a/b/file2.txt")));
 
     validate_repo(&repo);
     Ok(())
@@ -2976,7 +2976,7 @@ fn internal_move_should_continue_on_partial_success() -> Result<()> {
             assert_eq!(1, e.0.len());
             assert!(e
                 .0
-                .get(0)
+                .first()
                 .unwrap()
                 .contains("does not contain any files at bogus.txt"));
         }
@@ -3001,8 +3001,8 @@ fn internal_move_should_continue_on_partial_success() -> Result<()> {
         "4ccdbf78d368aed12d806efaf67fbce3300bca8e62a6f32716af2f447de1821e",
     );
 
-    assert!(staged_obj.state.get(&lpath("a/file1.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("a/file5.txt")).is_none());
+    assert!(!staged_obj.state.contains_key(&lpath("a/file1.txt")));
+    assert!(!staged_obj.state.contains_key(&lpath("a/file5.txt")));
 
     validate_repo(&repo);
     Ok(())
@@ -3040,7 +3040,7 @@ fn internal_move_files_added_in_staged_version() {
         "b37d2cbfd875891e9ed073fcbe61f35a990bee8eecbdd07f9efc51339d5ffd66",
     );
 
-    assert!(staged_obj.state.get(&lpath("just in.txt")).is_none());
+    assert!(!staged_obj.state.contains_key(&lpath("just in.txt")));
 
     commit(object_id, &repo);
 
@@ -3132,18 +3132,18 @@ fn remove_existing_file() -> Result<()> {
     let staged_obj = repo.get_staged_object(object_id)?;
 
     assert_eq!(6, staged_obj.state.len());
-    assert!(staged_obj.state.get(&lpath("a/file5.txt")).is_none());
+    assert!(!staged_obj.state.contains_key(&lpath("a/file5.txt")));
 
     commit(object_id, &repo);
 
     let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(6, committed_obj.state.len());
-    assert!(committed_obj.state.get(&lpath("a/file5.txt")).is_none());
+    assert!(!committed_obj.state.contains_key(&lpath("a/file5.txt")));
 
     let previous_version = repo.get_object(object_id, 4.try_into()?)?;
 
-    assert!(previous_version.state.get(&lpath("a/file5.txt")).is_some());
+    assert!(previous_version.state.contains_key(&lpath("a/file5.txt")));
 
     validate_repo(&repo);
     Ok(())
@@ -3165,27 +3165,25 @@ fn remove_multiple_existing_files() -> Result<()> {
     let staged_obj = repo.get_staged_object(object_id)?;
 
     assert_eq!(5, staged_obj.state.len());
-    assert!(staged_obj.state.get(&lpath("a/file5.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("something/new.txt")).is_none());
+    assert!(!staged_obj.state.contains_key(&lpath("a/file5.txt")));
+    assert!(!staged_obj.state.contains_key(&lpath("something/new.txt")));
 
     commit(object_id, &repo);
 
     let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(5, committed_obj.state.len());
-    assert!(committed_obj.state.get(&lpath("a/file5.txt")).is_none());
-    assert!(committed_obj
+    assert!(!committed_obj.state.contains_key(&lpath("a/file5.txt")));
+    assert!(!committed_obj
         .state
-        .get(&lpath("something/new.txt"))
-        .is_none());
+        .contains_key(&lpath("something/new.txt")));
 
     let previous_version = repo.get_object(object_id, 4.try_into()?)?;
 
-    assert!(previous_version.state.get(&lpath("a/file5.txt")).is_some());
+    assert!(previous_version.state.contains_key(&lpath("a/file5.txt")));
     assert!(previous_version
         .state
-        .get(&lpath("something/new.txt"))
-        .is_some());
+        .contains_key(&lpath("something/new.txt")));
 
     validate_repo(&repo);
     Ok(())
@@ -3207,22 +3205,22 @@ fn remove_globs() -> Result<()> {
     let staged_obj = repo.get_staged_object(object_id)?;
 
     assert_eq!(5, staged_obj.state.len());
-    assert!(staged_obj.state.get(&lpath("a/file5.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("a/file1.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("a/f/file6.txt")).is_some());
+    assert!(!staged_obj.state.contains_key(&lpath("a/file5.txt")));
+    assert!(!staged_obj.state.contains_key(&lpath("a/file1.txt")));
+    assert!(staged_obj.state.contains_key(&lpath("a/f/file6.txt")));
 
     commit(object_id, &repo);
 
     let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(5, committed_obj.state.len());
-    assert!(committed_obj.state.get(&lpath("a/file5.txt")).is_none());
-    assert!(committed_obj.state.get(&lpath("a/file1.txt")).is_none());
+    assert!(!committed_obj.state.contains_key(&lpath("a/file5.txt")));
+    assert!(!committed_obj.state.contains_key(&lpath("a/file1.txt")));
 
     let previous_version = repo.get_object(object_id, 4.try_into()?)?;
 
-    assert!(previous_version.state.get(&lpath("a/file5.txt")).is_some());
-    assert!(previous_version.state.get(&lpath("a/file1.txt")).is_some());
+    assert!(previous_version.state.contains_key(&lpath("a/file5.txt")));
+    assert!(previous_version.state.contains_key(&lpath("a/file1.txt")));
 
     validate_repo(&repo);
     Ok(())
@@ -3244,14 +3242,14 @@ fn remove_recursive() -> Result<()> {
     let staged_obj = repo.get_staged_object(object_id)?;
 
     assert_eq!(1, staged_obj.state.len());
-    assert!(staged_obj.state.get(&lpath("file3.txt")).is_some());
+    assert!(staged_obj.state.contains_key(&lpath("file3.txt")));
 
     commit(object_id, &repo);
 
     let committed_obj = repo.get_object(object_id, VersionRef::Head)?;
 
     assert_eq!(1, committed_obj.state.len());
-    assert!(committed_obj.state.get(&lpath("file3.txt")).is_some());
+    assert!(committed_obj.state.contains_key(&lpath("file3.txt")));
 
     validate_repo(&repo);
     Ok(())
@@ -3273,7 +3271,7 @@ fn remove_files_that_do_not_exist_should_do_nothing() -> Result<()> {
     let staged_obj = repo.get_staged_object(object_id)?;
 
     assert_eq!(6, staged_obj.state.len());
-    assert!(staged_obj.state.get(&lpath("file3.txt")).is_none());
+    assert!(!staged_obj.state.contains_key(&lpath("file3.txt")));
 
     validate_repo(&repo);
     Ok(())
@@ -3323,8 +3321,8 @@ fn reset_newly_added_files() -> Result<()> {
 
     assert_eq!(8, staged_obj.state.len());
 
-    assert!(staged_obj.state.get(&lpath("new.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("new2.txt")).is_some());
+    assert!(!staged_obj.state.contains_key(&lpath("new.txt")));
+    assert!(staged_obj.state.contains_key(&lpath("new2.txt")));
 
     commit(object_id, &repo);
 
@@ -3333,7 +3331,7 @@ fn reset_newly_added_files() -> Result<()> {
 
     assert_eq!(8, obj.state.len());
 
-    assert!(obj.state.get(&lpath("new.txt")).is_none());
+    assert!(!obj.state.contains_key(&lpath("new.txt")));
     assert!(!object_root
         .join("v5")
         .join("content")
@@ -3400,8 +3398,8 @@ fn reset_copied_file() -> Result<()> {
 
     assert_eq!(8, staged_obj.state.len());
 
-    assert!(staged_obj.state.get(&lpath("new.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("new (copy).txt")).is_some());
+    assert!(!staged_obj.state.contains_key(&lpath("new.txt")));
+    assert!(staged_obj.state.contains_key(&lpath("new (copy).txt")));
 
     commit(object_id, &repo);
 
@@ -3410,7 +3408,7 @@ fn reset_copied_file() -> Result<()> {
 
     assert_eq!(8, obj.state.len());
 
-    assert!(obj.state.get(&lpath("new.txt")).is_none());
+    assert!(!obj.state.contains_key(&lpath("new.txt")));
 
     assert_file_details(
         obj.state.get(&lpath("new (copy).txt")).unwrap(),
@@ -3522,10 +3520,10 @@ fn reset_removed_file() -> Result<()> {
 
     assert_eq!(3, staged_obj.state.len());
 
-    assert!(staged_obj.state.get(&lpath("a/file1.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("a/file5.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("a/b/file2.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("a/f/file6.txt")).is_none());
+    assert!(!staged_obj.state.contains_key(&lpath("a/file1.txt")));
+    assert!(!staged_obj.state.contains_key(&lpath("a/file5.txt")));
+    assert!(!staged_obj.state.contains_key(&lpath("a/b/file2.txt")));
+    assert!(!staged_obj.state.contains_key(&lpath("a/f/file6.txt")));
 
     repo.reset(object_id, &["a/f"], true)?;
 
@@ -3533,8 +3531,8 @@ fn reset_removed_file() -> Result<()> {
 
     assert_eq!(4, staged_obj.state.len());
 
-    assert!(staged_obj.state.get(&lpath("a/file1.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("a/file5.txt")).is_none());
+    assert!(!staged_obj.state.contains_key(&lpath("a/file1.txt")));
+    assert!(!staged_obj.state.contains_key(&lpath("a/file5.txt")));
 
     let object_root = PathBuf::from(repo.get_object(object_id, VersionRef::Head)?.object_root);
 
@@ -3551,8 +3549,8 @@ fn reset_removed_file() -> Result<()> {
 
     assert_eq!(4, obj.state.len());
 
-    assert!(staged_obj.state.get(&lpath("a/file1.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("a/file5.txt")).is_none());
+    assert!(!staged_obj.state.contains_key(&lpath("a/file1.txt")));
+    assert!(!staged_obj.state.contains_key(&lpath("a/file5.txt")));
 
     assert_file_details(
         obj.state.get(&lpath("a/f/file6.txt")).unwrap(),
@@ -3609,16 +3607,15 @@ fn reset_complex_changes_without_conflict() -> Result<()> {
 
     assert_eq!(4, staged_obj.state.len());
 
-    assert!(staged_obj.state.get(&lpath("a/file1.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("a/file5.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("a/b/file2.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("a/f/file6.txt")).is_none());
+    assert!(!staged_obj.state.contains_key(&lpath("a/file1.txt")));
+    assert!(!staged_obj.state.contains_key(&lpath("a/file5.txt")));
+    assert!(!staged_obj.state.contains_key(&lpath("a/b/file2.txt")));
+    assert!(!staged_obj.state.contains_key(&lpath("a/f/file6.txt")));
 
-    assert!(staged_obj.state.get(&lpath("a/b")).is_some());
+    assert!(staged_obj.state.contains_key(&lpath("a/b")));
     assert!(staged_obj
         .state
-        .get(&lpath("a/file1.txt/file3.txt"))
-        .is_some());
+        .contains_key(&lpath("a/file1.txt/file3.txt")));
 
     repo.reset(object_id, &["*"], true)?;
 
@@ -3626,11 +3623,10 @@ fn reset_complex_changes_without_conflict() -> Result<()> {
 
     assert_eq!(7, staged_obj.state.len());
 
-    assert!(staged_obj.state.get(&lpath("a/b")).is_none());
-    assert!(staged_obj
+    assert!(!staged_obj.state.contains_key(&lpath("a/b")));
+    assert!(!staged_obj
         .state
-        .get(&lpath("a/file1.txt/file3.txt"))
-        .is_none());
+        .contains_key(&lpath("a/file1.txt/file3.txt")));
 
     validate_repo(&repo);
     Ok(())
@@ -3662,16 +3658,15 @@ fn fail_reset_when_conflicted() {
 
     assert_eq!(4, staged_obj.state.len());
 
-    assert!(staged_obj.state.get(&lpath("a/file1.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("a/file5.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("a/b/file2.txt")).is_none());
-    assert!(staged_obj.state.get(&lpath("a/f/file6.txt")).is_none());
+    assert!(!staged_obj.state.contains_key(&lpath("a/file1.txt")));
+    assert!(!staged_obj.state.contains_key(&lpath("a/file5.txt")));
+    assert!(!staged_obj.state.contains_key(&lpath("a/b/file2.txt")));
+    assert!(!staged_obj.state.contains_key(&lpath("a/f/file6.txt")));
 
-    assert!(staged_obj.state.get(&lpath("a/b")).is_some());
+    assert!(staged_obj.state.contains_key(&lpath("a/b")));
     assert!(staged_obj
         .state
-        .get(&lpath("a/file1.txt/file3.txt"))
-        .is_some());
+        .contains_key(&lpath("a/file1.txt/file3.txt")));
 
     repo.reset(object_id, &["a/file1.txt"], false).unwrap();
 }
@@ -4902,7 +4897,7 @@ fn assert_staged_obj_not_exists(repo: &OcflRepo, object_id: &str) {
 }
 
 fn assert_file_not_exists(obj: &ObjectVersion, logical_path: &str, content_path: &str) {
-    assert!(obj.state.get(&lpath(logical_path)).is_none());
+    assert!(!obj.state.contains_key(&lpath(logical_path)));
     assert!(!Path::new(&obj.object_root).join(content_path).exists());
 }
 

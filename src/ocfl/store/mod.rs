@@ -190,7 +190,7 @@ pub trait Storage {
     /// Lists the contents of the specified directory. If `recursive` is `true`, then all leaf-nodes
     /// are returned. If the directory does not exist, or is empty, then an empty vector is returned.
     /// The returned paths are all relative the directory that was listed.
-    fn list(&self, path: &str, recursive: bool) -> Result<Vec<Listing>>;
+    fn list(&self, path: &str, recursive: bool) -> Result<Vec<Listing<'_>>>;
 
     /// Returns the native path separator used by the store.
     fn path_separator(&self) -> char;
@@ -208,11 +208,11 @@ pub enum Listing<'a> {
 }
 
 impl<'a> Listing<'a> {
-    pub fn file(path: &str) -> Listing {
+    pub fn file(path: &str) -> Listing<'_> {
         Listing::File(Cow::Borrowed(path))
     }
 
-    pub fn dir(path: &str) -> Listing {
+    pub fn dir(path: &str) -> Listing<'_> {
         Listing::Directory(Cow::Borrowed(path))
     }
     pub fn file_owned(path: String) -> Listing<'a> {

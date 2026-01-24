@@ -419,7 +419,7 @@ impl<'de> Deserialize<'de> for OptionWrapper<Inventory> {
                         )
                     }
 
-                    if let Some(highest_version) = versions.nums.iter().rev().next() {
+                    if let Some(highest_version) = versions.nums.iter().next_back() {
                         if head != highest_version {
                             self.result.error(
                                 ErrorCode::E040,

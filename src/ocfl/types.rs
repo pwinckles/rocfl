@@ -91,7 +91,7 @@ pub(crate) struct Namaste {
 
 pub trait InventoryPath {
     /// Returns an iterable containing each segment of the path split on the `/` separator
-    fn parts(&self) -> Split<char>;
+    fn parts(&self) -> Split<'_, char>;
 
     /// Returns the parent path of this path.
     fn parent(&self) -> Self;
@@ -300,7 +300,7 @@ impl VersionNum {
             _ => u32::pow(10, self.width - 1) - 1,
         };
 
-        if self.number + 1 > max as u32 {
+        if self.number + 1 > max {
             return Err(RocflError::IllegalState(format!(
                 "Version cannot be greater than {}",
                 max
@@ -576,7 +576,7 @@ impl Namaste {
 
 impl InventoryPath for InventoryPathInner {
     /// Returns an iterable containing each segment of the path split on the `/` separator
-    fn parts(&self) -> Split<char> {
+    fn parts(&self) -> Split<'_, char> {
         self.0.split('/')
     }
 
@@ -634,7 +634,7 @@ impl InventoryPath for InventoryPathInner {
 
 impl InventoryPath for LogicalPath {
     /// Returns an iterable containing each segment of the path split on the `/` separator
-    fn parts(&self) -> Split<char> {
+    fn parts(&self) -> Split<'_, char> {
         self.inner.parts()
     }
 
@@ -686,7 +686,7 @@ impl InventoryPath for LogicalPath {
 
 impl InventoryPath for ContentPath {
     /// Returns an iterable containing each segment of the path split on the `/` separator
-    fn parts(&self) -> Split<char> {
+    fn parts(&self) -> Split<'_, char> {
         self.inner.parts()
     }
 

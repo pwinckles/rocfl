@@ -146,7 +146,7 @@ impl Column {
         self.width = cmp::max(self.width, new_width);
     }
 
-    fn heading_cell(&self) -> TextCell {
+    fn heading_cell(&self) -> TextCell<'_> {
         let mut cell = TextCell::new(&self.heading);
         cell.style = &*style::UNDERLINE;
         cell

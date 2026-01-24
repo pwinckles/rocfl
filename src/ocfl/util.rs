@@ -51,7 +51,7 @@ pub fn dir_is_empty(dir: impl AsRef<Path>) -> Result<bool> {
 }
 
 /// Changes `/` to `\` on Windows
-pub fn convert_forwardslash_to_back(path: &str) -> Cow<str> {
+pub fn convert_forwardslash_to_back(path: &str) -> Cow<'_, str> {
     if BACKSLASH_SEPARATOR && path.contains('/') {
         return Cow::Owned(path.replace('/', "\\"));
     }
@@ -59,7 +59,7 @@ pub fn convert_forwardslash_to_back(path: &str) -> Cow<str> {
 }
 
 /// Changes `\\` to `/` on Windows
-pub fn convert_backslash_to_forward(path: &str) -> Cow<str> {
+pub fn convert_backslash_to_forward(path: &str) -> Cow<'_, str> {
     if BACKSLASH_SEPARATOR && path.contains('\\') {
         return Cow::Owned(path.replace('\\', "/"));
     }
