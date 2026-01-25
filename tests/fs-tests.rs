@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use assert_fs::prelude::*;
 use assert_fs::TempDir;
-use chrono::{DateTime, Local, TimeZone};
+use chrono::{DateTime, Local, SecondsFormat, TimeZone};
 use common::*;
 use fs_extra::dir::CopyOptions;
 use maplit::hashmap;
@@ -3942,7 +3942,7 @@ fn commit_should_pretty_print_inventory() {
 }"#;
 
     assert_eq!(
-        format!("{}{}{}", expected_p1, timestamp.to_rfc3339(), expected_p2),
+        format!("{}{}{}", expected_p1, timestamp.to_rfc3339_opts(SecondsFormat::Secs, true), expected_p2),
         fs::read_to_string(&inventory_path).unwrap()
     );
 
